@@ -1,0 +1,103 @@
+name: GoWebRadio CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # --- JOB 1: Build & Test Go Code ---
+  go-check:
+    name: Go Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Install System Dependencies
+        # We install ffmpeg because the code imports packages that might rely on CGO 
+        # or if you add unit tests later that execute the ffmpeg binary.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Download Go Modules
+        run: go mod download
+
+      - name: Verify Build (Ingester)
+        run: go build -v ./cmd/ingester/
+
+      - name: Verify Build (Radio Engine)
+        run: go build -v ./cmd/radio/
+
+      # Optional: Run Linter (Uncomment if you want strict code style checks)
+      # - name: Run golangci-lint
+      #   uses: golangci/golangci-lint-action@v6
+      #   with:
+      #     version: latest
+
+  # --- JOB 2: Build & Push Docker Images ---
+  docker-build:
+    name: Docker Build & Push
+    needs: go-check
+    runs-on: ubuntu-latest
+    # Permissions required to push to GHCR
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        include:
+          - service: ingester
+            dockerfile: docker/Dockerfile.ingest
+          - service: radio
+            dockerfile: docker/Dockerfile.radio
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=tag
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          # Push only on 'main' branch or tags (don't push PR builds)
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
