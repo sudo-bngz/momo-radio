@@ -60,7 +60,7 @@ func main() {
 	go startSmartDJ(audioPipeWriter)
 	go startRedirectServer()
 
-	log.Println("📡 Starting Stream Uploader...")
+	log.Println("Starting Stream Uploader...")
 	startStreamUploader()
 }
 
@@ -118,7 +118,7 @@ func startRedirectServer() {
 	})
 
 	http.HandleFunc("/listen", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("🔗 Redirecting client to: %s", publicURL)
+		log.Printf("Redirecting client to: %s", publicURL)
 		http.Redirect(w, r, publicURL, http.StatusFound)
 	})
 
@@ -169,7 +169,7 @@ func startStreamUploader() {
 					err := uploadFileToB2(fullPath, filename, "application/vnd.apple.mpegurl", "public, max-age=1, must-revalidate")
 					if err == nil {
 						lastM3u8Time = info.ModTime()
-						log.Printf("📝 Playlist updated")
+						log.Printf("Playlist updated")
 					} else {
 						log.Printf("Playlist Upload Failed: %v", err)
 					}
@@ -179,12 +179,10 @@ func startStreamUploader() {
 
 			// Segments (.ts)
 			if strings.HasSuffix(filename, ".ts") {
-				log.Printf("⚡ Found completed segment: %s", filename)
+				log.Printf("Found completed segment: %s", filename)
 				err := uploadFileToB2(fullPath, filename, "video/MP2T", "public, max-age=86400")
 				if err == nil {
-					log.Printf("🚀 Uploaded: %s", filename)
-					// Go deletes the file here.
-					// Since we removed delete_segments from FFmpeg, there is no more conflict.
+					log.Printf("Uploaded: %s", filename)
 					os.Remove(fullPath)
 				} else {
 					log.Printf("Segment Upload Failed: %v", err)
