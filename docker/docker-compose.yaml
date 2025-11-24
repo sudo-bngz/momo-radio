@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # 1. The Ingester (Organizer)
+  ingester:
+    build:
+      context: .. # Point to project root
+      dockerfile: docker/Dockerfile.ingest
+    container_name: radio_ingester
+    restart: unless-stopped
+    volumes:
+      # Mount config.yaml so you can edit it on the host
+      - ../config.yaml:/app/config.yaml:ro
+    environment:
+      # Override config via ENV if needed
+      - RADIO_B2_KEY_ID=${B2_KEY_ID} 
+      - RADIO_B2_APP_KEY=${B2_APP_KEY}
+
+  # 2. The Radio Engine (Streamer)
+  radio:
+    build:
+      context: .. # Point to project root
+      dockerfile: docker/Dockerfile.radio
+    container_name: radio_engine
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # VLC Helper
+    volumes:
+      - ../config.yaml:/app/config.yaml:ro
+    environment:
+      - RADIO_B2_KEY_ID=${B2_KEY_ID}
+      - RADIO_B2_APP_KEY=${B2_APP_KEY}
+    depends_on:
+      - ingester

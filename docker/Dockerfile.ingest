@@ -1,0 +1,39 @@
+# --- Stage 1: Build ---
+FROM golang:1.25-alpine AS builder
+
+# Install build tools
+RUN apk add --no-cache git
+
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+# We copy the specific cmd directory to keep the build context clean
+COPY cmd/ingester/ ./cmd/ingester/
+
+# Build the binary
+# -o /bin/ingester : Output path
+# ./cmd/ingester/ingester.go : Source path
+RUN go build -o /bin/ingester cmd/ingester/ingester.go
+
+# --- Stage 2: Runtime ---
+FROM alpine:3.19
+
+# CRITICAL: Install FFmpeg and SSL Certificates
+# FFmpeg is needed for audio normalization (-af loudnorm)
+# ca-certificates is needed to talk to Backblaze HTTPS API
+RUN apk add --no-cache ffmpeg ca-certificates bash
+
+WORKDIR /app
+
+# Copy the binary from the builder stage
+COPY --from=builder /bin/ingester .
+
+# Create temp directory for processing
+RUN mkdir -p ./temp_processing
+
+# Run
+CMD ["./ingester"]

@@ -1,0 +1,36 @@
+# --- Stage 1: Build ---
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache git
+
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY cmd/radio/ ./cmd/radio/
+
+# Build the binary
+RUN go build -o /bin/radio cmd/radio/main.go
+
+# --- Stage 2: Runtime ---
+FROM alpine:3.19
+
+# CRITICAL: Install FFmpeg for HLS Transcoding
+RUN apk add --no-cache ffmpeg ca-certificates bash
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder /bin/radio .
+
+# Create hls output directory
+RUN mkdir -p ./hls_output
+
+# Expose the VLC Helper port
+EXPOSE 8080
+
+# Run
+CMD ["./radio"]

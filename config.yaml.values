@@ -1,0 +1,13 @@
+b2:
+  key_id: "YOUR_B2_KEY_ID"
+  app_key: "YOUR_B2_APP_KEY"
+  endpoint: "https://s3.us-west-000.backblazeb2.com"
+  region: "us-west-000"
+  bucket_ingest: "radio-ingest-raw"
+  bucket_prod: "radio-assets-files"
+
+server:
+  port: ":8081"
+  webhook_secret: "YOUR_SECRET_STRING_FROM_B2_CONSOLE"
+  temp_dir: "./temp_processing"
+  
