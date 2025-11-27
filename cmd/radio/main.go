@@ -72,6 +72,13 @@ func loadConfig() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
+	viper.SetDefault("b2.key_id", "")
+	viper.SetDefault("b2.app_key", "")
+	viper.SetDefault("b2.endpoint", "")
+	viper.SetDefault("b2.region", "")
+	viper.SetDefault("b2.bucket_prod", "")
+	viper.SetDefault("b2.bucket_stream_live", "")
+
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatalf("Error reading config: %s", err)
 	}

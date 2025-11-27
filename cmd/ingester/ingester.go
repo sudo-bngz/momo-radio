@@ -82,6 +82,15 @@ func loadConfig() {
 	viper.SetEnvPrefix("RADIO")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+
+	viper.SetDefault("b2.key_id", "")
+	viper.SetDefault("b2.app_key", "")
+	viper.SetDefault("b2.endpoint", "")
+	viper.SetDefault("b2.region", "")
+	viper.SetDefault("b2.bucket_ingest", "")
+	viper.SetDefault("b2.bucket_prod", "")
+	viper.SetDefault("server.polling_interval_seconds", 10)
+	viper.SetDefault("server.temp_dir", "./temp_processing")
 	viper.SetDefault("server.polling_interval_seconds", 10)
 
 	if err := viper.ReadInConfig(); err != nil {

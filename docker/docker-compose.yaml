@@ -8,13 +8,18 @@ services:
       dockerfile: docker/Dockerfile.ingest
     container_name: radio_ingester
     restart: unless-stopped
-    volumes:
+    #volumes:
       # Mount config.yaml so you can edit it on the host
-      - ../config.yaml:/app/config.yaml:ro
+    #  - ../config.yaml:/app/config.yaml:ro
     environment:
-      # Override config via ENV if needed
-      - RADIO_B2_KEY_ID=${B2_KEY_ID} 
-      - RADIO_B2_APP_KEY=${B2_APP_KEY}
+      - RADIO_B2_KEY_ID=XXX
+      - RADIO_B2_APP_KEY=XXX
+      - RADIO_B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+      - RADIO_B2_REGION=us-east-005
+      - RADIO_B2_BUCKET_INGEST=bucket_ingest
+      - RADIO_B2_BUCKET_PROD=bucket_ingest
+      - RADIO_SERVER_POLLING_INTERVAL_SECONDS=10
+      - RADIO_SERVER_TEMP_DIR==/tmp/
 
   # 2. The Radio Engine (Streamer)
   radio:
