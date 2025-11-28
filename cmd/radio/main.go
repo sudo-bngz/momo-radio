@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -41,6 +42,13 @@ const (
 var (
 	s3Client  *s3.S3
 	AppConfig Config
+
+	// --- Caching Globals ---
+	// Caching the file lists to avoid hitting API every 3 minutes.
+	playlistCache     = make(map[string][]string)
+	playlistCacheTime = make(map[string]time.Time)
+	cacheMutex        sync.RWMutex
+	CacheTTL          = 1 * time.Minute // Refresh track TTL
 )
 
 func main() {
@@ -267,21 +275,49 @@ func streamFileToPipe(key string, pipe *io.PipeWriter) error {
 }
 
 func fetchKeysFromPrefix(prefix string) ([]string, error) {
-	var keys []string
-	resp, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
+	// 1. Check Cache
+	cacheMutex.RLock()
+	keys, exists := playlistCache[prefix]
+	lastUpdate := playlistCacheTime[prefix]
+	cacheMutex.RUnlock()
+
+	// 2. Return cached if fresh
+	if exists && time.Since(lastUpdate) < CacheTTL {
+		return keys, nil
+	}
+
+	// 3. Refresh from S3 (Slow Operation)
+	log.Printf("🔄 Refreshing library cache for prefix: %s...", prefix)
+	var allKeys []string
+
+	// Use ListObjectsV2Pages to handle >1000 items automatically
+	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(AppConfig.B2.BucketProd),
 		Prefix: aws.String(prefix),
+	}
+
+	err := s3Client.ListObjectsV2Pages(input, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+		for _, item := range page.Contents {
+			key := *item.Key
+			if strings.HasSuffix(key, ".mp3") && key != prefix {
+				allKeys = append(allKeys, key)
+			}
+		}
+		return true // continue paging
 	})
+
 	if err != nil {
 		return nil, err
 	}
-	for _, item := range resp.Contents {
-		key := *item.Key
-		if strings.HasSuffix(key, ".mp3") && key != prefix {
-			keys = append(keys, key)
-		}
-	}
-	return keys, nil
+
+	// 4. Update Cache
+	cacheMutex.Lock()
+	playlistCache[prefix] = allKeys
+	playlistCacheTime[prefix] = time.Now()
+	cacheMutex.Unlock()
+
+	log.Printf("✅ Cached %d tracks for %s", len(allKeys), prefix)
+	return allKeys, nil
 }
 
 func startFFmpeg(input io.Reader) {
