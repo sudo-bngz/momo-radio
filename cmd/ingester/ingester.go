@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 )
 
@@ -33,41 +37,83 @@ type Config struct {
 	Server struct {
 		TempDir         string `mapstructure:"temp_dir"`
 		PollingInterval int    `mapstructure:"polling_interval_seconds"`
+		MetricsPort     string `mapstructure:"metrics_port"`
 	} `mapstructure:"server"`
+	// Removed Services struct as we default to iTunes public API now
 }
 
-// Metadata holds the ID3 tags we care about for organization
+// Metadata holds the tags for organization
 type Metadata struct {
-	Artist    string
-	Title     string
-	Genre     string
-	Album     string
-	Year      string
-	Publisher string // Label
+	Artist    string `json:"artist"`
+	Title     string `json:"title"`
+	Genre     string `json:"genre"`
+	Album     string `json:"album"`
+	Year      string `json:"year"`
+	Publisher string `json:"publisher"`
+}
+
+// iTunes API Response Structures
+type ITunesResponse struct {
+	ResultCount int            `json:"resultCount"`
+	Results     []ITunesResult `json:"results"`
+}
+
+type ITunesResult struct {
+	ArtistName       string `json:"artistName"`
+	TrackName        string `json:"trackName"`
+	CollectionName   string `json:"collectionName"` // Album
+	PrimaryGenreName string `json:"primaryGenreName"`
+	ReleaseDate      string `json:"releaseDate"` // e.g. "1997-01-20T08:00:00Z"
+	// We could also get artworkUrl100 if we wanted cover art
 }
 
 var (
 	s3Client  *s3.S3
 	AppConfig Config
+
+	// --- Prometheus Metrics ---
+	ingestJobs = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "radio_ingest_jobs_total",
+			Help: "Total number of files processed by the ingester",
+		},
+		[]string{"status"},
+	)
+	ingestDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "radio_ingest_duration_seconds",
+			Help:    "Time taken to process a single track",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Println("Starting Radio Ingestion Worker (Deep Clean Mode)...")
+	log.Println("Starting Radio Ingestion Worker (iTunes Enrichment Mode)...")
+
+	prometheus.MustRegister(ingestJobs, ingestDuration)
 
 	loadConfig()
 
 	os.MkdirAll(AppConfig.Server.TempDir, 0755)
 	initB2()
 
-	// Start Polling Loop
+	go func() {
+		port := AppConfig.Server.MetricsPort
+		if port == "" {
+			port = ":9091"
+		}
+		http.Handle("/metrics", promhttp.Handler())
+		log.Printf("📊 Metrics exposed at http://localhost%s/metrics", port)
+		log.Fatal(http.ListenAndServe(port, nil))
+	}()
+
 	ticker := time.NewTicker(time.Duration(AppConfig.Server.PollingInterval) * time.Second)
 	defer ticker.Stop()
 
-	log.Printf("Watcher started on '%s'. Organizing into '%s' every %d seconds...",
-		AppConfig.B2.BucketIngest, AppConfig.B2.BucketProd, AppConfig.Server.PollingInterval)
+	log.Printf("Watcher started on '%s'.", AppConfig.B2.BucketIngest)
 
-	// Check immediately on start
 	processQueue()
 
 	for range ticker.C {
@@ -76,39 +122,42 @@ func main() {
 }
 
 func loadConfig() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
 	viper.SetEnvPrefix("RADIO")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	viper.SetDefault("b2.key_id", "")
-	viper.SetDefault("b2.app_key", "")
-	viper.SetDefault("b2.endpoint", "")
-	viper.SetDefault("b2.region", "")
-	viper.SetDefault("b2.bucket_ingest", "")
-	viper.SetDefault("b2.bucket_prod", "")
+	viper.BindEnv("b2.key_id")
+	viper.BindEnv("b2.app_key")
+	viper.BindEnv("b2.endpoint")
+	viper.BindEnv("b2.region")
+	viper.BindEnv("b2.bucket_ingest")
+	viper.BindEnv("b2.bucket_prod")
+	viper.BindEnv("server.temp_dir")
+	viper.BindEnv("server.polling_interval_seconds")
+	viper.BindEnv("server.metrics_port")
+
 	viper.SetDefault("server.polling_interval_seconds", 10)
 	viper.SetDefault("server.temp_dir", "./temp_processing")
-	viper.SetDefault("server.polling_interval_seconds", 10)
+	viper.SetDefault("server.metrics_port", ":9091")
+
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Println("Warning: Config file not found, relying on ENV")
+			log.Println("Info: config.yaml not found, using Environment Variables only.")
 		} else {
-			log.Fatalf("Error reading config file: %s", err)
+			log.Printf("Warning: Error reading config file: %s", err)
 		}
 	}
+
 	if err := viper.Unmarshal(&AppConfig); err != nil {
 		log.Fatalf("Unable to decode into struct: %v", err)
 	}
-	if AppConfig.Server.PollingInterval <= 0 {
-		log.Println("Config Warning: 'polling_interval_seconds' is 0 or missing. Defaulting to 10 seconds.")
-		AppConfig.Server.PollingInterval = 10
-	}
+
 	if AppConfig.B2.KeyID == "" {
-		log.Fatal("Critical config missing: B2 KeyID")
+		log.Fatal("Critical config missing: B2 KeyID (RADIO_B2_KEY_ID)")
 	}
 }
 
@@ -125,7 +174,6 @@ func initB2() {
 }
 
 func processQueue() {
-	// List objects in Ingest Bucket
 	resp, err := s3Client.ListObjectsV2(&s3.ListObjectsV2Input{
 		Bucket: aws.String(AppConfig.B2.BucketIngest),
 	})
@@ -142,22 +190,45 @@ func processQueue() {
 
 	for _, item := range resp.Contents {
 		key := *item.Key
-		if strings.HasSuffix(key, "/") || !strings.HasSuffix(strings.ToLower(key), ".mp3") {
+		lowerKey := strings.ToLower(key)
+
+		if strings.HasSuffix(key, "/") || !isSupportedFormat(lowerKey) {
 			continue
 		}
 
 		log.Printf("Processing: %s", key)
 		if err := processSingleFile(key); err != nil {
 			log.Printf("❌ FAILED %s: %v", key, err)
+			ingestJobs.WithLabelValues("failure").Inc()
 		} else {
 			log.Printf("✅ ORGANIZED %s", key)
+			ingestJobs.WithLabelValues("success").Inc()
 		}
 	}
 }
 
+func isSupportedFormat(filename string) bool {
+	extensions := []string{
+		".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".wma", ".aiff", ".alac", ".opus",
+	}
+	for _, ext := range extensions {
+		if strings.HasSuffix(filename, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 func processSingleFile(key string) error {
-	localRawPath := filepath.Join(AppConfig.Server.TempDir, "raw_"+filepath.Base(key))
-	localCleanPath := filepath.Join(AppConfig.Server.TempDir, "clean_"+filepath.Base(key))
+	timer := prometheus.NewTimer(ingestDuration)
+	defer timer.ObserveDuration()
+
+	baseName := filepath.Base(key)
+	ext := filepath.Ext(baseName)
+	nameWithoutExt := strings.TrimSuffix(baseName, ext)
+
+	localRawPath := filepath.Join(AppConfig.Server.TempDir, "raw_"+baseName)
+	localCleanPath := filepath.Join(AppConfig.Server.TempDir, "clean_"+nameWithoutExt+".mp3")
 
 	defer os.Remove(localRawPath)
 	defer os.Remove(localCleanPath)
@@ -167,28 +238,58 @@ func processSingleFile(key string) error {
 		return fmt.Errorf("download failed: %w", err)
 	}
 
-	// 2. Extract Metadata (ID3 Tags)
+	// 2. Extract Local Metadata
 	meta, err := getMetadata(localRawPath)
 	if err != nil {
-		log.Printf("Warning: Could not read metadata for %s: %v", key, err)
+		log.Printf("Warning: Could not read local metadata for %s: %v", key, err)
 	}
 
-	// 3. Build Organization Path
+	// 3. ENRICHMENT: Call iTunes if tags are missing
+	if meta.Artist == "" || meta.Title == "" {
+		log.Printf("   🔍 Missing tags. Querying iTunes for: %s", baseName)
+		enriched, err := fetchITunesMetadata(baseName)
+		if err != nil {
+			log.Printf("   ⚠️ iTunes lookup failed: %v", err)
+		} else {
+			// Merge data (iTunes data takes priority if local is empty)
+			if enriched.Artist != "" {
+				meta.Artist = enriched.Artist
+			}
+			if enriched.Title != "" {
+				meta.Title = enriched.Title
+			}
+			if enriched.Album != "" {
+				meta.Album = enriched.Album
+			}
+			if enriched.Genre != "" {
+				meta.Genre = enriched.Genre
+			}
+			if enriched.Year != "" {
+				meta.Year = enriched.Year
+			}
+
+			// iTunes doesn't give "Label/Publisher" in the free API usually,
+			// so we keep local or default.
+			log.Printf("   ✨ Enriched: %s - %s (%s)", meta.Artist, meta.Title, meta.Year)
+		}
+	}
+
+	// 4. Build Path
 	destinationKey := buildOrganizationalPath(meta, key)
 
-	// 4. Normalize & STRIP ALL HEADERS
+	// 5. Normalize
 	log.Printf("   -> Normalizing audio and stripping headers...")
 	if err := normalizeAudio(localRawPath, localCleanPath); err != nil {
 		return fmt.Errorf("normalization failed: %w", err)
 	}
 
-	// 5. Upload
+	// 6. Upload
 	log.Printf("   -> Uploading to: %s", destinationKey)
 	if err := uploadFile(AppConfig.B2.BucketProd, destinationKey, localCleanPath); err != nil {
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
-	// 6. Delete Original
+	// 7. Delete Original
 	_, delErr := s3Client.DeleteObject(&s3.DeleteObjectInput{
 		Bucket: aws.String(AppConfig.B2.BucketIngest),
 		Key:    aws.String(key),
@@ -197,10 +298,79 @@ func processSingleFile(key string) error {
 	return delErr
 }
 
+// --- iTunes Metadata Logic ---
+
+func fetchITunesMetadata(filename string) (Metadata, error) {
+	// Clean the filename to get a search term
+	// e.g. "Daft_Punk-One_More_Time.flac" -> "Daft Punk One More Time"
+	searchTerm := cleanFilenameForSearch(filename)
+
+	// iTunes API URL
+	apiURL := "https://itunes.apple.com/search"
+	u, _ := url.Parse(apiURL)
+	q := u.Query()
+	q.Set("term", searchTerm)
+	q.Set("media", "music")
+	q.Set("entity", "song")
+	q.Set("limit", "1") // We only want the best match
+	u.RawQuery = q.Encode()
+
+	// Make Request
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(u.String())
+	if err != nil {
+		return Metadata{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return Metadata{}, fmt.Errorf("iTunes returned status %d", resp.StatusCode)
+	}
+
+	// Parse Response
+	var result ITunesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return Metadata{}, err
+	}
+
+	if result.ResultCount == 0 || len(result.Results) == 0 {
+		return Metadata{}, fmt.Errorf("no results found for '%s'", searchTerm)
+	}
+
+	track := result.Results[0]
+
+	// Convert Date "2001-03-12T08..." to "2001"
+	year := ""
+	if len(track.ReleaseDate) >= 4 {
+		year = track.ReleaseDate[:4]
+	}
+
+	return Metadata{
+		Artist: track.ArtistName,
+		Title:  track.TrackName,
+		Album:  track.CollectionName,
+		Genre:  track.PrimaryGenreName,
+		Year:   year,
+	}, nil
+}
+
+func cleanFilenameForSearch(filename string) string {
+	// Remove extension
+	ext := filepath.Ext(filename)
+	clean := strings.TrimSuffix(filename, ext)
+
+	// Replace separators with spaces
+	clean = strings.ReplaceAll(clean, "_", " ")
+	clean = strings.ReplaceAll(clean, "-", " ")
+
+	// Remove common junk like "(Original Mix)", "hq", etc if you want to be fancy,
+	// but simple space replacement usually works for iTunes fuzzy search.
+	return clean
+}
+
 // --- Logic Helpers ---
 
 func buildOrganizationalPath(meta Metadata, originalKey string) string {
-	// Defaults
 	genre := "Unknown_Genre"
 	year := "0000"
 	label := "Independent"
@@ -227,7 +397,6 @@ func buildOrganizationalPath(meta Metadata, originalKey string) string {
 		title = sanitize(meta.Title)
 	}
 
-	// Fallback: Use filename if Artist/Title missing
 	if meta.Artist == "" || meta.Title == "" {
 		base := filepath.Base(originalKey)
 		ext := filepath.Ext(base)
@@ -235,7 +404,6 @@ func buildOrganizationalPath(meta Metadata, originalKey string) string {
 		artist = "Unknown"
 	}
 
-	// Format: music/Genre/Year/Label/Artist/Album/Artist-Title.mp3
 	filename := fmt.Sprintf("%s-%s.mp3", artist, title)
 	return fmt.Sprintf("music/%s/%s/%s/%s/%s/%s", genre, year, label, artist, album, filename)
 }
@@ -277,42 +445,37 @@ func getMetadata(path string) (Metadata, error) {
 	}
 
 	tags := data.Format.Tags
-	meta := Metadata{
-		Artist:    tags["artist"],
-		Title:     tags["title"],
-		Album:     tags["album"],
-		Genre:     tags["genre"],
-		Year:      tags["date"],
-		Publisher: tags["publisher"],
+
+	getTag := func(keys ...string) string {
+		for _, k := range keys {
+			if val, ok := tags[k]; ok && val != "" {
+				return val
+			}
+			if val, ok := tags[strings.ToUpper(k)]; ok && val != "" {
+				return val
+			}
+		}
+		return ""
 	}
 
-	if meta.Publisher == "" {
-		if val, ok := tags["organization"]; ok {
-			meta.Publisher = val
-		}
-		if val, ok := tags["copyright"]; ok {
-			meta.Publisher = val
-		}
-	}
-	if meta.Year == "" {
-		if val, ok := tags["year"]; ok {
-			meta.Year = val
-		}
-		if val, ok := tags["TYER"]; ok {
-			meta.Year = val
-		}
+	meta := Metadata{
+		Artist:    getTag("artist", "album_artist"),
+		Title:     getTag("title"),
+		Album:     getTag("album"),
+		Genre:     getTag("genre"),
+		Year:      getTag("date", "year", "TYER", "creation_time"),
+		Publisher: getTag("publisher", "organization", "copyright", "label"),
 	}
 
 	return meta, nil
 }
 
 func normalizeAudio(input, output string) error {
-	// UPDATED: Added flags to strip EVERYTHING non-audio
 	cmd := exec.Command("ffmpeg", "-y", "-i", input,
-		"-map", "0:a:0", // Select only the first audio stream (ignores video/art)
-		"-map_metadata", "-1", // REMOVE Global Metadata (Tags)
-		"-write_xing", "0", // REMOVE Xing Header (VBR header that causes glitches in streams)
-		"-id3v2_version", "0", // DISABLE ID3v2 tags completely
+		"-map", "0:a:0",
+		"-map_metadata", "-1",
+		"-write_xing", "0",
+		"-id3v2_version", "0",
 		"-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
 		"-c:a", "libmp3lame", "-b:a", "192k",
 		output)
