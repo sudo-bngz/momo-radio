@@ -1,5 +1,6 @@
 # --- Stage 1: Build ---
-FROM golang:1.25-alpine AS builder
+# UPDATED: Use Go 1.25 to satisfy go.mod requirement (>= 1.24)
+FROM golang:1.24-alpine AS builder
 
 RUN apk add --no-cache git
 
@@ -10,7 +11,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source code
+# 1. Copy the entry point
 COPY cmd/radio/ ./cmd/radio/
+# 2. CRITICAL: Copy the internal packages
+COPY internal/ ./internal/
 
 # Build the binary
 RUN go build -o /bin/radio cmd/radio/main.go
