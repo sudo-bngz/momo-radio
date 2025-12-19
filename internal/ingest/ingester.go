@@ -12,7 +12,9 @@ import (
 
 	"momo-radio/internal/audio"
 	"momo-radio/internal/config"
+	database "momo-radio/internal/db"
 	"momo-radio/internal/metadata"
+	"momo-radio/internal/models"
 	"momo-radio/internal/organizer"
 	"momo-radio/internal/storage"
 )
@@ -41,10 +43,12 @@ func RegisterMetrics() {
 type Worker struct {
 	cfg     *config.Config
 	storage *storage.Client
+	db      *database.Client
 }
 
-func New(cfg *config.Config, store *storage.Client) *Worker {
-	return &Worker{cfg: cfg, storage: store}
+// Update constructor to accept DB
+func New(cfg *config.Config, store *storage.Client, db *database.Client) *Worker {
+	return &Worker{cfg: cfg, storage: store, db: db}
 }
 
 func (w *Worker) Run() {
@@ -71,7 +75,6 @@ func (w *Worker) processQueue() {
 	}
 
 	for _, key := range keys {
-		// Skip folders or unsupported audio formats
 		if strings.HasSuffix(key, "/") || !audio.IsSupportedFormat(key) {
 			continue
 		}
@@ -95,9 +98,7 @@ func (w *Worker) processFile(key string) error {
 	ext := filepath.Ext(baseName)
 	nameWithoutExt := strings.TrimSuffix(baseName, ext)
 
-	// Local Temp Paths
 	rawPath := filepath.Join(w.cfg.Server.TempDir, "raw_"+baseName)
-	// normalizeAudio always outputs mp3
 	cleanPath := filepath.Join(w.cfg.Server.TempDir, "clean_"+nameWithoutExt+".mp3")
 
 	defer os.Remove(rawPath)
@@ -108,7 +109,6 @@ func (w *Worker) processFile(key string) error {
 	if err != nil {
 		return err
 	}
-	// Stream to file
 	fRaw, err := os.Create(rawPath)
 	if err != nil {
 		obj.Body.Close()
@@ -127,14 +127,13 @@ func (w *Worker) processFile(key string) error {
 		log.Printf("Warning: Could not read metadata for %s: %v", key, err)
 	}
 
-	// 3. Enrichment (iTunes)
+	// 3. Enrichment
 	if meta.Artist == "" || meta.Title == "" {
 		log.Printf("   🔍 Missing tags. Querying iTunes for: %s", baseName)
 		enriched, err := metadata.EnrichViaITunes(baseName)
 		if err != nil {
 			log.Printf("   ⚠️ iTunes lookup failed: %v", err)
 		} else {
-			// Merge enriched data
 			if enriched.Artist != "" {
 				meta.Artist = enriched.Artist
 			}
@@ -158,7 +157,7 @@ func (w *Worker) processFile(key string) error {
 	destinationKey := organizer.BuildPath(meta, key)
 
 	// 5. Normalize
-	log.Printf("   -> Normalizing audio and stripping headers...")
+	log.Printf("   -> Normalizing audio...")
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
 		return err
 	}
@@ -171,10 +170,31 @@ func (w *Worker) processFile(key string) error {
 	}
 	defer fClean.Close()
 
-	if err := w.storage.UploadStreamFile(destinationKey, fClean, "audio/mpeg", "public, max-age=31536000"); err != nil {
+	if err := w.storage.UploadAssetFile(destinationKey, fClean, "audio/mpeg", "public, max-age=31536000"); err != nil {
 		return err
 	}
 
-	// 7. Delete Original
+	// 7. --- PERSIST TO DATABASE (NEW) ---
+	// We map the metadata to our GORM model and save it.
+	track := models.Track{
+		Key:       destinationKey,
+		Title:     meta.Title,
+		Artist:    meta.Artist,
+		Album:     meta.Album,
+		Genre:     meta.Genre,
+		Year:      meta.Year,
+		Publisher: meta.Publisher,
+		Format:    "mp3",
+	}
+
+	// Use FirstOrCreate to update existing entries or create new ones based on the 'Key'
+	if result := w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track); result.Error != nil {
+		log.Printf("❌ Failed to save track to DB: %v", result.Error)
+		// We don't return error here to allow the process to finish cleaning up B2
+	} else {
+		log.Printf("💾 Track saved to Database: %s (ID: %d)", track.Title, track.ID)
+	}
+
+	// 8. Delete Original
 	return w.storage.DeleteIngestFile(key)
 }

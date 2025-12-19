@@ -106,6 +106,17 @@ func (c *Client) UploadStreamFile(key string, body io.ReadSeeker, contentType, c
 	return err
 }
 
+func (c *Client) UploadAssetFile(key string, body io.ReadSeeker, contentType, cacheControl string) error {
+	_, err := c.s3.PutObject(&s3.PutObjectInput{
+		Bucket:       aws.String(c.bucketProd),
+		Key:          aws.String(key),
+		Body:         body,
+		ContentType:  aws.String(contentType),
+		CacheControl: aws.String(cacheControl),
+	})
+	return err
+}
+
 // --- Ingester Methods (ETL Pipeline) ---
 
 // ListIngestFiles returns all keys in the Ingest bucket (No caching)

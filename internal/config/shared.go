@@ -35,6 +35,13 @@ type Config struct {
 		AudioChannels string `mapstructure:"audio_channels"`
 		HLSFlags      string `mapstructure:"hls_flags"`
 	} `mapstructure:"radio"`
+	Database struct {
+		Host     string `mapstructure:"host"`
+		Port     string `mapstructure:"port"`
+		User     string `mapstructure:"user"`
+		Password string `mapstructure:"password"`
+		Name     string `mapstructure:"name"`
+	} `mapstructure:"database"`
 }
 
 func Load() *Config {
@@ -71,6 +78,13 @@ func Load() *Config {
 	viper.SetDefault("server.polling_interval_seconds", 10)
 	viper.SetDefault("server.temp_dir", "./temp_processing")
 	viper.SetDefault("server.metrics_port", ":9091")
+
+	// Register Database keys
+	viper.BindEnv("database.host")
+	viper.BindEnv("database.port")
+	viper.BindEnv("database.user")
+	viper.BindEnv("database.password")
+	viper.BindEnv("database.name")
 
 	// Radio Defaults (Optimized for Live HLS)
 	viper.SetDefault("radio.bitrate", "128k")

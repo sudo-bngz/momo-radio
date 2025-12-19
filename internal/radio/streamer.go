@@ -17,6 +17,7 @@ import (
 
 	"momo-radio/internal/audio"
 	"momo-radio/internal/config"
+	database "momo-radio/internal/db"
 	"momo-radio/internal/dj"
 	"momo-radio/internal/storage"
 )
@@ -47,6 +48,7 @@ func RegisterMetrics() {
 type Engine struct {
 	cfg     *config.Config
 	storage *storage.Client
+	db      *database.Client
 	runID   int64
 }
 
@@ -57,10 +59,11 @@ type CurrentTrack struct {
 	StartedAt int64  `json:"started_at"`
 }
 
-func New(cfg *config.Config, store *storage.Client) *Engine {
+func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine {
 	return &Engine{
 		cfg:     cfg,
 		storage: store,
+		db:      db,
 		runID:   time.Now().Unix(),
 	}
 }
@@ -73,8 +76,8 @@ func (e *Engine) Run() {
 	os.MkdirAll(e.cfg.Radio.SegmentDir, 0755)
 
 	// Decks
-	musicDeck := dj.NewDeck(e.storage, "music/")
-	jingleDeck := dj.NewDeck(e.storage, "station_id/")
+	musicDeck := dj.NewDeck(e.storage, e.db, "music/")
+	jingleDeck := dj.NewDeck(e.storage, e.db, "station_id/")
 
 	// Pipeline
 	pr, pw := io.Pipe()
@@ -232,7 +235,7 @@ func (e *Engine) startRedirectServer() {
 	http.HandleFunc("/listen", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, publicURL, http.StatusFound)
 	})
-	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/_metrics", promhttp.Handler())
 
 	log.Printf("🌍 Helper at %s", port)
 	http.ListenAndServe(port, nil)

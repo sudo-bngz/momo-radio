@@ -11,3 +11,9 @@ server:
   webhook_secret: "YOUR_SECRET_STRING_FROM_B2_CONSOLE"
   temp_dir: "./temp_processing"
   
+database:
+  host: "postgres" # Use "localhost" if running outside Docker
+  port: "5432"
+  user: "radio"
+  password: "radiopassword"
+  name: "radio"
