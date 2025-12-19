@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -150,6 +151,33 @@ func (w *Worker) processFile(key string) error {
 				meta.Year = enriched.Year
 			}
 			log.Printf("   ✨ Enriched: %s - %s (%s)", meta.Artist, meta.Title, meta.Year)
+		}
+	}
+
+	if (meta.Publisher == "" || meta.Publisher == "Independent") && w.cfg.Services.DiscogsToken != "" {
+		log.Printf("   💿 Missing Label. Querying Discogs for: %s - %s", meta.Artist, meta.Title)
+
+		// Use Artist-Title for better search precision if we have them
+		searchTerm := baseName
+		if meta.Artist != "" && meta.Title != "" {
+			searchTerm = fmt.Sprintf("%s - %s", meta.Artist, meta.Title)
+		}
+
+		discogsMeta, err := metadata.EnrichViaDiscogs(searchTerm, w.cfg.Services.DiscogsToken)
+		if err == nil {
+			if discogsMeta.Publisher != "" {
+				meta.Publisher = discogsMeta.Publisher
+				log.Printf("   🏷️  Discogs Found Label: %s", meta.Publisher)
+			}
+			// Discogs is also excellent for Electronic sub-genres (Styles), overwrite if present
+			if discogsMeta.Genre != "" {
+				meta.Genre = discogsMeta.Genre
+			}
+			if discogsMeta.Year != "" && meta.Year == "" {
+				meta.Year = discogsMeta.Year
+			}
+		} else {
+			log.Printf("   ⚠️ Discogs lookup failed: %v", err)
 		}
 	}
 

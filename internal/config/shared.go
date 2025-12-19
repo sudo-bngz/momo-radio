@@ -42,6 +42,9 @@ type Config struct {
 		Password string `mapstructure:"password"`
 		Name     string `mapstructure:"name"`
 	} `mapstructure:"database"`
+	Services struct {
+		DiscogsToken string `mapstructure:"discogs_token"`
+	} `mapstructure:"services"`
 }
 
 func Load() *Config {
@@ -85,6 +88,9 @@ func Load() *Config {
 	viper.BindEnv("database.user")
 	viper.BindEnv("database.password")
 	viper.BindEnv("database.name")
+
+	// Services
+	viper.BindEnv("services.discogs_token")
 
 	// Radio Defaults (Optimized for Live HLS)
 	viper.SetDefault("radio.bitrate", "128k")
