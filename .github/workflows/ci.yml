@@ -1,4 +1,4 @@
-name: GoWebRadio CI/CD
+name: Momo Radio CI/CD
 
 on:
   push:
@@ -63,8 +63,8 @@ jobs:
         include:
           - service: ingester
             dockerfile: docker/Dockerfile.ingest
-          - service: radio
-            dockerfile: docker/Dockerfile.radio
+          - service: streamer
+            dockerfile: docker/Dockerfile.streamer
           - service: api
             dockerfile: docker/Dockerfile.api
 

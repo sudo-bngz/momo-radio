@@ -6,7 +6,7 @@ It features an automated ETL pipeline for music organization, a metadata-rich AP
 
 ## **Architecture**
 
-The system moves from a "Pull" model to a **"Push" model**, treating the Cloud Bucket as the origin server. It now includes a local cache layer to decouple streaming from network latency.
+The system moves from a "Pull" model to a **"Push" model**, treating the Cloud Bucket as the origin server. It includes a local cache layer to decouple streaming from network latency.
 
 <p align="center">  
 <img width="30%" src="./docs/assets/pic/diagram.svg">  
@@ -26,9 +26,11 @@ The system moves from a "Pull" model to a **"Push" model**, treating the Cloud B
 
 The project use Terraform to provision three specific buckets with lifecycle rules (auto-deletion of old stream segments to save costs).
 
+```
 cd infrastructure  
 terraform init  
 terraform apply -var-file="dev.tfvars"
+````
 
 This creates:
 
@@ -38,7 +40,7 @@ This creates:
 
 ### **3. Configuration (config.yaml)**
 
-Create a `config.yaml in the root directory (or mount it in Docker).
+Create a `config.yaml` in the root directory (or mount it in Docker).
 
 ```
 b2:  

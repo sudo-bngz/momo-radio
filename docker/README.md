@@ -1,11 +1,11 @@
-# **🐳 GoWebRadio Docker Deployment**
+# **🐳  Docker Deployment**
 
 This directory contains the Docker configuration to run the **Ingester** and **Radio Engine** as isolated, lightweight containers.
 
 The setup uses a **Multi-Stage Build** process:
 
 1. **Builder Stage:** Compiles the Go binaries using a full Golang image.  
-2. **Runtime Stage:** Deploys the binaries into a tiny Alpine Linux image (\~50MB) with FFmpeg installed.
+2. **Runtime Stage:** Deploys the binaries into a tiny Alpine Linux image (~50MB) with FFmpeg installed.
 
 ## **✅ Prerequisites**
 
@@ -14,17 +14,19 @@ The setup uses a **Multi-Stage Build** process:
 
 ## **🛠️ Configuration**
 
-### **1\. Environment Variables**
+### **1. Environment Variables**
 
 The docker-compose.yml expects your Backblaze credentials to be passed as environment variables.
 
 Create a .env file inside this docker/ directory:
 
-\# docker/.env  
-B2\_KEY\_ID=your\_application\_key\_id\_here  
-B2\_APP\_KEY=your\_application\_key\_here
+```
+# docker/.env  
+B2_KEY_ID=your_application_key_id_here  
+B2_APP_KEY=your_application_key_here
+```
 
-### **2\. Volume Mapping**
+### **2. Volume Mapping**
 
 The containers mount the config.yaml from the parent directory (../config.yaml) into /app/config.yaml inside the container.
 
@@ -36,29 +38,42 @@ The containers mount the config.yaml from the parent directory (../config.yaml) 
 
 Run this command from inside the docker/ directory:
 
-docker-compose up \--build \-d
+```
+docker-compose up --build -d
+```
 
-* \--build: Forces a rebuild of the Go binaries (useful if you changed code).  
-* \-d: Detached mode (runs in the background).
+* --build: Forces a rebuild of the Go binaries (useful if you changed code).  
+* -d: Detached mode (runs in the background).
 
 ### **View Logs**
 
 To see what's happening (FFmpeg progress, uploads, etc.):
 
-\# View logs for both services  
-docker-compose logs \-f
+# View logs for both services
 
-\# View logs for just the radio engine  
-docker-compose logs \-f radio
+```
+docker-compose logs -f
+```
 
-\# View logs for the ingester  
-docker-compose logs \-f ingester
+# View logs for just the radio engine
+
+```
+docker-compose logs -f radio
+```
+
+# View logs for the ingester  
+
+```
+docker-compose logs -f ingester
+```
 
 ### **Stop**
 
 To stop the radio:
 
+```
 docker-compose down
+```
 
 ## **🌐 Networking**
 
