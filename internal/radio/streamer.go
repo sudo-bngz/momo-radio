@@ -128,7 +128,7 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.D
 
 		if err := e.streamFileToPipe(track, output); err != nil {
 			log.Printf("❌ Stream error: %v", err)
-			time.Sleep(2 * time.Second)
+			continue
 		}
 	}
 }

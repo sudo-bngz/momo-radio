@@ -79,7 +79,7 @@ func Load() *Config {
 
 	// Defaults
 	viper.SetDefault("server.polling_interval_seconds", 10)
-	viper.SetDefault("server.temp_dir", "./temp_processing")
+	viper.SetDefault("server.temp_dir", "/tmp/")
 	viper.SetDefault("server.metrics_port", ":9091")
 
 	// Register Database keys

@@ -51,7 +51,7 @@ func (d *Deck) NextTrack() string {
 	track := d.queue[0]
 	d.queue = d.queue[1:]
 
-	// log.Printf("DEBUG: Remaining in %s queue: %d", d.prefix, len(d.queue))
+	log.Printf("DEBUG: Remaining in %s queue: %d", d.prefix, len(d.queue))
 	return track
 }
 
