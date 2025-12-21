@@ -50,5 +50,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: "radio_api"
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      - RADIO_DATABASE_HOST=postgres
+      - RADIO_DATABASE_PORT=5432
+      - RADIO_DATABASE_USER=radio
+      - RADIO_DATABASE_PASSWORD=radiopassword
+      - RADIO_DATABASE_NAME=radio
+      - RADIO_SERVER_METRICS_PORT=:9091
+    volumes:
+      - "${HOME}/radio/volume/config/config.yaml:/app/config.yaml:z"
+    networks:
+      - default
 volumes:
   db_data:

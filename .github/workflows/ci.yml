@@ -65,6 +65,8 @@ jobs:
             dockerfile: docker/Dockerfile.ingest
           - service: radio
             dockerfile: docker/Dockerfile.radio
+          - service: api
+            dockerfile: docker/Dockerfile.api
 
     steps:
       - name: Checkout repository
