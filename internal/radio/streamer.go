@@ -50,6 +50,7 @@ type Engine struct {
 	storage *storage.Client
 	db      *database.Client
 	runID   int64
+	cache   *CacheManager
 }
 
 type CurrentTrack struct {
@@ -59,12 +60,27 @@ type CurrentTrack struct {
 	StartedAt int64  `json:"started_at"`
 }
 
+type s3Adapter struct {
+	store *storage.Client
+}
+
+func (a *s3Adapter) DownloadFile(key string) (io.ReadCloser, error) {
+	obj, err := a.store.DownloadFile(key)
+	if err != nil {
+		return nil, err
+	}
+	return obj.Body, nil
+}
+
 func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine {
+	adapter := &s3Adapter{store: store}
+
 	return &Engine{
 		cfg:     cfg,
 		storage: store,
 		db:      db,
 		runID:   time.Now().Unix(),
+		cache:   NewCacheManager(adapter, cfg.Server.TempDir),
 	}
 }
 
@@ -99,6 +115,12 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.D
 	defer output.Close()
 	songsSinceJingle := 0
 
+	// Use configured prefetch count or default to 5
+	prefetchCount := e.cfg.Radio.PrefetchCount
+	if prefetchCount <= 0 {
+		prefetchCount = 5
+	}
+
 	for {
 		var track string
 
@@ -122,24 +144,49 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.D
 			continue
 		}
 
+		// --- PREFETCH STRATEGY ---
+		// Build list of keys to keep/fetch
+		keys := []string{track}
+
+		// Peek next music tracks
+		if nexts := musicDeck.Peek(prefetchCount); len(nexts) > 0 {
+			keys = append(keys, nexts...)
+		}
+
+		// Trigger background download
+		e.cache.Prefetch(keys)
+
+		// Cleanup old stuff (pass keys we want to keep)
+		go e.cache.Cleanup(keys)
+
 		log.Printf("▶️  Playing: %s", track)
 		tracksPlayed.Inc()
 		go e.updateNowPlaying(track)
 
 		if err := e.streamFileToPipe(track, output); err != nil {
-			log.Printf("❌ Stream error: %v", err)
+			log.Printf("❌ Stream error: %v (Skipping)", err)
 			continue
 		}
 	}
 }
 
 func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
-	obj, err := e.storage.DownloadFile(key)
+	// 1. Get local path (Downloads if not exists, but normally prefetched)
+	localPath, err := e.cache.GetLocalPath(key)
 	if err != nil {
 		return err
 	}
-	defer obj.Body.Close()
-	_, err = io.Copy(pipe, obj.Body)
+
+	// 2. Open local file
+	f, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// 3. Copy from Disk to Pipe (Fast & Stable)
+	// Even if this blocks, it blocks on Disk I/O, not Network.
+	_, err = io.Copy(pipe, f)
 	return err
 }
 

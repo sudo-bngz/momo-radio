@@ -55,6 +55,27 @@ func (d *Deck) NextTrack() string {
 	return track
 }
 
+// Peek returns the next n tracks from the queue without removing them.
+// This is used for prefetching.
+func (d *Deck) Peek(n int) []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if len(d.queue) == 0 {
+		return []string{}
+	}
+
+	limit := n
+	if limit > len(d.queue) {
+		limit = len(d.queue)
+	}
+
+	// Return a copy to prevent data races if the queue is modified later
+	result := make([]string, limit)
+	copy(result, d.queue[:limit])
+	return result
+}
+
 func (d *Deck) refreshAndShuffle() error {
 	var dbTracks []models.Track
 	result := d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%").Find(&dbTracks)

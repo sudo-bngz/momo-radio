@@ -34,6 +34,7 @@ type Config struct {
 		AudioCodec    string `mapstructure:"audio_codec"`
 		AudioChannels string `mapstructure:"audio_channels"`
 		HLSFlags      string `mapstructure:"hls_flags"`
+		PrefetchCount int    `mapstructure:"prefetch_count"`
 	} `mapstructure:"radio"`
 	Database struct {
 		Host     string `mapstructure:"host"`
@@ -76,6 +77,7 @@ func Load() *Config {
 	viper.BindEnv("radio.audio_codec")
 	viper.BindEnv("radio.audio_channels")
 	viper.BindEnv("radio.hls_flags")
+	viper.BindEnv("radio.prefetch_count")
 
 	// Defaults
 	viper.SetDefault("server.polling_interval_seconds", 10)
@@ -104,6 +106,7 @@ func Load() *Config {
 	viper.SetDefault("radio.audio_codec", "aac")
 	viper.SetDefault("radio.audio_channels", "2")
 	viper.SetDefault("radio.hls_flags", "append_list+omit_endlist+temp_file")
+	viper.SetDefault("radio.prefetch_count", 5)
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
