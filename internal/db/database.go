@@ -50,6 +50,7 @@ func (c *Client) AutoMigrate() {
 	err := c.DB.AutoMigrate(
 		&models.Track{},
 		&models.PlayHistory{},
+		&models.Schedule{},
 	)
 	if err != nil {
 		log.Fatalf("Migration failed: %v", err)

@@ -1,7 +1,7 @@
 package dj
 
 import (
-	"crypto/rand" // Secure random number generator
+	"crypto/rand"
 	"log"
 	"math/big"
 	"sync"
@@ -9,76 +9,142 @@ import (
 	database "momo-radio/internal/db"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
+
+	"gorm.io/gorm"
 )
 
 type Deck struct {
-	prefix string
-	tracks []string // The full list of tracks
-	queue  []string // The current "to play" list
-	client *storage.Client
-	db     *database.Client
-	mu     sync.Mutex
+	prefix      string
+	tracks      []string
+	queue       []string
+	client      *storage.Client
+	db          *database.Client
+	mu          sync.Mutex
+	scheduler   *Scheduler
+	currentProg string
 }
 
 func NewDeck(client *storage.Client, db *database.Client, prefix string) *Deck {
+	var sched *Scheduler
+	if prefix == "music/" {
+		sched = NewScheduler(db)
+	}
+
 	return &Deck{
-		client: client,
-		db:     db,
-		prefix: prefix,
-		queue:  make([]string, 0),
+		client:    client,
+		db:        db,
+		prefix:    prefix,
+		queue:     make([]string, 0),
+		scheduler: sched,
 	}
 }
 
-// NextTrack returns a track from the shuffled queue.
-// If the queue is empty, it refetches and reshuffles.
 func (d *Deck) NextTrack() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Refill queue if empty
-	if len(d.queue) == 0 {
-		log.Printf("🔄 Deck empty for %s. Reshuffling library...", d.prefix)
-		if err := d.refreshAndShuffle(); err != nil {
-			log.Printf("❌ Error refreshing deck %s: %v", d.prefix, err)
-			return "" // Caller should handle empty/retry
+	var criteria *ActiveCriteria
+	newProgName := "General Rotation"
+
+	if d.scheduler != nil {
+		criteria = d.scheduler.GetCurrentCriteria()
+		if criteria != nil {
+			newProgName = criteria.Name
 		}
 	}
 
-	// Pop the first item
-	if len(d.queue) == 0 {
-		return "" // Still empty? Library issue.
+	if d.currentProg != newProgName {
+		log.Printf("📻 Program Change: [%s] -> [%s]. Flushing queue.", d.currentProg, newProgName)
+		d.queue = []string{}
+		d.currentProg = newProgName
 	}
+
+	if len(d.queue) == 0 {
+		if err := d.refreshAndShuffle(criteria); err != nil {
+			log.Printf("❌ Error refreshing deck: %v", err)
+			return ""
+		}
+	}
+
+	if len(d.queue) == 0 {
+		return ""
+	}
+
 	track := d.queue[0]
 	d.queue = d.queue[1:]
-
-	log.Printf("DEBUG: Remaining in %s queue: %d", d.prefix, len(d.queue))
 	return track
 }
 
-// Peek returns the next n tracks from the queue without removing them.
-// This is used for prefetching.
 func (d *Deck) Peek(n int) []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
 	if len(d.queue) == 0 {
 		return []string{}
 	}
-
 	limit := n
 	if limit > len(d.queue) {
 		limit = len(d.queue)
 	}
-
-	// Return a copy to prevent data races if the queue is modified later
 	result := make([]string, limit)
 	copy(result, d.queue[:limit])
 	return result
 }
 
-func (d *Deck) refreshAndShuffle() error {
+func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 	var dbTracks []models.Track
-	result := d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%").Find(&dbTracks)
+
+	// Start Query
+	query := d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%")
+
+	// Apply Schedule Filters
+	if criteria != nil {
+		if criteria.Genre != "" {
+			query = query.Where("genre = ?", criteria.Genre)
+		}
+
+		// Use ILIKE for partial matches on Publisher/Label
+		if criteria.Publisher != "" {
+			query = query.Where("publisher ILIKE ?", "%"+criteria.Publisher+"%")
+		}
+
+		if criteria.MinYear > 0 {
+			query = query.Where("year::int >= ?", criteria.MinYear)
+		}
+		if criteria.MaxYear > 0 {
+			query = query.Where("year::int <= ?", criteria.MaxYear)
+		}
+
+		// Multiple Styles (OR logic: track matches ANY of the styles)
+		// Grouped to avoid breaking other AND conditions
+		if len(criteria.Styles) > 0 {
+			query = query.Where(func(db *gorm.DB) *gorm.DB {
+				for i, style := range criteria.Styles {
+					if i == 0 {
+						db = db.Where("genre ILIKE ?", "%"+style+"%")
+					} else {
+						db = db.Or("genre ILIKE ?", "%"+style+"%")
+					}
+				}
+				return db
+			})
+		}
+
+		// Multiple Artists (OR logic: track matches ANY of the artists)
+		if len(criteria.Artists) > 0 {
+			query = query.Where(func(db *gorm.DB) *gorm.DB {
+				for i, artist := range criteria.Artists {
+					if i == 0 {
+						db = db.Where("artist ILIKE ?", "%"+artist+"%")
+					} else {
+						db = db.Or("artist ILIKE ?", "%"+artist+"%")
+					}
+				}
+				return db
+			})
+		}
+	}
+
+	result := query.Find(&dbTracks)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -89,32 +155,23 @@ func (d *Deck) refreshAndShuffle() error {
 	}
 
 	if len(files) == 0 {
+		log.Printf("⚠️ No tracks found for criteria: %s", d.currentProg)
 		return nil
 	}
 
-	// Create a copy to shuffle
+	// Fisher-Yates Shuffle
 	shuffled := make([]string, len(files))
 	copy(shuffled, files)
-
-	// Secure Fisher-Yates Shuffle using crypto/rand
 	n := len(shuffled)
 	for i := n - 1; i > 0; i-- {
-		// Generate a random index from 0 to i (inclusive)
-		jBig, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
-		if err != nil {
-			// Fallback if OS entropy fails (extremely rare)
-			log.Printf("⚠️ Crypto/Rand failed, strictly sequential fallback: %v", err)
-			break
-		}
+		jBig, _ := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
 		j := int(jBig.Int64())
-
-		// Swap
 		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	}
 
 	d.queue = shuffled
 	d.tracks = files
 
-	log.Printf("🃏 Shuffled %d tracks from Database for %s", len(d.tracks), d.prefix)
+	log.Printf("🃏 Loaded & Shuffled %d tracks for program: %s", len(d.queue), d.currentProg)
 	return nil
 }

@@ -20,10 +20,13 @@ func main() {
 	store := storage.New(cfg)
 	db := database.New(cfg)
 
-	// 3. Register Metrics
+	// 3. Run Database Migrations
+	db.AutoMigrate()
+
+	// 4. Register Metrics
 	radio.RegisterMetrics()
 
-	// 4. Start Engine
+	// 5. Start Engine
 	// Pass the database client to the engine so it can be used by the DJ
 	engine := radio.New(cfg, store, db)
 	engine.Run()
