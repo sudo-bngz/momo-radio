@@ -1,38 +1,41 @@
-# --- Stage 1: Build (Go) ---
-FROM golang:1.24-alpine AS builder
-RUN apk add --no-cache git
+FROM golang:1.24-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY cmd/ingester/ ./cmd/ingester/
-COPY internal/ ./internal/
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/ingester cmd/ingester/main.go
+COPY . .
+RUN CGO_ENABLED=0 go build -o /bin/ingester cmd/ingester/main.go
 
-# --- Stage 2: Runtime (Optimized Debian) ---
+# --- Stage 2: Compile Essentia (Tailored for Atom C2750) ---
+FROM debian:bullseye-slim AS essentia-builder
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    build-essential python3-dev python3-numpy git scons pkg-config \
+    libeigen3-dev libfftw3-dev libtag1-dev libsamplerate0-dev libavcodec-dev \
+    libavformat-dev libavutil-dev libyaml-dev
+
+WORKDIR /opt
+RUN git clone --depth 1 https://github.com/MTG/essentia.git
+WORKDIR /opt/essentia
+
+# CRITICAL: We tell the compiler to build for the current CPU features only
+# This will disable AVX and use SSE instead
+ENV CXXFLAGS="-march=x86-64 -mtune=generic -O3"
+ENV CFLAGS="-march=x86-64 -mtune=generic -O3"
+
+RUN python3 waf configure --build-static  --with-cpptests --with-examples
+RUN python3 waf
+RUN python3 waf install
+
+# --- Stage 3: Final Runtime ---
 FROM debian:bullseye-slim
-
-# 1. Install ONLY what is strictly necessary
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    wget \
-    ffmpeg \
-    libyaml-0-2 \
-    libavcodec-extra \
-    libfftw3-3 \
-    libtag1v5 \
-    libsamplerate0 \
-    && apt-get clean \
+    ffmpeg ca-certificates libfftw3-3 libtag1v5 libsamplerate0 libyaml-0-2 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Extract ONLY the specific binary need to save space
-WORKDIR /tmp
-RUN wget -q https://essentia.upf.edu/extractors/essentia-extractors-v2.1_beta2-linux-x86_64.tar.gz \
-    && tar -xzf essentia-extractors-v2.1_beta2-linux-x86_64.tar.gz \
-    && mv essentia-extractors-v2.1_beta2/streaming_extractor_music /usr/local/bin/ \
-    && rm -rf /tmp/*
-
 WORKDIR /app
-COPY --from=builder /bin/ingester /usr/local/bin
-RUN mkdir -p ./temp_processing && chmod +x /usr/local/bin/ingester
+COPY --from=essentia-builder /usr/local/bin/essentia_streaming_extractor_music /usr/local/bin/streaming_extractor_music
+COPY --from=go-builder /bin/ingester /usr/local/bin/ingester
 
-CMD ["/usr/local/bin/ingester"]
+RUN mkdir -p ./temp_processing
+CMD ["ingester"]

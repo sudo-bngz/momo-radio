@@ -42,26 +42,30 @@ type EssentiaJSON struct {
 }
 
 func AnalyzeDeep(path string) (*DeepAnalysis, error) {
-	// Use Absolute Path to prevent binary path resolution errors
 	absPath, _ := filepath.Abs(path)
+
+	// 1. Create a "Safe" temporary WAV file (44.1kHz, Mono)
+	// This uses system's FFmpeg to do the heavy lifting
+	safeWav := absPath + ".safe.wav"
 	jsonPath := absPath + ".json"
 
-	log.Printf("🧪 Starting Essentia analysis on: %s", absPath)
+	log.Printf("🧪 Pre-transcoding to Safe WAV for analysis: %s", filepath.Base(path))
 
-	// 1. Check if file exists and is readable
-	if info, err := os.Stat(absPath); err != nil || info.Size() == 0 {
-		log.Printf("❌ Audio file unreachable or empty: %s", absPath)
-		return nil, fmt.Errorf("file error: %v", err)
+	// Convert to 44100Hz, Mono, 16-bit PCM (the 'gold standard' for Essentia)
+	convCmd := exec.Command("ffmpeg", "-y", "-i", absPath, "-ar", "44100", "-ac", "1", "-f", "wav", safeWav)
+	if out, err := convCmd.CombinedOutput(); err != nil {
+		log.Printf("❌ Pre-transcode failed: %v | %s", err, string(out))
+		return nil, err
 	}
+	defer os.Remove(safeWav) // Clean up the big WAV file after
 
-	// 2. Run the extractor
-	cmd := exec.Command("streaming_extractor_music", absPath, jsonPath)
+	// 2. Run the extractor on the SAFE WAV
+	log.Printf("🚀 Running Essentia on safe WAV...")
+	cmd := exec.Command("streaming_extractor_music", safeWav, jsonPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		// Log the FULL output. If it's a library error, it will show up here.
-		log.Printf("❌ Essentia binary failed: %v", err)
-		log.Printf("📝 Binary Output: %s", string(out))
-		return nil, fmt.Errorf("essentia execution failed")
+		log.Printf("❌ Essentia failed even on WAV: %v\nOutput: %s", err, string(out))
+		return nil, fmt.Errorf("essentia crash")
 	}
 
 	// 3. Read the generated JSON
