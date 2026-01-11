@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -121,14 +120,12 @@ func EnrichViaITunes(filename string) (Track, error) {
 	}, nil
 }
 
-// EnrichViaDiscogs fetches metadata from Discogs (Best for Labels/Publishers)
-// It attempts to find the oldest release to identify the original label.
 func EnrichViaDiscogs(filename, token string) (Track, error) {
 	if token == "" {
 		return Track{}, fmt.Errorf("no discogs token provided")
 	}
 
-	cleanName := utils.CleanFilename(filename)
+	cleanName := CleanQuery(filename) // Use the improved query helper
 	apiURL := "https://api.discogs.com/database/search"
 
 	u, _ := url.Parse(apiURL)
@@ -136,11 +133,10 @@ func EnrichViaDiscogs(filename, token string) (Track, error) {
 	q.Set("q", cleanName)
 	q.Set("type", "release")
 	q.Set("token", token)
-	q.Set("per_page", "50") // Fetch more items to find the oldest
+	q.Set("per_page", "10")
 	u.RawQuery = q.Encode()
 
 	req, _ := http.NewRequest("GET", u.String(), nil)
-	// Discogs requires a User-Agent
 	req.Header.Set("User-Agent", "MomoRadioIngester/0.2")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -154,13 +150,12 @@ func EnrichViaDiscogs(filename, token string) (Track, error) {
 		return Track{}, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	// Define struct to match API response
 	type DiscogsItem struct {
-		Title string   `json:"title"` // Format: Artist - Title
+		Title string   `json:"title"`
 		Label []string `json:"label"`
 		Year  string   `json:"year"`
 		Genre []string `json:"genre"`
-		Style []string `json:"style"` // Electronic sub-genres (e.g. Techno, House)
+		Style []string `json:"style"`
 	}
 
 	var result struct {
@@ -175,56 +170,62 @@ func EnrichViaDiscogs(filename, token string) (Track, error) {
 		return Track{}, fmt.Errorf("no results for '%s'", cleanName)
 	}
 
-	// Filter and Sort Candidates to find the oldest
-	type candidate struct {
-		YearVal int
-		Item    DiscogsItem
-	}
-
-	var candidates []candidate
+	// Logic to pick the best/oldest item
+	var bestItem DiscogsItem
+	foundOldest := false
+	minYear := 9999
 
 	for _, res := range result.Results {
-		// We need a valid year and at least one label
-		if res.Year == "" || len(res.Label) == 0 {
+		if res.Year == "" {
 			continue
 		}
-
-		// Parse year
 		y, err := strconv.Atoi(res.Year)
-		if err != nil {
-			continue // Skip invalid years
+		if err == nil && y < minYear {
+			minYear = y
+			bestItem = res
+			foundOldest = true
 		}
-
-		candidates = append(candidates, candidate{
-			YearVal: y,
-			Item:    res,
-		})
 	}
 
-	var bestItem DiscogsItem
-
-	if len(candidates) > 0 {
-		// Sort by Year Ascending (Oldest first)
-		sort.Slice(candidates, func(i, j int) bool {
-			return candidates[i].YearVal < candidates[j].YearVal
-		})
-		bestItem = candidates[0].Item
-	} else {
-		// Fallback to the first result if no valid dates found
+	if !foundOldest {
 		bestItem = result.Results[0]
 	}
 
 	item := bestItem
 
-	// Parse Artist/Title from Discogs "Artist - Title" format
-	artist := ""
-	title := ""
+	// --- IMPROVED GENRE/STYLE EXTRACTION ---
+	var allTags []string
+
+	// 1. Collect Styles (more specific, e.g., "Minimal", "Deep House")
+	for _, s := range item.Style {
+		allTags = append(allTags, strings.TrimSpace(s))
+	}
+
+	// 2. Collect Genres (broad, e.g., "Electronic"), avoid duplicates
+	for _, g := range item.Genre {
+		gClean := strings.TrimSpace(g)
+		isDup := false
+		for _, existing := range allTags {
+			if strings.EqualFold(existing, gClean) {
+				isDup = true
+				break
+			}
+		}
+		if !isDup {
+			allTags = append(allTags, gClean)
+		}
+	}
+
+	// Join with comma and space for the database: "Minimal, Techno, Electronic"
+	fullGenreString := strings.Join(allTags, ", ")
+
+	// Parse Artist/Title
+	artist, title := "", ""
 	parts := strings.SplitN(item.Title, " - ", 2)
 	if len(parts) == 2 {
-		artist = parts[0]
-		title = parts[1]
+		artist, title = parts[0], parts[1]
 	} else {
-		title = item.Title // Fallback
+		title = item.Title
 	}
 
 	label := ""
@@ -232,19 +233,11 @@ func EnrichViaDiscogs(filename, token string) (Track, error) {
 		label = item.Label[0]
 	}
 
-	genre := ""
-	// Prefer Style (Electronic subgenre) over Genre (General)
-	if len(item.Style) > 0 {
-		genre = item.Style[0]
-	} else if len(item.Genre) > 0 {
-		genre = item.Genre[0]
-	}
-
 	return Track{
 		Artist:    artist,
 		Title:     title,
 		Year:      item.Year,
-		Genre:     genre,
+		Genre:     fullGenreString,
 		Publisher: label,
 	}, nil
 }
