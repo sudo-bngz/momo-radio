@@ -234,3 +234,63 @@ func (w *Worker) processFile(key string) error {
 
 	return w.storage.DeleteIngestFile(key)
 }
+
+// RepairMetadata loops through the DB and updates records using the latest Discogs logic.
+func (w *Worker) RepairMetadata() {
+	log.Println("🛠️ Starting Metadata Repair process...")
+
+	var tracks []models.Track
+	// Find tracks that need fixing (e.g., missing a comma in Genre, or specific bad titles)
+	// You can adjust the WHERE clause to target specific tracks.
+	if err := w.db.DB.Find(&tracks).Error; err != nil {
+		log.Printf("❌ Failed to fetch tracks: %v", err)
+		return
+	}
+
+	log.Printf("🧐 Found %d tracks to analyze.", len(tracks))
+
+	for _, track := range tracks {
+		// Use the 'Key' (the path in storage) as the source of truth for the filename
+		baseName := filepath.Base(track.Key)
+
+		// 1. Re-parse the filename using your new sanitizer
+		_, cleanTitle := utils.SanitizeFilename(baseName)
+		searchQuery := metadata.CleanQuery(baseName)
+
+		log.Printf("🔄 Processing: %s -> Query: %s", track.Key, searchQuery)
+
+		// 2. Query Discogs using the new logic (comma-separated styles)
+		newMeta, err := metadata.EnrichViaDiscogs(baseName, w.cfg.Services.DiscogsToken)
+		if err != nil {
+			log.Printf("   ⚠️ Skipping %s: %v", baseName, err)
+			continue
+		}
+
+		// 3. Apply the "Unknown 3" fix logic
+		finalTitle := cleanTitle
+		if cleanTitle == "" || cleanTitle == baseName {
+			finalTitle = newMeta.Title
+		}
+
+		// 4. Update the database record
+		err = w.db.DB.Model(&track).Updates(models.Track{
+			Artist:    newMeta.Artist,
+			Title:     finalTitle,
+			Album:     newMeta.Album,
+			Genre:     newMeta.Genre, // This now contains the full style list
+			Publisher: newMeta.Publisher,
+			Year:      newMeta.Year,
+		}).Error
+
+		if err != nil {
+			log.Printf("   ❌ Failed to update DB for %s: %v", track.Key, err)
+		} else {
+			log.Printf("   ✅ Updated: %s - %s [%s]", track.Artist, track.Title, track.Genre)
+		}
+
+		// 5. Be kind to the Discogs API (Rate limiting)
+		time.Sleep(2 * time.Second)
+	}
+
+	log.Println("✨ Metadata Repair complete!")
+}
