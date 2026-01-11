@@ -93,6 +93,16 @@ func Validate(path string) error {
 		return os.ErrInvalid
 	}
 
+	if strings.HasSuffix(strings.ToLower(path), ".flac") {
+		log.Printf("   🧹 Cleaning FLAC headers...")
+		clean := path + ".tmp"
+		// Strip non-native ID3 blocks from FLAC without re-encoding
+		cmd := exec.Command("ffmpeg", "-y", "-i", path, "-c", "copy", "-map_metadata", "0", clean)
+		if err := cmd.Run(); err == nil {
+			os.Rename(clean, path)
+		}
+	}
+
 	// 2. Check Integrity via ffprobe
 	// We try to read the duration; if the file is truncated, this returns an error status
 	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)

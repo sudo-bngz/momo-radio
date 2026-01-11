@@ -22,7 +22,7 @@ type Track struct {
 	Publisher string `json:"publisher"`
 }
 
-// GetLocal reads tags from a file using ffprobe
+// GetLocal reads tags from a file using ffprobe.
 func GetLocal(path string) (Track, error) {
 	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", path)
 	out, err := cmd.Output()
@@ -42,23 +42,23 @@ func GetLocal(path string) (Track, error) {
 	tags := data.Format.Tags
 	getTag := func(keys ...string) string {
 		for _, k := range keys {
-			if val := tags[k]; val != "" {
-				return val
-			}
-			if val := tags[strings.ToUpper(k)]; val != "" {
-				return val
+			// Check standard, uppercase, and lowercase (ID3 vs Vorbis)
+			for _, variant := range []string{k, strings.ToUpper(k), strings.ToLower(k)} {
+				if val := tags[variant]; val != "" {
+					return strings.TrimSpace(val)
+				}
 			}
 		}
 		return ""
 	}
 
 	return Track{
-		Artist:    getTag("artist", "album_artist"),
-		Title:     getTag("title"),
-		Album:     getTag("album"),
-		Genre:     getTag("genre"),
-		Year:      getTag("date", "year", "TYER", "creation_time"),
-		Publisher: getTag("publisher", "organization", "copyright", "label"),
+		Artist:    getTag("artist", "albumartist", "TPE1", "TPE2"),
+		Title:     getTag("title", "TIT2"),
+		Album:     getTag("album", "TALB"),
+		Genre:     getTag("genre", "TCON"),
+		Year:      getTag("date", "year", "TYER", "TDRC", "creation_time"),
+		Publisher: getTag("publisher", "label", "organization", "TPUB"),
 	}, nil
 }
 
@@ -120,17 +120,17 @@ func EnrichViaITunes(filename string) (Track, error) {
 	}, nil
 }
 
-func EnrichViaDiscogs(filename, token string) (Track, error) {
+func EnrichViaDiscogs(artist, title, token string) (Track, error) {
 	if token == "" {
 		return Track{}, fmt.Errorf("no discogs token provided")
 	}
 
-	cleanName := CleanQuery(filename) // Use the improved query helper
 	apiURL := "https://api.discogs.com/database/search"
 
 	u, _ := url.Parse(apiURL)
 	q := u.Query()
-	q.Set("q", cleanName)
+	q.Set("artist", artist)
+	q.Set("track", title)
 	q.Set("type", "release")
 	q.Set("token", token)
 	q.Set("per_page", "10")
@@ -167,7 +167,7 @@ func EnrichViaDiscogs(filename, token string) (Track, error) {
 	}
 
 	if len(result.Results) == 0 {
-		return Track{}, fmt.Errorf("no results for '%s'", cleanName)
+		return Track{}, fmt.Errorf("no results for '%s'", artist+" "+title)
 	}
 
 	// Logic to pick the best/oldest item
@@ -220,7 +220,7 @@ func EnrichViaDiscogs(filename, token string) (Track, error) {
 	fullGenreString := strings.Join(allTags, ", ")
 
 	// Parse Artist/Title
-	artist, title := "", ""
+	artist, title = "", ""
 	parts := strings.SplitN(item.Title, " - ", 2)
 	if len(parts) == 2 {
 		artist, title = parts[0], parts[1]

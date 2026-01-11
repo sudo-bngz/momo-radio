@@ -96,116 +96,108 @@ func (w *Worker) processFile(key string) error {
 	defer timer.ObserveDuration()
 
 	baseName := filepath.Base(key)
-
-	// 1. PRE-FLIGHT FILENAME PARSING
-	cleanArtist, cleanTitle := utils.SanitizeFilename(baseName)
-
-	searchQuery := metadata.CleanQuery(baseName)
-	log.Printf("   🔍 Parsing: '%s'", baseName)
-	log.Printf("   🔍 Pre-flight query: '%s' | Parsed Artist: '%s' | Parsed Title: '%s'", searchQuery, cleanArtist, cleanTitle)
-
 	ext := filepath.Ext(baseName)
 	nameWithoutExt := strings.TrimSuffix(baseName, ext)
+
 	rawPath := filepath.Join(w.cfg.Server.TempDir, "raw_"+baseName)
 	cleanPath := filepath.Join(w.cfg.Server.TempDir, "clean_"+nameWithoutExt+".mp3")
 
 	defer os.Remove(rawPath)
 	defer os.Remove(cleanPath)
 
-	// 2. Download & Validate
+	// 1. Download & Validate
 	obj, err := w.storage.DownloadIngestFile(key)
 	if err != nil {
 		return err
 	}
-	fRaw, err := os.Create(rawPath)
-	if err != nil {
-		obj.Body.Close()
-		return err
-	}
-	_, err = io.Copy(fRaw, obj.Body)
+	fRaw, _ := os.Create(rawPath)
+	io.Copy(fRaw, obj.Body)
 	obj.Body.Close()
 	fRaw.Close()
 
 	if err := audio.Validate(rawPath); err != nil {
-		log.Printf("   ❌ Skipping corrupted file: %s", baseName)
 		return w.storage.DeleteIngestFile(key)
 	}
 
+	// 2. Get Local Metadata (Internal Tags)
 	meta, _ := metadata.GetLocal(rawPath)
 
-	// DISCOGS PRIMARY
+	// Determine our "Best Knowledge" for searching
+	searchArtist := meta.Artist
+	searchTitle := meta.Title
+	searchAlbum := meta.Album
+
+	// 3. Fallback to Filename if tags are missing
+	if searchArtist == "" || searchTitle == "" {
+		log.Printf("   🔍 ID3 tags missing. Falling back to filename parsing...")
+		cleanA, cleanT := utils.SanitizeFilename(baseName)
+		if searchArtist == "" {
+			searchArtist = cleanA
+		}
+		if searchTitle == "" {
+			searchTitle = cleanT
+		}
+	}
+
+	// 4. Querying Discogs for others metadata
 	if w.cfg.Services.DiscogsToken != "" {
-		log.Printf("   💿 Querying Discogs: %s", searchQuery)
-		discogsMeta, err := metadata.EnrichViaDiscogs(searchQuery, w.cfg.Services.DiscogsToken)
+		log.Printf("   💿 Querying Discogs: [%s] - [%s] (Album: %s)", searchArtist, searchTitle, searchAlbum)
+		// Pass searchAlbum to the API for better matching
+		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, w.cfg.Services.DiscogsToken)
 
 		if err == nil {
-			// MERGE STRATEGY:
-			// We trust Discogs for secondary info (Label, Year, Genre).
-			meta.Publisher = discogsMeta.Publisher
-			meta.Genre = discogsMeta.Genre
-			meta.Year = discogsMeta.Year
-			meta.Album = discogsMeta.Album
-
-			// FIX: Prevent Album name (e.g., "Unknown 3") from becoming the Title.
-			// If we have a good parsed title from the filename, we use it.
-			if cleanTitle != "" {
-				meta.Title = cleanTitle
-				// If the API returned a different title, it's likely the Album name.
-				if discogsMeta.Title != cleanTitle && meta.Album == "" {
-					meta.Album = discogsMeta.Title
-				}
-			} else {
-				meta.Title = discogsMeta.Title
+			meta.Genre = enriched.Genre
+			meta.Publisher = enriched.Publisher
+			if meta.Year == "" {
+				meta.Year = enriched.Year
 			}
+			if meta.Album == "" {
+				meta.Album = enriched.Album
+			} // Only fill if we didn't have it
 
+			// Only update Artist/Title if they were blank
 			if meta.Artist == "" {
-				meta.Artist = discogsMeta.Artist
+				meta.Artist = enriched.Artist
+			}
+			if meta.Title == "" {
+				meta.Title = enriched.Title
 			}
 
-			log.Printf("   ✨ Discogs Found: %s - %s (Album: %s)", meta.Artist, meta.Title, meta.Album)
-		} else {
-			log.Printf("   ⚠️ Discogs failed: %v", err)
+			log.Printf("   ✨ Enriched: %s - %s [%s]", meta.Artist, meta.Title, meta.Genre)
+		}
+	} else {
+		log.Printf("   ⚠️ Discogs failed: %v", err)
 
-			// ITUNES FALLBACK
-			itunesMeta, err := metadata.EnrichViaITunes(searchQuery)
-			if err == nil {
-				if meta.Artist == "" {
-					meta.Artist = itunesMeta.Artist
-				}
-				if meta.Title == "" {
-					meta.Title = itunesMeta.Title
-				}
-				if meta.Album == "" {
-					meta.Album = itunesMeta.Album
-				}
-				if meta.Genre == "" {
-					meta.Genre = itunesMeta.Genre
-				}
-				if meta.Year == "" {
-					meta.Year = itunesMeta.Year
-				}
-				log.Printf("   ✨ iTunes Found: %s - %s", meta.Artist, meta.Title)
+		// ITUNES FALLBACK
+		itunesMeta, err := metadata.EnrichViaITunes(searchArtist + " " + searchTitle)
+		if err == nil {
+			if meta.Artist == "" {
+				meta.Artist = itunesMeta.Artist
 			}
+			if meta.Title == "" {
+				meta.Title = itunesMeta.Title
+			}
+			if meta.Album == "" {
+				meta.Album = itunesMeta.Album
+			}
+			if meta.Genre == "" {
+				meta.Genre = itunesMeta.Genre
+			}
+			if meta.Year == "" {
+				meta.Year = itunesMeta.Year
+			}
+			log.Printf("   ✨ iTunes Found: %s - %s", meta.Artist, meta.Title)
 		}
 	}
 
-	// 4. FINAL CLEANUP
-	// Use sanitized filename parts if APIs still left fields blank
+	// 4. STEP 4: Fallback cleanup
 	if meta.Artist == "" {
-		if cleanArtist != "" {
-			meta.Artist = cleanArtist
-		} else {
-			meta.Artist = "Unknown Artist"
-		}
+		meta.Artist = "Unknown Artist"
 	}
 	if meta.Title == "" {
-		if cleanTitle != "" {
-			meta.Title = cleanTitle
-		} else {
-			meta.Title = nameWithoutExt
-		}
+		meta.Title = nameWithoutExt
 	}
-	// 7. Normalize & Upload (Safe now because we validated earlier)
+	// 5. Normalize & Upload (Safe now because validated earlier)
 	log.Printf("   -> Normalizing audio...")
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
 		log.Printf("❌ Normalization failed: %v", err)
@@ -235,61 +227,63 @@ func (w *Worker) processFile(key string) error {
 	return w.storage.DeleteIngestFile(key)
 }
 
-// RepairMetadata loops through the DB and updates records using the latest Discogs logic.
+// RepairMetadata loops through the DB and updates records using only existing DB data.
 func (w *Worker) RepairMetadata() {
 	log.Println("🛠️ Starting Metadata Repair process...")
 
 	var tracks []models.Track
-	// Find tracks that need fixing (e.g., missing a comma in Genre, or specific bad titles)
-	// You can adjust the WHERE clause to target specific tracks.
+	// Fetch all tracks. You could also use .Where("genre NOT LIKE '%, %'")
+	// to only target tracks without the new comma-separated style list.
 	if err := w.db.DB.Find(&tracks).Error; err != nil {
 		log.Printf("❌ Failed to fetch tracks: %v", err)
 		return
 	}
 
-	log.Printf("🧐 Found %d tracks to analyze.", len(tracks))
+	log.Printf("🧐 Found %d tracks in database to analyze.", len(tracks))
 
 	for _, track := range tracks {
-		// Use the 'Key' (the path in storage) as the source of truth for the filename
-		baseName := filepath.Base(track.Key)
+		// Use the current DB fields for the query.
+		// If Artist/Title are missing, we fall back to the filename (Key).
+		searchArtist := track.Artist
+		searchTitle := track.Title
+		searchAlbum := track.Album
 
-		// 1. Re-parse the filename using your new sanitizer
-		_, cleanTitle := utils.SanitizeFilename(baseName)
-		searchQuery := metadata.CleanQuery(baseName)
+		if searchArtist == "" || searchTitle == "" {
+			log.Printf("   🔍 DB fields missing for %s, parsing filename...", track.Key)
+			searchArtist, searchTitle = utils.SanitizeFilename(filepath.Base(track.Key))
+		}
 
-		log.Printf("🔄 Processing: %s -> Query: %s", track.Key, searchQuery)
+		log.Printf("🔄 Repairing: [%s] - [%s] (Album: %s)", searchArtist, searchTitle, searchAlbum)
 
-		// 2. Query Discogs using the new logic (comma-separated styles)
-		newMeta, err := metadata.EnrichViaDiscogs(baseName, w.cfg.Services.DiscogsToken)
+		// 1. Query Discogs using DB data (Aggressive style/genre extraction)
+		// We pass the search terms to the improved EnrichViaDiscogs (artist, title, album, token)
+		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, w.cfg.Services.DiscogsToken)
 		if err != nil {
-			log.Printf("   ⚠️ Skipping %s: %v", baseName, err)
+			log.Printf("   ⚠️ Discogs lookup failed for %s: %v", track.Key, err)
+			// Still sleep to respect rate limits even on failure
+			time.Sleep(1 * time.Second)
 			continue
 		}
 
-		// 3. Apply the "Unknown 3" fix logic
-		finalTitle := cleanTitle
-		if cleanTitle == "" || cleanTitle == baseName {
-			finalTitle = newMeta.Title
-		}
-
-		// 4. Update the database record
+		// 2. Update the record
+		// We update the Genre, Publisher, Year, and Album.
+		// We keep the Artist/Title from the DB if they were already good.
 		err = w.db.DB.Model(&track).Updates(models.Track{
-			Artist:    newMeta.Artist,
-			Title:     finalTitle,
-			Album:     newMeta.Album,
-			Genre:     newMeta.Genre, // This now contains the full style list
-			Publisher: newMeta.Publisher,
-			Year:      newMeta.Year,
+			Genre:     enriched.Genre,     // Get the new deep Styles (e.g. "Minimal, Techno")
+			Publisher: enriched.Publisher, // Correct the Label
+			Year:      enriched.Year,      // Ensure original release year
+			Album:     enriched.Album,     // Fill in the EP/Album name if missing
 		}).Error
 
 		if err != nil {
-			log.Printf("   ❌ Failed to update DB for %s: %v", track.Key, err)
+			log.Printf("   ❌ Failed to update DB for ID %d: %v", track.ID, err)
 		} else {
-			log.Printf("   ✅ Updated: %s - %s [%s]", track.Artist, track.Title, track.Genre)
+			log.Printf("   ✅ Repaired: %s - %s [%s]", track.Artist, track.Title, enriched.Genre)
 		}
 
-		// 5. Be kind to the Discogs API (Rate limiting)
-		time.Sleep(2 * time.Second)
+		// 3. Rate limiting: Discogs allows 60 req/min with a token.
+		// 1 second is safe and faster than 2 seconds.
+		time.Sleep(1 * time.Second)
 	}
 
 	log.Println("✨ Metadata Repair complete!")
