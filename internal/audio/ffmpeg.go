@@ -78,3 +78,28 @@ func Normalize(input, output string) error {
 		output)
 	return cmd.Run()
 }
+
+// Validate checks if the file is large enough and decodable by ffmpeg
+func Validate(path string) error {
+	// 1. Check File Size (e.g., must be > 500KB to be a valid track)
+	info, err := os.Stat(path)
+	if err != nil {
+		log.Printf("❌ File system error: %v", err)
+		return err
+	}
+
+	if info.Size() < 500*1024 {
+		log.Printf("⚠️ File too small (%d bytes). Likely a failed download.", info.Size())
+		return os.ErrInvalid
+	}
+
+	// 2. Check Integrity via ffprobe
+	// We try to read the duration; if the file is truncated, this returns an error status
+	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
+	if err := cmd.Run(); err != nil {
+		log.Printf("❌ Integrity check failed (corrupt stream): %v", err)
+		return err
+	}
+
+	return nil
+}

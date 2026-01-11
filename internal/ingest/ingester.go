@@ -1,7 +1,6 @@
 package ingest
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -117,80 +116,74 @@ func (w *Worker) processFile(key string) error {
 	}
 	_, err = io.Copy(fRaw, obj.Body)
 	obj.Body.Close()
-	fRaw.Close()
-	if err != nil {
-		return err
+	fRaw.Close() // Close before validation so ffprobe can read it
+
+	// 2. NEW: Validation before processing
+	log.Printf("   🔍 Validating integrity: %s", baseName)
+	if err := audio.Validate(rawPath); err != nil {
+		log.Printf("   ❌ Skipping corrupted file: %s", baseName)
+		return w.storage.DeleteIngestFile(key) // Remove from queue so it doesn't loop
 	}
 
-	// 2. Extract Metadata
+	// 3. Extract Metadata (Initial local check)
 	meta, err := metadata.GetLocal(rawPath)
 	if err != nil {
-		log.Printf("Warning: Could not read metadata for %s: %v", key, err)
+		log.Printf("Warning: Local tags unreadable for %s", key)
 	}
 
-	// 3. Enrichment
+	// 4. Enrichment: DISCOGS FIRST
+	if w.cfg.Services.DiscogsToken != "" {
+		log.Printf("   💿 Querying Discogs (Primary): %s", baseName)
+		discogsMeta, err := metadata.EnrichViaDiscogs(baseName, w.cfg.Services.DiscogsToken)
+		if err == nil && (discogsMeta.Artist != "" || discogsMeta.Title != "") {
+			meta = discogsMeta // Prefer Discogs for all fields
+			log.Printf("   ✨ Discogs Found: %s - %s", meta.Artist, meta.Title)
+		} else {
+			log.Printf("   ⚠️ Discogs failed/no results for: %s", baseName)
+		}
+	}
+
+	// 5. Enrichment: ITUNES FALLBACK
 	if meta.Artist == "" || meta.Title == "" {
-		log.Printf("   🔍 Missing tags. Querying iTunes for: %s", baseName)
-		enriched, err := metadata.EnrichViaITunes(baseName)
-		if err != nil {
-			log.Printf("   ⚠️ iTunes lookup failed: %v", err)
-		} else {
-			if enriched.Artist != "" {
-				meta.Artist = enriched.Artist
+		log.Printf("   🔍 Fallback: Querying iTunes for: %s", baseName)
+		itunesMeta, err := metadata.EnrichViaITunes(baseName)
+		if err == nil && (itunesMeta.Artist != "" || itunesMeta.Title != "") {
+			// Fill missing fields with iTunes data
+			if meta.Artist == "" {
+				meta.Artist = itunesMeta.Artist
 			}
-			if enriched.Title != "" {
-				meta.Title = enriched.Title
+			if meta.Title == "" {
+				meta.Title = itunesMeta.Title
 			}
-			if enriched.Album != "" {
-				meta.Album = enriched.Album
+			if meta.Album == "" {
+				meta.Album = itunesMeta.Album
 			}
-			if enriched.Genre != "" {
-				meta.Genre = enriched.Genre
+			if meta.Genre == "" {
+				meta.Genre = itunesMeta.Genre
 			}
-			if enriched.Year != "" {
-				meta.Year = enriched.Year
+			if meta.Year == "" {
+				meta.Year = itunesMeta.Year
 			}
-			log.Printf("   ✨ Enriched: %s - %s (%s)", meta.Artist, meta.Title, meta.Year)
+			log.Printf("   ✨ iTunes Found: %s - %s", meta.Artist, meta.Title)
 		}
 	}
 
-	if (meta.Publisher == "" || meta.Publisher == "Independent") && w.cfg.Services.DiscogsToken != "" {
-		log.Printf("   💿 Missing Label. Querying Discogs for: %s - %s", meta.Artist, meta.Title)
-
-		// Use Artist-Title for better search precision if we have them
-		searchTerm := baseName
-		if meta.Artist != "" && meta.Title != "" {
-			searchTerm = fmt.Sprintf("%s - %s", meta.Artist, meta.Title)
-		}
-
-		discogsMeta, err := metadata.EnrichViaDiscogs(searchTerm, w.cfg.Services.DiscogsToken)
-		if err == nil {
-			if discogsMeta.Publisher != "" {
-				meta.Publisher = discogsMeta.Publisher
-				log.Printf("   🏷️  Discogs Found Label: %s", meta.Publisher)
-			}
-			// Discogs is also excellent for Electronic sub-genres (Styles), overwrite if present
-			if discogsMeta.Genre != "" {
-				meta.Genre = discogsMeta.Genre
-			}
-			if discogsMeta.Year != "" && meta.Year == "" {
-				meta.Year = discogsMeta.Year
-			}
-		} else {
-			log.Printf("   ⚠️ Discogs lookup failed: %v", err)
-		}
+	// 6. Final check: Use filename if still empty
+	if meta.Artist == "" {
+		meta.Artist = "Unknown Artist"
+	}
+	if meta.Title == "" {
+		meta.Title = nameWithoutExt
 	}
 
-	// 4. Build Path
-	destinationKey := organizer.BuildPath(meta, key)
-
-	// 5. Normalize
+	// 7. Normalize & Upload (Safe now because we validated earlier)
 	log.Printf("   -> Normalizing audio...")
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
+		log.Printf("❌ Normalization failed: %v", err)
 		return err
 	}
 
-	// 6. Upload
+	destinationKey := organizer.BuildPath(meta, key)
 	log.Printf("   -> Uploading to: %s", destinationKey)
 	fClean, err := os.Open(cleanPath)
 	if err != nil {
@@ -202,27 +195,13 @@ func (w *Worker) processFile(key string) error {
 		return err
 	}
 
-	// 7. --- PERSIST TO DATABASE (NEW) ---
-	// We map the metadata to our GORM model and save it.
+	// 8. DB Persistence
 	track := models.Track{
-		Key:       destinationKey,
-		Title:     meta.Title,
-		Artist:    meta.Artist,
-		Album:     meta.Album,
-		Genre:     meta.Genre,
-		Year:      meta.Year,
-		Publisher: meta.Publisher,
-		Format:    "mp3",
+		Key: destinationKey, Title: meta.Title, Artist: meta.Artist,
+		Album: meta.Album, Genre: meta.Genre, Year: meta.Year,
+		Publisher: meta.Publisher, Format: "mp3",
 	}
+	w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track)
 
-	// Use FirstOrCreate to update existing entries or create new ones based on the 'Key'
-	if result := w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track); result.Error != nil {
-		log.Printf("❌ Failed to save track to DB: %v", result.Error)
-		// We don't return error here to allow the process to finish cleaning up B2
-	} else {
-		log.Printf("💾 Track saved to Database: %s (ID: %d)", track.Title, track.ID)
-	}
-
-	// 8. Delete Original
 	return w.storage.DeleteIngestFile(key)
 }
