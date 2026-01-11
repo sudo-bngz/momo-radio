@@ -17,6 +17,7 @@ import (
 	"momo-radio/internal/models"
 	"momo-radio/internal/organizer"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
 )
 
 var (
@@ -95,16 +96,23 @@ func (w *Worker) processFile(key string) error {
 	defer timer.ObserveDuration()
 
 	baseName := filepath.Base(key)
+
+	// 1. PRE-FLIGHT FILENAME PARSING
+	cleanArtist, cleanTitle := utils.SanitizeFilename(baseName)
+
+	searchQuery := metadata.CleanQuery(baseName)
+	log.Printf("   🔍 Parsing: '%s'", baseName)
+	log.Printf("   🔍 Pre-flight query: '%s' | Parsed Artist: '%s' | Parsed Title: '%s'", searchQuery, cleanArtist, cleanTitle)
+
 	ext := filepath.Ext(baseName)
 	nameWithoutExt := strings.TrimSuffix(baseName, ext)
-
 	rawPath := filepath.Join(w.cfg.Server.TempDir, "raw_"+baseName)
 	cleanPath := filepath.Join(w.cfg.Server.TempDir, "clean_"+nameWithoutExt+".mp3")
 
 	defer os.Remove(rawPath)
 	defer os.Remove(cleanPath)
 
-	// 1. Download
+	// 2. Download & Validate
 	obj, err := w.storage.DownloadIngestFile(key)
 	if err != nil {
 		return err
@@ -116,66 +124,87 @@ func (w *Worker) processFile(key string) error {
 	}
 	_, err = io.Copy(fRaw, obj.Body)
 	obj.Body.Close()
-	fRaw.Close() // Close before validation so ffprobe can read it
+	fRaw.Close()
 
-	// 2. NEW: Validation before processing
-	log.Printf("   🔍 Validating integrity: %s", baseName)
 	if err := audio.Validate(rawPath); err != nil {
 		log.Printf("   ❌ Skipping corrupted file: %s", baseName)
-		return w.storage.DeleteIngestFile(key) // Remove from queue so it doesn't loop
+		return w.storage.DeleteIngestFile(key)
 	}
 
-	// 3. Extract Metadata (Initial local check)
-	meta, err := metadata.GetLocal(rawPath)
-	if err != nil {
-		log.Printf("Warning: Local tags unreadable for %s", key)
-	}
+	meta, _ := metadata.GetLocal(rawPath)
 
-	// 4. Enrichment: DISCOGS FIRST
+	// DISCOGS PRIMARY
 	if w.cfg.Services.DiscogsToken != "" {
-		log.Printf("   💿 Querying Discogs (Primary): %s", baseName)
-		discogsMeta, err := metadata.EnrichViaDiscogs(baseName, w.cfg.Services.DiscogsToken)
-		if err == nil && (discogsMeta.Artist != "" || discogsMeta.Title != "") {
-			meta = discogsMeta // Prefer Discogs for all fields
-			log.Printf("   ✨ Discogs Found: %s - %s", meta.Artist, meta.Title)
-		} else {
-			log.Printf("   ⚠️ Discogs failed/no results for: %s", baseName)
-		}
-	}
+		log.Printf("   💿 Querying Discogs: %s", searchQuery)
+		discogsMeta, err := metadata.EnrichViaDiscogs(searchQuery, w.cfg.Services.DiscogsToken)
 
-	// 5. Enrichment: ITUNES FALLBACK
-	if meta.Artist == "" || meta.Title == "" {
-		log.Printf("   🔍 Fallback: Querying iTunes for: %s", baseName)
-		itunesMeta, err := metadata.EnrichViaITunes(baseName)
-		if err == nil && (itunesMeta.Artist != "" || itunesMeta.Title != "") {
-			// Fill missing fields with iTunes data
+		if err == nil {
+			// MERGE STRATEGY:
+			// We trust Discogs for secondary info (Label, Year, Genre).
+			meta.Publisher = discogsMeta.Publisher
+			meta.Genre = discogsMeta.Genre
+			meta.Year = discogsMeta.Year
+			meta.Album = discogsMeta.Album
+
+			// FIX: Prevent Album name (e.g., "Unknown 3") from becoming the Title.
+			// If we have a good parsed title from the filename, we use it.
+			if cleanTitle != "" {
+				meta.Title = cleanTitle
+				// If the API returned a different title, it's likely the Album name.
+				if discogsMeta.Title != cleanTitle && meta.Album == "" {
+					meta.Album = discogsMeta.Title
+				}
+			} else {
+				meta.Title = discogsMeta.Title
+			}
+
 			if meta.Artist == "" {
-				meta.Artist = itunesMeta.Artist
+				meta.Artist = discogsMeta.Artist
 			}
-			if meta.Title == "" {
-				meta.Title = itunesMeta.Title
+
+			log.Printf("   ✨ Discogs Found: %s - %s (Album: %s)", meta.Artist, meta.Title, meta.Album)
+		} else {
+			log.Printf("   ⚠️ Discogs failed: %v", err)
+
+			// ITUNES FALLBACK
+			itunesMeta, err := metadata.EnrichViaITunes(searchQuery)
+			if err == nil {
+				if meta.Artist == "" {
+					meta.Artist = itunesMeta.Artist
+				}
+				if meta.Title == "" {
+					meta.Title = itunesMeta.Title
+				}
+				if meta.Album == "" {
+					meta.Album = itunesMeta.Album
+				}
+				if meta.Genre == "" {
+					meta.Genre = itunesMeta.Genre
+				}
+				if meta.Year == "" {
+					meta.Year = itunesMeta.Year
+				}
+				log.Printf("   ✨ iTunes Found: %s - %s", meta.Artist, meta.Title)
 			}
-			if meta.Album == "" {
-				meta.Album = itunesMeta.Album
-			}
-			if meta.Genre == "" {
-				meta.Genre = itunesMeta.Genre
-			}
-			if meta.Year == "" {
-				meta.Year = itunesMeta.Year
-			}
-			log.Printf("   ✨ iTunes Found: %s - %s", meta.Artist, meta.Title)
 		}
 	}
 
-	// 6. Final check: Use filename if still empty
+	// 4. FINAL CLEANUP
+	// Use sanitized filename parts if APIs still left fields blank
 	if meta.Artist == "" {
-		meta.Artist = "Unknown Artist"
+		if cleanArtist != "" {
+			meta.Artist = cleanArtist
+		} else {
+			meta.Artist = "Unknown Artist"
+		}
 	}
 	if meta.Title == "" {
-		meta.Title = nameWithoutExt
+		if cleanTitle != "" {
+			meta.Title = cleanTitle
+		} else {
+			meta.Title = nameWithoutExt
+		}
 	}
-
 	// 7. Normalize & Upload (Safe now because we validated earlier)
 	log.Printf("   -> Normalizing audio...")
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {

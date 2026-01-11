@@ -6,6 +6,17 @@ import (
 	"strings"
 )
 
+var (
+	// Regex to match leading track numbers (e.g., "01-", "01 ", "A1 -", "02.")
+	reTrackPrefix = regexp.MustCompile(`^([A-Z]?\d+[.\-_ ]+)+`)
+
+	// Regex to match common "Scene" release suffixes to ignore (e.g., "-dh", "-mycel", "_web")
+	reJunkSuffix = regexp.MustCompile(`(?i)[-_](dh|mycel|klan|web|vinyl|stream|boss|320kbps)$`)
+
+	// Regex to clean up "feat." or "ft."
+	reFeat = regexp.MustCompile(`(?i)\s(\(|\[)?f(ea)?t\.?`)
+)
+
 func CleanFilename(filename string) string {
 	ext := filepath.Ext(filename)
 	clean := strings.TrimSuffix(filename, ext)
@@ -31,4 +42,53 @@ func SanitizeYear(dateStr string) string {
 		}
 	}
 	return "0000"
+}
+
+// SanitizeFilename extracts a clean "Artist" and "Title" from various filename formats
+func SanitizeFilename(baseName string) (string, string) {
+	// 1. Remove extension
+	name := strings.TrimSuffix(baseName, filepath.Ext(baseName))
+
+	// 2. Normalize separators: Replace underscores and double dashes with standard " - "
+	// Example: "chaos_in_the_cbd--green_dove" -> "chaos in the cbd - green dove"
+	name = strings.ReplaceAll(name, "--", " - ")
+	name = strings.ReplaceAll(name, "_", " ")
+
+	// 3. Remove known junk suffixes (Scene tags)
+	name = reJunkSuffix.ReplaceAllString(name, "")
+
+	// 4. Remove leading track numbers (e.g., "01-", "A1 ")
+	name = reTrackPrefix.ReplaceAllString(name, "")
+
+	// 5. Clean up extra whitespace
+	name = strings.TrimSpace(name)
+
+	// 6. Heuristic Split
+	// We look for " - " as the primary separator.
+	parts := strings.Split(name, " - ")
+
+	var artist, title string
+
+	if len(parts) >= 3 {
+		// Format: Artist - Album - Title (e.g., Fumiya Tanaka - Unknown Possibility - Ant Win Chain)
+		artist = strings.TrimSpace(parts[0])
+		title = strings.TrimSpace(parts[len(parts)-1]) // Take the last part as title
+	} else if len(parts) == 2 {
+		// Format: Artist - Title
+		artist = strings.TrimSpace(parts[0])
+		title = strings.TrimSpace(parts[1])
+	} else {
+		// Fallback: Can't split, return whole name as title (or try to guess)
+		title = name
+	}
+
+	// 7. Clean Title Extras (Remove "(Original Mix)", "(Beats Mix)", etc. for better search)
+	if idx := strings.Index(title, "("); idx != -1 {
+		title = strings.TrimSpace(title[:idx])
+	}
+	if idx := strings.Index(title, "["); idx != -1 {
+		title = strings.TrimSpace(title[:idx])
+	}
+
+	return artist, title
 }
