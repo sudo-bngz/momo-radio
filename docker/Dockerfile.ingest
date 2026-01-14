@@ -1,37 +1,38 @@
-# --- Stage 1: Build ---
+# --- Stage 1: Build (Go) ---
 FROM golang:1.24-alpine AS builder
-
-# Install build tools
 RUN apk add --no-cache git
-
 WORKDIR /src
-
-# Cache dependencies
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Copy source code
-# 1. Copy the entry point
 COPY cmd/ingester/ ./cmd/ingester/
-# 2. CRITICAL: Copy the internal packages so the compiler can find them
 COPY internal/ ./internal/
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/ingester cmd/ingester/main.go
 
-# Build the binary
-RUN go build -o /bin/ingester cmd/ingester/main.go
+# --- Stage 2: Runtime (Optimized Debian) ---
+FROM debian:bullseye-slim
 
-# --- Stage 2: Runtime ---
-FROM alpine:3.19
+# 1. Install ONLY what is strictly necessary
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    wget \
+    ffmpeg \
+    libyaml-0-2 \
+    libavcodec-extra \
+    libfftw3-3 \
+    libtag1v5 \
+    libsamplerate0 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# CRITICAL: Install FFmpeg and SSL Certificates
-RUN apk add --no-cache ffmpeg ca-certificates bash
+# 2. Extract ONLY the specific binary need to save space
+WORKDIR /tmp
+RUN wget -q https://essentia.upf.edu/extractors/essentia-extractors-v2.1_beta2-linux-x86_64.tar.gz \
+    && tar -xzf essentia-extractors-v2.1_beta2-linux-x86_64.tar.gz \
+    && mv essentia-extractors-v2.1_beta2/streaming_extractor_music /usr/local/bin/ \
+    && rm -rf /tmp/*
 
 WORKDIR /app
+COPY --from=builder /bin/ingester /usr/local/bin
+RUN mkdir -p ./temp_processing && chmod +x /usr/local/bin/ingester
 
-# Copy the binary from the builder stage
-COPY --from=builder /bin/ingester .
-
-# Create temp directory for processing
-RUN mkdir -p ./temp_processing
-
-# Run
-CMD ["./ingester"]
+CMD ["/usr/local/bin/ingester"]

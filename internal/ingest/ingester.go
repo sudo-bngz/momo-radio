@@ -42,14 +42,15 @@ func RegisterMetrics() {
 }
 
 type Worker struct {
-	cfg     *config.Config
-	storage *storage.Client
-	db      *database.Client
+	cfg         *config.Config
+	storage     *storage.Client
+	db          *database.Client
+	analysisSem chan struct{}
 }
 
 // Update constructor to accept DB
 func New(cfg *config.Config, store *storage.Client, db *database.Client) *Worker {
-	return &Worker{cfg: cfg, storage: store, db: db}
+	return &Worker{cfg: cfg, storage: store, db: db, analysisSem: make(chan struct{}, 2)}
 }
 
 func (w *Worker) Run() {
@@ -121,6 +122,25 @@ func (w *Worker) processFile(key string) error {
 
 	// 2. Get Local Metadata (Internal Tags)
 	meta, _ := metadata.GetLocal(rawPath)
+
+	// 4. DEEP ACOUSTIC ANALYSIS (Essentia)
+	// Run this BEFORE normalization/transcoding to get the best math results.
+	log.Printf("   🎼 Performing Deep Acoustic Analysis on original %s...", ext)
+
+	// Acquire semaphore to limit CPU usage (max 2 concurrent analyses)
+	w.analysisSem <- struct{}{}
+	analysis, err := audio.AnalyzeDeep(rawPath)
+	<-w.analysisSem // Release
+
+	if err == nil {
+		meta.BPM = analysis.BPM
+		meta.MusicalKey = analysis.MusicalKey
+		meta.Scale = analysis.Scale
+		meta.Danceability = analysis.Danceability
+		meta.Loudness = analysis.Loudness
+		meta.Duration = analysis.Duration
+		log.Printf("   📊 Result: %.2f BPM | Key: %s %s", analysis.BPM, analysis.MusicalKey, analysis.Scale)
+	}
 
 	// Determine our "Best Knowledge" for searching
 	searchArtist := meta.Artist
@@ -218,9 +238,20 @@ func (w *Worker) processFile(key string) error {
 
 	// 8. DB Persistence
 	track := models.Track{
-		Key: destinationKey, Title: meta.Title, Artist: meta.Artist,
-		Album: meta.Album, Genre: meta.Genre, Year: meta.Year,
-		Publisher: meta.Publisher, Format: "mp3",
+		Key:          destinationKey,
+		Title:        meta.Title,
+		Artist:       meta.Artist,
+		Album:        meta.Album,
+		Genre:        meta.Genre,
+		Year:         meta.Year,
+		Publisher:    meta.Publisher,
+		Format:       "mp3",
+		BPM:          meta.BPM,
+		Duration:     meta.Duration,
+		MusicalKey:   meta.MusicalKey,
+		Scale:        meta.Scale,
+		Danceability: meta.Danceability,
+		Loudness:     meta.Loudness,
 	}
 	w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track)
 

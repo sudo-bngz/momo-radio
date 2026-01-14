@@ -1,0 +1,54 @@
+# --- Stage 1: Build (Go) ---
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache git
+
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY cmd/ingester/ ./cmd/ingester/
+COPY internal/ ./internal/
+
+# Build a static binary
+# We use CGO_ENABLED=0 to ensure the binary is independent of the host C libraries
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/ingester cmd/ingester/main.go
+
+# --- Stage 2: Runtime (Custom Debian + Essentia + Go) ---
+FROM debian:bookworm-slim
+
+# 1. Install minimal runtime dependencies + FFmpeg (essential for audio processing)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    wget \
+    ffmpeg \
+    libyaml-0-2 \
+    libfftw3-3 \
+    libtag1v5 \
+    libsamplerate0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Download and Extract the Essentia binaries
+WORKDIR /tmp
+RUN wget https://essentia.upf.edu/extractors/essentia-extractors-v2.1_beta2-linux-x86_64.tar.gz \
+    && tar -xzf essentia-extractors-v2.1_beta2-linux-x86_64.tar.gz \
+    && mv essentia-extractors-v2.1_beta2/* /usr/local/bin/ \
+    && rm -rf /tmp/essentia-extractors-*
+
+# 3. Setup workspace
+WORKDIR /app
+
+# Copy the Go binary from the builder stage
+COPY --from=builder /bin/ingester .
+
+# Create necessary directories
+RUN mkdir -p ./temp_processing ./music_library
+
+# Final check: ensure everything is executable
+RUN chmod +x ./ingester
+
+# Run the Go application
+CMD ["./ingester"]

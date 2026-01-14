@@ -24,6 +24,18 @@ type Track struct {
 	Bitrate  int
 	Format   string // mp3, flac, etc.
 
+	// Acoustic
+	BPM          float64 `gorm:"index"`   // e.g., 123.96
+	MusicalKey   string  `gorm:"size:10"` // e.g., "D", "G#"
+	Scale        string  `gorm:"size:10"` // e.g., "major", "minor"
+	Danceability float64 // Score from 0 to 3+
+	Loudness     float64 // average_loudness (0.0 to 1.0)
+	Energy       float64 // Derived or integrated loudness (LUFS)
+
+	// Extended tags
+	CatalogNumber string // e.g., "TOYT009"
+	Mood          string `gorm:"index"` // Derived: "Calm", "Energetic", "Dark", etc.
+
 	// Radio Logic
 	LastPlayedAt *time.Time `gorm:"index"` // Nullable, helps with rotation logic
 	PlayCount    uint       `gorm:"default:0"`

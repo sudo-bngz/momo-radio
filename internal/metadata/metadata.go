@@ -14,12 +14,18 @@ import (
 )
 
 type Track struct {
-	Artist    string `json:"artist"`
-	Title     string `json:"title"`
-	Genre     string `json:"genre"`
-	Album     string `json:"album"`
-	Year      string `json:"year"`
-	Publisher string `json:"publisher"`
+	Artist       string  `json:"artist"`
+	Title        string  `json:"title"`
+	Genre        string  `json:"genre"`
+	Album        string  `json:"album"`
+	Year         string  `json:"year"`
+	Publisher    string  `json:"publisher"`
+	BPM          float64 `json:"bpm"`
+	Duration     float64 `json:"duration"`
+	MusicalKey   string  `json:"musical_key"`
+	Scale        string  `json:"scale"`
+	Danceability float64 `json:"danceability"`
+	Loudness     float64 `json:"loudness"`
 }
 
 // GetLocal reads tags from a file using ffprobe.
