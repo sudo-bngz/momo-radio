@@ -39,15 +39,16 @@ type Track struct {
 	Mood          string `gorm:"index"` // Derived: "Calm", "Energetic", "Dark", etc.
 
 	// Radio Logic
-	LastPlayedAt *time.Time `gorm:"index"` // Nullable, helps with rotation logic
-	PlayCount    uint       `gorm:"default:0"`
+	PlayCount  int        `gorm:"default:0"`
+	LastPlayed *time.Time `gorm:"index"`
 }
 
 // PlayHistory records every time a track is broadcast
 type PlayHistory struct {
 	gorm.Model
-	TrackID       uint
-	Track         Track
-	PlayedAt      time.Time `gorm:"index"`
-	ListenerCount int       // Optional: Snapshotted from Icecast at playtime
+	TrackID    uint
+	Track      Track
+	PlayedAt   time.Time  `gorm:"index"`
+	PlayCount  int        `gorm:"default:0"`
+	LastPlayed *time.Time `gorm:"index"`
 }

@@ -14,11 +14,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gorm.io/gorm"
 
 	"momo-radio/internal/audio"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/dj"
+	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
 )
 
@@ -162,11 +164,41 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.D
 		log.Printf("▶️  Playing: %s", track)
 		tracksPlayed.Inc()
 		go e.updateNowPlaying(track)
+		go e.recordTrackPlay(track)
 
 		if err := e.streamFileToPipe(track, output); err != nil {
 			log.Printf("❌ Stream error: %v (Skipping)", err)
 			continue
 		}
+	}
+}
+
+func (e *Engine) recordTrackPlay(key string) {
+	now := time.Now()
+
+	// 1. Update global stats (PlayCount and LastPlayed)
+	var track models.Track
+	err := e.db.DB.Model(&track).
+		Where("key = ?", key).
+		Updates(map[string]any{
+			"play_count":  gorm.Expr("play_count + 1"),
+			"last_played": now,
+		}).First(&track).Error // .First() helps us get the TrackID for the next step
+
+	if err != nil {
+		log.Printf("⚠️  DB Error updating track stats for %s: %v", key, err)
+		return
+	}
+
+	// 2. Insert into PlayHistory using the discovered TrackID
+	history := models.PlayHistory{
+		TrackID:  track.ID,
+		PlayedAt: now,
+		// ListenerCount: getLiveListeners(), // Add this later if needed
+	}
+
+	if err := e.db.DB.Create(&history).Error; err != nil {
+		log.Printf("⚠️  DB Error creating play history for ID %d: %v", track.ID, err)
 	}
 }
 
