@@ -11,7 +11,6 @@ import (
 
 func BuildPath(meta metadata.Track, originalKey string) string {
 	genre := utils.Sanitize(meta.Genre, "Unknown_Genre")
-	year := utils.SanitizeYear(meta.Year)
 	label := utils.Sanitize(meta.Publisher, "Independent")
 	album := utils.Sanitize(meta.Album, "Unknown_Album")
 	artist := utils.Sanitize(meta.Artist, "Unknown_Artist")
@@ -26,6 +25,6 @@ func BuildPath(meta metadata.Track, originalKey string) string {
 	}
 
 	filename := fmt.Sprintf("%s-%s.mp3", artist, title)
-	// music/Genre/Year/Label/Artist/Album/Artist-Title.mp3
-	return fmt.Sprintf("music/%s/%s/%s/%s/%s/%s", genre, year, label, artist, album, filename)
+
+	return fmt.Sprintf("music/%s/%s/%s/%s/%s", genre, label, artist, album, filename)
 }

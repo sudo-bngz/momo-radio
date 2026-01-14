@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -17,6 +16,7 @@ type Track struct {
 	Artist        string  `json:"artist"`
 	Title         string  `json:"title"`
 	Genre         string  `json:"genre"`
+	Style         string  `json:"style"`
 	Album         string  `json:"album"`
 	Year          string  `json:"year"`
 	Country       string  `json:"country"`
@@ -133,21 +133,21 @@ func EnrichViaDiscogs(artist, title, token string) (Track, error) {
 		return Track{}, fmt.Errorf("no discogs token provided")
 	}
 
-	apiURL := "https://api.discogs.com/database/search"
+	client := &http.Client{Timeout: 10 * time.Second}
 
-	u, _ := url.Parse(apiURL)
+	// --- STEP 1: SEARCH ---
+	// Find the specific Release ID
+	searchURL := "https://api.discogs.com/database/search"
+	u, _ := url.Parse(searchURL)
 	q := u.Query()
-	q.Set("artist", artist)
-	q.Set("track", title)
-	q.Set("type", "release")
+	q.Set("q", fmt.Sprintf("%s %s", artist, title))
+	q.Set("type", "release") // Target specific releases, not masters
 	q.Set("token", token)
-	q.Set("per_page", "10")
 	u.RawQuery = q.Encode()
 
 	req, _ := http.NewRequest("GET", u.String(), nil)
 	req.Header.Set("User-Agent", "MomoRadioIngester/0.2")
 
-	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return Track{}, err
@@ -155,102 +155,121 @@ func EnrichViaDiscogs(artist, title, token string) (Track, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return Track{}, fmt.Errorf("status %d", resp.StatusCode)
+		return Track{}, fmt.Errorf("discogs search status %d", resp.StatusCode)
 	}
 
-	type DiscogsItem struct {
-		Title   string   `json:"title"`
-		Label   []string `json:"label"`
-		Catno   string   `json:"catno"`
-		Year    string   `json:"year"`
-		Country string   `json:"country"`
-		Genre   []string `json:"genre"`
-		Style   []string `json:"style"`
+	// Minimal struct to extract the Resource URL for the next step
+	var searchResult struct {
+		Results []struct {
+			ResourceURL string `json:"resource_url"`
+		} `json:"results"`
 	}
 
-	var result struct {
-		Results []DiscogsItem `json:"results"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&searchResult); err != nil {
 		return Track{}, err
 	}
 
-	if len(result.Results) == 0 {
-		return Track{}, fmt.Errorf("no results for '%s'", artist+" "+title)
+	if len(searchResult.Results) == 0 {
+		return Track{}, fmt.Errorf("no results found for '%s - %s'", artist, title)
 	}
 
-	// Logic to pick the best/oldest item
-	var bestItem DiscogsItem
-	foundOldest := false
-	minYear := 9999
+	// --- STEP 2: FETCH DETAILS ---
+	// Use the Resource URL to get the full metadata (Catalog Number, Country, etc.)
+	detailsURL := searchResult.Results[0].ResourceURL
 
-	for _, res := range result.Results {
-		if res.Year == "" {
-			continue
-		}
-		y, err := strconv.Atoi(res.Year)
-		if err == nil && y < minYear {
-			minYear = y
-			bestItem = res
-			foundOldest = true
-		}
-	}
-
-	if !foundOldest {
-		bestItem = result.Results[0]
-	}
-
-	item := bestItem
-
-	// --- IMPROVED GENRE/STYLE EXTRACTION ---
-	var allTags []string
-
-	// 1. Collect Styles (more specific, e.g., "Minimal", "Deep House")
-	for _, s := range item.Style {
-		allTags = append(allTags, strings.TrimSpace(s))
-	}
-
-	// 2. Collect Genres (broad, e.g., "Electronic"), avoid duplicates
-	for _, g := range item.Genre {
-		gClean := strings.TrimSpace(g)
-		isDup := false
-		for _, existing := range allTags {
-			if strings.EqualFold(existing, gClean) {
-				isDup = true
-				break
-			}
-		}
-		if !isDup {
-			allTags = append(allTags, gClean)
-		}
-	}
-
-	// Join with comma and space for the database: "Minimal, Techno, Electronic"
-	fullGenreString := strings.Join(allTags, ", ")
-
-	// Parse Artist/Title
-	artist, title = "", ""
-	parts := strings.SplitN(item.Title, " - ", 2)
-	if len(parts) == 2 {
-		artist, title = parts[0], parts[1]
+	// Append token correctly depending on existing query params
+	if strings.Contains(detailsURL, "?") {
+		detailsURL += "&token=" + token
 	} else {
-		title = item.Title
+		detailsURL += "?token=" + token
 	}
 
-	label := ""
-	if len(item.Label) > 0 {
-		label = item.Label[0]
+	reqDetails, _ := http.NewRequest("GET", detailsURL, nil)
+	reqDetails.Header.Set("User-Agent", "MomoRadioIngester/0.2")
+
+	respDetails, err := client.Do(reqDetails)
+	if err != nil {
+		return Track{}, err
 	}
+	defer respDetails.Body.Close()
+
+	if respDetails.StatusCode != 200 {
+		return Track{}, fmt.Errorf("discogs details status %d", respDetails.StatusCode)
+	}
+
+	// Struct for the detailed release data
+	var release struct {
+		Title   string      `json:"title"`
+		Year    interface{} `json:"year"`
+		Country string      `json:"country"`
+		Styles  []string    `json:"styles"`
+		Genres  []string    `json:"genres"`
+		Labels  []struct {
+			Name  string `json:"name"`
+			Catno string `json:"catno"`
+		} `json:"labels"`
+		Artists []struct {
+			Name string `json:"name"`
+		} `json:"artists"`
+	}
+
+	if err := json.NewDecoder(respDetails.Body).Decode(&release); err != nil {
+		return Track{}, err
+	}
+
+	var yearStr string
+	switch v := release.Year.(type) {
+	case float64:
+		yearStr = fmt.Sprintf("%.0f", v) // Convert number 1999 to "1999"
+	case string:
+		yearStr = v
+	default:
+		yearStr = ""
+	}
+
+	// --- MAPPING LOGIC ---
+
+	// 1. Artist Cleaning: Sometimes Discogs returns "Artist (2)", we want just "Artist"
+	// Ideally, we keep your original input 'artist' unless it was empty/unknown.
+	finalArtist := artist
+	if len(release.Artists) > 0 {
+		// Simple heuristic: if input was vague, take the specific one
+		// Otherwise, stick to your filename parsing to avoid "[a=Name]" garbage.
+		// For now, we trust the release data but strip potential suffixes like " (2)"
+		name := release.Artists[0].Name
+		if idx := strings.Index(name, " ("); idx != -1 {
+			name = name[:idx]
+		}
+		finalArtist = name
+	}
+
+	// 2. Publisher & Catalog Number
+	publisher := ""
+	catNo := ""
+	if len(release.Labels) > 0 {
+		publisher = release.Labels[0].Name
+		catNo = release.Labels[0].Catno
+	}
+
+	// 3. Country Fallback
+	country := release.Country
+	if country == "" {
+		country = "Unknown"
+	}
+
+	// 4. Join Lists
+	genreStr := strings.Join(release.Genres, ", ")
+	styleStr := strings.Join(release.Styles, ", ")
 
 	return Track{
-		Artist:        artist,
-		Title:         title,
-		Year:          item.Year,
-		Genre:         fullGenreString,
-		Publisher:     label,
-		Country:       item.Country,
-		CatalogNumber: item.Catno,
+		Artist:        finalArtist,
+		Title:         release.Title,
+		Year:          yearStr,
+		Genre:         genreStr, // Broad: "Electronic"
+		Style:         styleStr, // Specific: "Deep House, Minimal"
+		Publisher:     publisher,
+		Country:       country,
+		CatalogNumber: strings.ToUpper(catNo),
 	}, nil
 }
 
