@@ -10,6 +10,8 @@ import (
 	database "momo-radio/internal/db"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
+
+	"gorm.io/gorm"
 )
 
 type Deck struct {
@@ -85,17 +87,35 @@ func (d *Deck) Peek(n int) []string {
 	copy(result, d.queue[:limit])
 	return result
 }
+
 func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 	var dbTracks []models.Track
 
-	// 1. Base Query
+	// --- 1. ARTIST SEPARATION LOGIC ---
+	// Look at the last 5 tracks played to create a lockout list
+	var recentHistory []models.PlayHistory
+	var excludedArtists []string
+	d.db.DB.Preload("Track").Order("played_at DESC").Limit(5).Find(&recentHistory)
+	for _, h := range recentHistory {
+		if h.Track.Artist != "" {
+			excludedArtists = append(excludedArtists, h.Track.Artist)
+		}
+	}
+
+	// --- 2. THE MAIN SMART QUERY ---
+	// Start with the mandatory prefix (separates music from jingles)
 	query := d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%")
 
-	// 2. EXCLUSION: Skip tracks played in the last 4 hours
+	// Apply Repetition Protection (4h window)
 	fourHoursAgo := time.Now().Add(-4 * time.Hour)
 	query = query.Where("last_played IS NULL OR last_played < ?", fourHoursAgo)
 
-	// 3. APPLY FILTERS (Genre, Year, etc.)
+	// Apply Artist Separation
+	if len(excludedArtists) > 0 {
+		query = query.Where("artist NOT IN ?", excludedArtists)
+	}
+
+	// Apply Schedule Filters (Genre, Year, etc.)
 	if criteria != nil {
 		if criteria.Genre != "" {
 			query = query.Where("genre = ?", criteria.Genre)
@@ -109,42 +129,57 @@ func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 		if criteria.MaxYear > 0 {
 			query = query.Where("year::int <= ?", criteria.MaxYear)
 		}
+
+		// Styles and Artists OR logic
+		if len(criteria.Styles) > 0 {
+			query = query.Where(func(db *gorm.DB) *gorm.DB {
+				for i, style := range criteria.Styles {
+					if i == 0 {
+						db = db.Where("genre ILIKE ?", "%"+style+"%")
+					} else {
+						db = db.Or("genre ILIKE ?", "%"+style+"%")
+					}
+				}
+				return db
+			})
+		}
 	}
 
-	// 4. RANDOM SELECTION:
+	// EXECUTE: Get 100 random tracks that pass all strict rules
 	result := query.Order("RANDOM()").Limit(100).Find(&dbTracks)
-	if result.Error != nil {
-		return result.Error
-	}
 
-	// 5. FALLBACK: If library is small and everything was played in 4h
-	if len(dbTracks) == 0 {
-		log.Printf("⚠️ No tracks available outside 4h window. Picking oldest available.")
+	// --- 3. EMERGENCY FALLBACK ---
+	// If result is empty (library too small or filters too strict), we IGNORE rules
+	// but KEEP the prefix so we don't play jingles as music.
+	if result.Error != nil || len(dbTracks) == 0 {
+		log.Printf("⚠️ Rules too strict for [%s]. Falling back to oldest tracks.", d.prefix)
 		d.db.DB.Model(&models.Track{}).
-			Where("key LIKE ?", d.prefix+"%").
-			Order("last_played ASC").
-			Limit(50).
+			Where("key LIKE ?", d.prefix+"%"). // Mandatory prefix check
+			Order("last_played ASC").          // Get songs that waited the longest
+			Limit(100).
 			Find(&dbTracks)
 	}
 
-	var files []string
-	for _, t := range dbTracks {
-		files = append(files, t.Key)
+	// --- 4. SHUFFLE & LOAD ---
+	if len(dbTracks) == 0 {
+		log.Printf("❌ CRITICAL: No tracks found in DB for prefix: %s", d.prefix)
+		return nil
 	}
 
-	// 6. Final In-Memory Shuffle (Fisher-Yates)
-	shuffled := make([]string, len(files))
-	copy(shuffled, files)
-	n := len(shuffled)
+	// Fisher-Yates Shuffle the final batch in-memory
+	n := len(dbTracks)
 	for i := n - 1; i > 0; i-- {
 		jBig, _ := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
 		j := int(jBig.Int64())
-		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		dbTracks[i], dbTracks[j] = dbTracks[j], dbTracks[i]
 	}
 
-	d.queue = shuffled
-	d.tracks = files
+	// Fill the queue
+	d.queue = make([]string, len(dbTracks))
+	for i, t := range dbTracks {
+		d.queue[i] = t.Key
+	}
 
-	log.Printf("🃏 True Shuffle: Loaded %d tracks for: %s", len(d.queue), d.currentProg)
+	log.Printf("🃏 Deck Ready: [%s] | Tracks: %d | Artist Separation: %d songs", d.currentProg, len(d.queue), len(excludedArtists))
 	return nil
 }
