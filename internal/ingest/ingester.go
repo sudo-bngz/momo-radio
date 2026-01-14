@@ -238,20 +238,22 @@ func (w *Worker) processFile(key string) error {
 
 	// 8. DB Persistence
 	track := models.Track{
-		Key:          destinationKey,
-		Title:        meta.Title,
-		Artist:       meta.Artist,
-		Album:        meta.Album,
-		Genre:        meta.Genre,
-		Year:         meta.Year,
-		Publisher:    meta.Publisher,
-		Format:       "mp3",
-		BPM:          meta.BPM,
-		Duration:     meta.Duration,
-		MusicalKey:   meta.MusicalKey,
-		Scale:        meta.Scale,
-		Danceability: meta.Danceability,
-		Loudness:     meta.Loudness,
+		Key:           destinationKey,
+		Title:         meta.Title,
+		Artist:        meta.Artist,
+		Album:         meta.Album,
+		Genre:         meta.Genre,
+		Year:          meta.Year,
+		Publisher:     meta.Publisher,
+		CatalogNumber: meta.CatalogNumber,
+		Country:       meta.Country,
+		Format:        "mp3",
+		BPM:           meta.BPM,
+		Duration:      meta.Duration,
+		MusicalKey:    meta.MusicalKey,
+		Scale:         meta.Scale,
+		Danceability:  meta.Danceability,
+		Loudness:      meta.Loudness,
 	}
 	w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track)
 

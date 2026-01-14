@@ -16,8 +16,10 @@ type Track struct {
 	Artist    string `gorm:"index"`
 	Album     string
 	Genre     string `gorm:"index"`
+	Style     string `gorm:"index"`
 	Year      string
 	Publisher string // Label
+	Country   string `gorm:"size:100"`
 
 	// Tech Details
 	Duration float64 // In seconds (extracted via ffprobe)
@@ -33,7 +35,7 @@ type Track struct {
 	Energy       float64 // Derived or integrated loudness (LUFS)
 
 	// Extended tags
-	CatalogNumber string // e.g., "TOYT009"
+	CatalogNumber string `gorm:"index"` // e.g., "TOYT009"
 	Mood          string `gorm:"index"` // Derived: "Calm", "Energetic", "Dark", etc.
 
 	// Radio Logic
