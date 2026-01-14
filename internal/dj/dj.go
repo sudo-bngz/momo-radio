@@ -85,18 +85,17 @@ func (d *Deck) Peek(n int) []string {
 	copy(result, d.queue[:limit])
 	return result
 }
-
 func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 	var dbTracks []models.Track
 
-	// 1. Start Query
+	// 1. Base Query
 	query := d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%")
 
-	// 2. NEW: Don't play anything played in the last 4 hours
+	// 2. EXCLUSION: Skip tracks played in the last 4 hours
 	fourHoursAgo := time.Now().Add(-4 * time.Hour)
 	query = query.Where("last_played IS NULL OR last_played < ?", fourHoursAgo)
 
-	// --- FILTERS  ---
+	// 3. APPLY FILTERS (Genre, Year, etc.)
 	if criteria != nil {
 		if criteria.Genre != "" {
 			query = query.Where("genre = ?", criteria.Genre)
@@ -110,19 +109,22 @@ func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 		if criteria.MaxYear > 0 {
 			query = query.Where("year::int <= ?", criteria.MaxYear)
 		}
-		// ... (Styles and Artists logic stays the same)
 	}
-	// --- YOUR ORIGINAL FILTERS END ---
 
-	// 3. NEW: Get the 50 tracks that haven't been played for the longest time
-	result := query.Order("last_played ASC").Limit(50).Find(&dbTracks)
+	// 4. RANDOM SELECTION:
+	result := query.Order("RANDOM()").Limit(100).Find(&dbTracks)
 	if result.Error != nil {
 		return result.Error
 	}
 
-	// 4. If everything was played recently, fallback to just the oldest 20
+	// 5. FALLBACK: If library is small and everything was played in 4h
 	if len(dbTracks) == 0 {
-		d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%").Order("last_played ASC").Limit(20).Find(&dbTracks)
+		log.Printf("⚠️ No tracks available outside 4h window. Picking oldest available.")
+		d.db.DB.Model(&models.Track{}).
+			Where("key LIKE ?", d.prefix+"%").
+			Order("last_played ASC").
+			Limit(50).
+			Find(&dbTracks)
 	}
 
 	var files []string
@@ -130,7 +132,7 @@ func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 		files = append(files, t.Key)
 	}
 
-	// 5. Fisher-Yates Shuffle (Exactly your original code)
+	// 6. Final In-Memory Shuffle (Fisher-Yates)
 	shuffled := make([]string, len(files))
 	copy(shuffled, files)
 	n := len(shuffled)
@@ -143,6 +145,6 @@ func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 	d.queue = shuffled
 	d.tracks = files
 
-	log.Printf("🃏 Loaded %d fresh tracks (Longest since play) for: %s", len(d.queue), d.currentProg)
+	log.Printf("🃏 True Shuffle: Loaded %d tracks for: %s", len(d.queue), d.currentProg)
 	return nil
 }
