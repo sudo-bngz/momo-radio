@@ -267,52 +267,169 @@ func (w *Worker) processFile(key string) error {
 	return w.storage.DeleteIngestFile(key)
 }
 
-// RepairMetadata updates existing records
+// RepairMetadata updates existing records that are missing new fields
 func (w *Worker) RepairMetadata() {
-	log.Println("🛠️ Starting Metadata Repair process...")
+	log.Println("🛠️ Starting Metadata Repair process for Legacy Tracks...")
 
 	var tracks []models.Track
-	if err := w.db.DB.Find(&tracks).Error; err != nil {
+
+	// 1. OPTIMIZATION: Only fetch tracks that are missing the new 'Country' or 'Style' data.
+	// This prevents re-scanning thousands of tracks that are already perfect.
+	err := w.db.DB.Where("country = '' OR country IS NULL OR style = '' OR style IS NULL").Find(&tracks).Error
+	if err != nil {
 		log.Printf("❌ Failed to fetch tracks: %v", err)
 		return
 	}
 
-	for _, track := range tracks {
+	count := len(tracks)
+	log.Printf("🧐 Found %d legacy tracks needing metadata repair.", count)
+
+	for i, track := range tracks {
+		// Progress Logger
+		if i > 0 && i%10 == 0 {
+			log.Printf("⏳ Repair Progress: %d/%d tracks...", i, count)
+		}
+
 		searchArtist := track.Artist
 		searchTitle := track.Title
 
-		if searchArtist == "" || searchTitle == "" {
-			searchArtist, searchTitle = utils.SanitizeFilename(filepath.Base(track.Key))
+		// 2. INTELLIGENT SEARCH: If DB has bad data, re-parse the original filename
+		// This helps if the original ingest failed to read tags correctly.
+		if searchArtist == "" || searchArtist == "Unknown Artist" || searchTitle == "" {
+			log.Printf("   🔍 Bad DB metadata for [%s], re-parsing filename...", track.Key)
+			cleanA, cleanT := utils.SanitizeFilename(filepath.Base(track.Key))
+			searchArtist = cleanA
+			searchTitle = cleanT
 		}
 
-		log.Printf("🔄 Repairing: [%s] - [%s]", searchArtist, searchTitle)
+		log.Printf("🔄 Processing: [%s] - [%s]", searchArtist, searchTitle)
 
+		// 3. CALL DISCOGS (Uses the new 2-step logic: Search + Details)
 		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, w.cfg.Services.DiscogsToken)
+
 		if err != nil {
 			log.Printf("   ⚠️ Discogs lookup failed for %s: %v", track.Key, err)
-			time.Sleep(2 * time.Second) // Wait even on failure to be safe
+			// Sleep slightly less on failure, but still respect API limits
+			time.Sleep(1 * time.Second)
 			continue
 		}
 
-		// Update with new separate Genre/Style/Country/CatNo
-		err = w.db.DB.Model(&track).Updates(models.Track{
+		// 4. PREPARE UPDATES
+		updates := models.Track{
 			Genre:         enriched.Genre,
-			Style:         enriched.Style,
+			Style:         enriched.Style,         // The new specific sub-genres
+			Country:       enriched.Country,       // The new Country data
+			CatalogNumber: enriched.CatalogNumber, // The new CatNo
 			Publisher:     enriched.Publisher,
 			Year:          enriched.Year,
 			Album:         enriched.Album,
-			Country:       enriched.Country,
-			CatalogNumber: enriched.CatalogNumber,
-		}).Error
-
-		if err != nil {
-			log.Printf("   ❌ Failed to update DB for ID %d: %v", track.ID, err)
-		} else {
-			log.Printf("   ✅ Repaired: %s | Style: %s | Country: %s", track.Title, enriched.Style, enriched.Country)
 		}
 
-		// Rate limiting: 2 seconds for 2 requests
+		// Optional: If Discogs gave us a better Artist/Title, take it.
+		if enriched.Artist != "" {
+			updates.Artist = enriched.Artist
+		}
+		if enriched.Title != "" {
+			updates.Title = enriched.Title
+		}
+
+		// 5. SAVE TO DB
+		err = w.db.DB.Model(&track).Updates(updates).Error
+
+		if err != nil {
+			log.Printf("   ❌ DB Update failed for ID %d: %v", track.ID, err)
+		} else {
+			log.Printf("   ✅ Repaired: %s | Style: %s | Country: %s", updates.Title, updates.Style, updates.Country)
+		}
+
+		// 6. RATE LIMIT (Crucial!)
+		// sleep 2 seconds because 'EnrichViaDiscogs' makes 2 HTTP calls.
+		// Discogs limit is 60 req/min. 2 calls * 2s wait = safe zone.
 		time.Sleep(2 * time.Second)
 	}
-	log.Println("✨ Metadata Repair complete!")
+
+	log.Println("✨ Metadata Repair complete! All legacy tracks updated.")
+}
+
+// RepairAudio finds tracks with missing BPM/Key data and re-runs Essentia analysis.
+func (w *Worker) RepairAudio() {
+	log.Println("🛠️ Starting Audio Repair (Deep Analysis)...")
+
+	var tracks []models.Track
+	if err := w.db.DB.Where("bpm = 0 OR bpm IS NULL").Find(&tracks).Error; err != nil {
+		log.Printf("❌ Failed to fetch tracks: %v", err)
+		return
+	}
+
+	count := len(tracks)
+	log.Printf("🧐 Found %d tracks missing acoustic data.", count)
+
+	for i, track := range tracks {
+		if i > 0 && i%5 == 0 {
+			log.Printf("⏳ Audio Progress: %d/%d...", i, count)
+		}
+
+		log.Printf("   🎼 Analyzing: [%s]", track.Key)
+
+		// 1. Download file from Production Bucket to Temp
+		// We use your existing 'DownloadFile' method which targets 'bucketProd'
+		tempPath := filepath.Join(w.cfg.Server.TempDir, "repair_audio_"+filepath.Base(track.Key))
+
+		obj, err := w.storage.DownloadFile(track.Key)
+		if err != nil {
+			log.Printf("   ❌ Download failed: %v", err)
+			continue
+		}
+
+		// Create the temp file
+		f, err := os.Create(tempPath)
+		if err != nil {
+			log.Printf("   ❌ File creation failed: %v", err)
+			obj.Body.Close()
+			continue
+		}
+
+		// Stream the S3 body to the file
+		_, copyErr := io.Copy(f, obj.Body)
+		obj.Body.Close()
+		f.Close()
+
+		if copyErr != nil {
+			log.Printf("   ❌ File write failed: %v", copyErr)
+			os.Remove(tempPath)
+			continue
+		}
+
+		// 2. Run Essentia
+		// Acquire semaphore to prevent CPU overload
+		w.analysisSem <- struct{}{}
+		analysis, err := audio.AnalyzeDeep(tempPath)
+		<-w.analysisSem // Release semaphore
+
+		// Clean up immediately after analysis
+		os.Remove(tempPath)
+
+		if err != nil {
+			log.Printf("   ⚠️ Essentia failed: %v", err)
+			continue
+		}
+
+		// 3. Save only acoustic fields
+		updates := map[string]interface{}{
+			"bpm":          analysis.BPM,
+			"musical_key":  analysis.MusicalKey,
+			"scale":        analysis.Scale,
+			"danceability": analysis.Danceability,
+			"loudness":     analysis.Loudness,
+			"duration":     analysis.Duration,
+			"energy":       analysis.Energy,
+		}
+
+		if err := w.db.DB.Model(&track).Updates(updates).Error; err != nil {
+			log.Printf("   ❌ DB Update failed: %v", err)
+		} else {
+			log.Printf("   ✅ Analyzed: %.2f BPM | Key: %s %s", analysis.BPM, analysis.MusicalKey, analysis.Scale)
+		}
+	}
+	log.Println("✨ Audio Repair Complete!")
 }

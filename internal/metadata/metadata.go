@@ -258,7 +258,7 @@ func EnrichViaDiscogs(artist, title, token string) (Track, error) {
 	}
 
 	// 4. Join Lists
-	genreStr := strings.Join(release.Genres, ", ")
+	genreStr := release.Genres[0]
 	styleStr := strings.Join(release.Styles, ", ")
 
 	return Track{

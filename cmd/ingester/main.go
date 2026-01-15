@@ -1,7 +1,7 @@
 package main
 
 import (
-	"flag" // 1. Add this import
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -17,44 +17,61 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	// 2. Define the flag
-	repairMode := flag.Bool("repair", false, "Set to true to run the metadata repair script")
+	// 1. Define Flags
+	repairMeta := flag.Bool("repair-metadata", false, "Run Discogs enrichment on existing tracks")
+	repairAudio := flag.Bool("repair-audio", false, "Run Essentia analysis on tracks missing BPM/Key")
 	flag.Parse()
 
-	// 1. Setup Configuration
+	// 2. Setup Configuration
 	cfg := config.Load()
 
-	// 2. Initialize Infrastructure
+	// 3. Initialize Infrastructure
 	store := storage.New(cfg)
 	db := database.New(cfg)
 
-	// 3. Run Database Migrations
+	// 4. Run Database Migrations
 	db.AutoMigrate()
 
 	// Ensure temp directory exists
-	os.MkdirAll(cfg.Server.TempDir, 0755)
+	if err := os.MkdirAll(cfg.Server.TempDir, 0755); err != nil {
+		log.Fatalf("❌ Failed to create temp dir: %v", err)
+	}
 
-	// 4. Create Worker
+	// 5. Create Worker
 	worker := ingest.New(cfg, store, db)
 
-	// 3. Logic: If flag is present, repair and exit. Otherwise, run metrics and worker.
-	if *repairMode {
-		log.Println("🛠️ REPAIR MODE ACTIVE: Starting metadata cleanup...")
-		worker.RepairMetadata()
-		log.Println("✅ Repair finished. Exiting.")
+	// 6. MODE SELECTION
+	// If any repair flag is set, run the specific repair and exit.
+	if *repairMeta || *repairAudio {
+		log.Println("🛠️ MAINTENANCE MODE ACTIVE")
+
+		if *repairAudio {
+			log.Println(">>> Starting Audio Repair (Essentia)...")
+			worker.RepairAudio()
+		}
+
+		if *repairMeta {
+			log.Println(">>> Starting Metadata Repair (Discogs)...")
+			worker.RepairMetadata()
+		}
+
+		log.Println("✅ All maintenance tasks finished. Exiting.")
 		return
 	}
 
-	log.Println("Starting Radio Ingestion Worker (Modular + Database)...")
+	// 7. NORMAL OPERATION
+	log.Println("📻 Starting Radio Ingestion Worker...")
 
-	// 4. Setup Metrics (Only if not in repair mode)
+	// Setup Metrics
 	ingest.RegisterMetrics()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 		log.Printf("📊 Metrics exposed at http://localhost%s/metrics", cfg.Server.MetricsPort)
-		log.Fatal(http.ListenAndServe(cfg.Server.MetricsPort, nil))
+		if err := http.ListenAndServe(cfg.Server.MetricsPort, nil); err != nil {
+			log.Printf("❌ Metrics server failed: %v", err)
+		}
 	}()
 
-	// 5. Start Normal Worker
+	// Start Watcher Loop
 	worker.Run()
 }
