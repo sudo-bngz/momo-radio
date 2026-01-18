@@ -1,0 +1,71 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      # --- 1. Build Standalone Binaries ---
+      - name: Build Binaries (Linux/AMD64)
+        run: |
+          mkdir -p dist
+          echo "Building Ingester..."
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-ingester ./cmd/ingester/
+
+          echo "Building Streamer (Radio)..."
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-streamer ./cmd/radio/
+
+          # If you have an API cmd, uncomment this:
+          # echo "Building API..."
+          # GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-api ./cmd/api/
+
+      # --- 2. Generate Changelog ---
+      - name: Generate Changelog with git-cliff
+        uses: orhun/git-cliff-action@v3
+        id: git-cliff
+        with:
+          config: cliff.toml
+          # --latest: only process commits for the current tag
+          # --strip header: remove the top-level title so it fits in the Release box
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGES.md
+
+      # --- 3. Publish Release ---
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          # Use the changelog generated above as the body
+          body_path: CHANGES.md
+          # Upload the built binaries
+          files: |
+            dist/momo-ingester
+            dist/momo-streamer
+            dist/momo-api
+          draft: false
+          prerelease: false
