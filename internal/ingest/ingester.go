@@ -142,7 +142,7 @@ func (w *Worker) processFile(key string) error {
 	searchArtist := meta.Artist
 	searchTitle := meta.Title
 
-	var artistCountry string
+	var ac string
 
 	if searchArtist == "" || searchTitle == "" {
 		log.Printf("   🔍 ID3 tags missing. Falling back to filename parsing...")
@@ -191,8 +191,7 @@ func (w *Worker) processFile(key string) error {
 			log.Printf("   👤 Fetching Artist Origin for: %s", meta.Artist)
 			ac, errAc := metadata.GetArtistCountryViaMusicBrainz(meta.Artist, w.cfg.Services.ContactEmail)
 			if errAc == nil {
-				artistCountry = utils.ResolveCountry(ac) // Normalize "Japan" -> "JP" (or however you configured it)
-				log.Printf("   ✅ Artist Origin: %s", artistCountry)
+				log.Printf("   ✅ Artist Origin: %s", utils.ResolveCountry(ac))
 			} else {
 				log.Printf("   ⚠️ Artist Origin not found: %v", errAc)
 			}
@@ -231,8 +230,8 @@ func (w *Worker) processFile(key string) error {
 	if meta.Title == "" {
 		meta.Title = nameWithoutExt
 	}
-	if artistCountry == "" {
-		artistCountry = meta.Country
+	if ac == "" {
+		ac = meta.Country
 	}
 
 	// 5. Normalize & Upload
@@ -266,7 +265,7 @@ func (w *Worker) processFile(key string) error {
 		Publisher:      meta.Publisher,
 		CatalogNumber:  meta.CatalogNumber,
 		ReleaseCountry: meta.Country,
-		ArtistCountry:  artistCountry,
+		ArtistCountry:  ac,
 		Format:         "mp3",
 		BPM:            meta.BPM,
 		Duration:       meta.Duration,
