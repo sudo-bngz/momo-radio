@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,6 +55,7 @@ type Engine struct {
 	db      *database.Client
 	runID   int64
 	cache   *CacheManager
+	state   *StateManager // Persistence Manager
 }
 
 type CurrentTrack struct {
@@ -83,6 +86,7 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine
 		db:      db,
 		runID:   time.Now().Unix(),
 		cache:   NewCacheManager(adapter, cfg.Server.TempDir),
+		state:   NewStateManager(db.DB), // Init Persistence
 	}
 }
 
@@ -93,6 +97,25 @@ func (e *Engine) Run() {
 	os.RemoveAll(e.cfg.Radio.SegmentDir)
 	os.MkdirAll(e.cfg.Radio.SegmentDir, 0755)
 
+	// --- RESUME LOGIC ---
+	// Check DB for previous state
+	state, err := e.state.GetCurrentState()
+
+	// Default: Start fresh
+	startSequence := 0
+	var resumeTrackID uint
+
+	// If state exists and is recent (< 10 mins), try to resume
+	if err == nil && time.Since(state.UpdatedAt) < 10*time.Minute {
+		log.Printf("🔄 RECOVERED STATE: Resuming HLS sequence at %d", state.Sequence)
+		// We increment by a safe margin (e.g., +2) to ensure no overlap with old segments
+		startSequence = state.Sequence + 2
+		resumeTrackID = state.TrackID
+	} else {
+		log.Println("🆕 Starting Fresh Stream Sequence")
+	}
+	// --------------------
+
 	// Decks
 	musicDeck := dj.NewDeck(e.storage, e.db, "music/")
 	jingleDeck := dj.NewDeck(e.storage, e.db, "station_id/")
@@ -101,10 +124,12 @@ func (e *Engine) Run() {
 	pr, pw := io.Pipe()
 
 	// 1. FFmpeg Consumer
-	go audio.StartStreamProcess(pr, e.cfg, e.runID)
+	// Note: You must update audio.StartStreamProcess to accept 'startSequence'
+	// e.g., using "-start_number" flag in FFmpeg
+	go audio.StartStreamProcess(pr, e.cfg, int64(startSequence))
 
 	// 2. DJ Producer
-	go e.runScheduler(pw, musicDeck, jingleDeck)
+	go e.runScheduler(pw, musicDeck, jingleDeck, resumeTrackID)
 
 	// 3. Web Helper
 	go e.startRedirectServer()
@@ -113,60 +138,76 @@ func (e *Engine) Run() {
 	e.startStreamUploader()
 }
 
-func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.Deck) {
+func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.Deck, resumeID uint) {
 	defer output.Close()
 	songsSinceJingle := 0
 
-	// Use configured prefetch count or default to 5
 	prefetchCount := e.cfg.Radio.PrefetchCount
 	if prefetchCount <= 0 {
 		prefetchCount = 5
 	}
 
-	for {
-		var track string
+	firstRun := true
 
-		if songsSinceJingle >= 3 {
-			log.Println("\n>>> 🔔 Jingle Time")
-			track = jingleDeck.NextTrack()
-			if track != "" {
-				songsSinceJingle = 0
+	for {
+		var trackKey string
+
+		// --- RESUME TRACK LOGIC ---
+		if firstRun && resumeID != 0 {
+			var t models.Track
+			if err := e.db.DB.First(&t, resumeID).Error; err == nil {
+				log.Printf("🔙 Resuming Previous Track: %s", t.Title)
+				trackKey = t.Key
+			}
+			firstRun = false
+		}
+		// --------------------------
+
+		// Normal Scheduler Logic
+		if trackKey == "" {
+			if songsSinceJingle >= 3 {
+				log.Println("\n>>> 🔔 Jingle Time")
+				trackKey = jingleDeck.NextTrack()
+				if trackKey != "" {
+					songsSinceJingle = 0
+				}
+			}
+
+			if trackKey == "" {
+				log.Println("\n>>> 🎵 Music Time")
+				trackKey = musicDeck.NextTrack()
+				songsSinceJingle++
 			}
 		}
 
-		if track == "" {
-			log.Println("\n>>> 🎵 Music Time")
-			track = musicDeck.NextTrack()
-			songsSinceJingle++
-		}
-
-		if track == "" {
+		if trackKey == "" {
 			log.Println("❌ Library empty. Retrying in 10s...")
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		// --- PREFETCH STRATEGY ---
-		// Build list of keys to keep/fetch
-		keys := []string{track}
+		// Update State Persistence (We started a new track)
+		// We need the ID for the state table.
+		var currentTrackModel models.Track
+		if err := e.db.DB.Select("id").Where("key = ?", trackKey).First(&currentTrackModel).Error; err == nil {
+			// Note: We pass 0 for sequence here, as it's updated separately by the uploader
+			e.state.UpdateTrack(currentTrackModel.ID, 0)
+		}
 
-		// Peek next music tracks
+		// Prefetch
+		keys := []string{trackKey}
 		if nexts := musicDeck.Peek(prefetchCount); len(nexts) > 0 {
 			keys = append(keys, nexts...)
 		}
-
-		// Trigger background download
 		e.cache.Prefetch(keys)
-
-		// Cleanup old stuff (pass keys we want to keep)
 		go e.cache.Cleanup(keys)
 
-		log.Printf("▶️  Playing: %s", track)
+		log.Printf("▶️  Playing: %s", trackKey)
 		tracksPlayed.Inc()
-		go e.updateNowPlaying(track)
-		go e.recordTrackPlay(track)
+		go e.updateNowPlaying(trackKey)
+		go e.recordTrackPlay(trackKey)
 
-		if err := e.streamFileToPipe(track, output); err != nil {
+		if err := e.streamFileToPipe(trackKey, output); err != nil {
 			log.Printf("❌ Stream error: %v (Skipping)", err)
 			continue
 		}
@@ -176,25 +217,22 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.D
 func (e *Engine) recordTrackPlay(key string) {
 	now := time.Now()
 
-	// 1. Update global stats (PlayCount and LastPlayed)
 	var track models.Track
 	err := e.db.DB.Model(&track).
 		Where("key = ?", key).
 		Updates(map[string]any{
 			"play_count":  gorm.Expr("play_count + 1"),
 			"last_played": now,
-		}).First(&track).Error // .First() helps us get the TrackID for the next step
+		}).First(&track).Error
 
 	if err != nil {
 		log.Printf("⚠️  DB Error updating track stats for %s: %v", key, err)
 		return
 	}
 
-	// 2. Insert into PlayHistory using the discovered TrackID
 	history := models.PlayHistory{
 		TrackID:  track.ID,
 		PlayedAt: now,
-		// ListenerCount: getLiveListeners(), // Add this later if needed
 	}
 
 	if err := e.db.DB.Create(&history).Error; err != nil {
@@ -203,21 +241,17 @@ func (e *Engine) recordTrackPlay(key string) {
 }
 
 func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
-	// 1. Get local path (Downloads if not exists, but normally prefetched)
 	localPath, err := e.cache.GetLocalPath(key)
 	if err != nil {
 		return err
 	}
 
-	// 2. Open local file
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	// 3. Copy from Disk to Pipe (Fast & Stable)
-	// Even if this blocks, it blocks on Disk I/O, not Network.
 	_, err = io.Copy(pipe, f)
 	return err
 }
@@ -256,6 +290,10 @@ func (e *Engine) startStreamUploader() {
 	var lastM3u8Time time.Time
 	dir := e.cfg.Radio.SegmentDir
 
+	// Regex to extract sequence number from stream_123.ts
+	// Adjust "stream" to whatever prefix your FFmpeg is configured to output
+	seqRegex := regexp.MustCompile(`(\d+)\.ts$`)
+
 	for range ticker.C {
 		files, err := os.ReadDir(dir)
 		if err != nil {
@@ -281,13 +319,23 @@ func (e *Engine) startStreamUploader() {
 					if err == nil {
 						lastM3u8Time = info.ModTime()
 						uploadsTotal.WithLabelValues("playlist").Inc()
-						log.Printf("📝 Playlist updated")
 					}
 				}
 				continue
 			}
 
 			if strings.HasSuffix(filename, ".ts") {
+				// --- PERSISTENCE: Save Sequence Number ---
+				// Extract "123" from "stream123.ts"
+				matches := seqRegex.FindStringSubmatch(filename)
+				if len(matches) > 1 {
+					if seq, err := strconv.Atoi(matches[1]); err == nil {
+						// Update DB so next container knows where to start
+						e.state.IncrementSequence(seq)
+					}
+				}
+				// -----------------------------------------
+
 				log.Printf("⚡ Segment: %s", filename)
 				timer := prometheus.NewTimer(uploadDuration.WithLabelValues("segment"))
 				f, _ := os.Open(fullPath)
