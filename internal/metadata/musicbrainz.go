@@ -3,7 +3,8 @@ package metadata
 import (
 	"encoding/json"
 	"fmt"
-	"log" // Added log package
+	"log"
+	"momo-radio/internal/utils"
 	"net/http"
 	"net/url"
 	"time"
@@ -61,15 +62,18 @@ func GetArtistCountryViaMusicBrainz(artistName, contactEmail string) (string, er
 	if len(result.Artists) > 0 {
 		match := result.Artists[0]
 
-		// 2. Log what we found
-		log.Printf("   -> Match Found: '%s' (Score: %d) | Country: '%s' | Area: '%s'",
-			match.Name, match.Score, match.Country, match.Area.Name)
-
-		// Priority: Use the ISO code (Country) if available, otherwise Area name
 		if match.Country != "" {
 			return match.Country, nil
 		}
+
 		if match.Area.Name != "" {
+			log.Printf("🔍 [MusicBrainz] Country missing, resolving Area '%s' via GeoAPI...", match.Area.Name)
+			geoCountry, err := utils.GetCountryFromArea(match.Area.Name)
+			if err == nil {
+				log.Printf("🔍 [MusicBrainz] Country found '%s' via GeoAPI...", geoCountry)
+				return geoCountry, nil
+			}
+			// Fallback: return the area name if geo lookup fails
 			return match.Area.Name, nil
 		}
 	}

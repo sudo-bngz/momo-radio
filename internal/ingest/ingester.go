@@ -15,7 +15,6 @@ import (
 	database "momo-radio/internal/db"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
-	"momo-radio/internal/organizer"
 	"momo-radio/internal/storage"
 	"momo-radio/internal/utils"
 )
@@ -190,7 +189,7 @@ func (w *Worker) processFile(key string) error {
 			time.Sleep(2 * time.Second)
 
 			log.Printf("   👤 Fetching Artist Origin for: %s", meta.Artist)
-			ac, errAc := metadata.GetArtistCountryViaDiscogs(meta.Artist, w.cfg.Services.DiscogsToken)
+			ac, errAc := metadata.GetArtistCountryViaMusicBrainz(meta.Artist, w.cfg.Services.ContactEmail)
 			if errAc == nil {
 				artistCountry = utils.ResolveCountry(ac) // Normalize "Japan" -> "JP" (or however you configured it)
 				log.Printf("   ✅ Artist Origin: %s", artistCountry)
@@ -243,7 +242,7 @@ func (w *Worker) processFile(key string) error {
 		return err
 	}
 
-	destinationKey := organizer.BuildPath(meta, key)
+	destinationKey := BuildPath(meta, key)
 	log.Printf("   -> Uploading to: %s", destinationKey)
 	fClean, err := os.Open(cleanPath)
 	if err != nil {

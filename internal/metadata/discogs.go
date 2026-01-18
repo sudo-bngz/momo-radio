@@ -132,15 +132,6 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		catNo = release.Labels[0].Catno
 	}
 
-	// Fetch the artist country, Discogs provide only the release country
-	finalCountry, mbErr := GetArtistCountryViaMusicBrainz(finalArtist, email)
-	if mbErr != nil || finalCountry == "" {
-		finalCountry = release.Country
-	}
-	if finalCountry == "" {
-		finalCountry = "Unknown"
-	}
-
 	// 3. Country Fallback
 	country := release.Country
 	if country == "" {

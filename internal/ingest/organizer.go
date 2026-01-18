@@ -1,12 +1,11 @@
-package organizer
+package ingest
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
-
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/utils"
+	"path/filepath"
+	"strings"
 )
 
 func BuildPath(meta metadata.Track, originalKey string) string {
