@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -18,8 +19,19 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	// 1. Define Flags
-	repairMeta := flag.Bool("repair-metadata", false, "Run Discogs enrichment on existing tracks")
+	repairMeta := flag.Bool("repair-metadata", false, "Run metadata enrichment on existing tracks")
 	repairAudio := flag.Bool("repair-audio", false, "Run Essentia analysis on tracks missing BPM/Key")
+	repairCountry := flag.Bool("repair-country", false, "Run Discogs enrichment on existing tracks")
+	dryRun := flag.Bool("dry-run", false, "Do not save changes to DB (use with repair flags)")
+	repairProvider := flag.String("provider", "musicbrainz", "Metadata provider: 'musicbrainz' or 'discogs'")
+	var targetArtists []string
+	flag.Func("artists", "Comma-separated list of artists to target (e.g. -artists='Daft Punk,Justice')", func(s string) error {
+		for _, a := range strings.Split(s, ",") {
+			targetArtists = append(targetArtists, strings.TrimSpace(a))
+		}
+		return nil
+	})
+
 	flag.Parse()
 
 	// 2. Setup Configuration
@@ -42,7 +54,7 @@ func main() {
 
 	// 6. MODE SELECTION
 	// If any repair flag is set, run the specific repair and exit.
-	if *repairMeta || *repairAudio {
+	if *repairMeta || *repairAudio || *repairCountry {
 		log.Println("🛠️ MAINTENANCE MODE ACTIVE")
 
 		if *repairAudio {
@@ -53,6 +65,14 @@ func main() {
 		if *repairMeta {
 			log.Println(">>> Starting Metadata Repair (Discogs)...")
 			worker.RepairMetadata()
+		}
+
+		if *repairCountry {
+			if *dryRun {
+				log.Println("🧪 MODE: DRY RUN (No DB writes)")
+			}
+			log.Printf(">>> Starting Country Repair (MusicBrainz) for %d targets...", len(targetArtists))
+			worker.RepairCountry(*dryRun, targetArtists, *repairProvider)
 		}
 
 		log.Println("✅ All maintenance tasks finished. Exiting.")

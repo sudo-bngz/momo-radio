@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -91,4 +92,32 @@ func SanitizeFilename(baseName string) (string, string) {
 	}
 
 	return artist, title
+}
+
+func CleanQuery(filename string) string {
+	// 1. Remove extension
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+
+	// 2. Split by " - "
+	parts := strings.Split(name, " - ")
+	if len(parts) < 2 {
+		return name // Too simple to clean
+	}
+
+	// Usually: [Artist] - [Release/Vol] - [Position] - [Track Title]
+	// We want the FIRST part and the LAST part.
+	artist := strings.TrimSpace(parts[0])
+	title := strings.TrimSpace(parts[len(parts)-1])
+
+	// 3. Clean the Title: Remove parentheticals like "(Original Mix)" or "(Beats Mix)"
+	// APIs often work better without these.
+	if idx := strings.Index(title, "("); idx != -1 {
+		title = strings.TrimSpace(title[:idx])
+	}
+
+	// 4. Clean the Title: Remove track positions (e.g., A1, B2, 12 inch mix)
+	// This regex looks for patterns like B2 or A1 at the start of the title part
+	// but in your case, it's often a separate part of the split.
+
+	return fmt.Sprintf("%s %s", artist, title)
 }

@@ -11,15 +11,16 @@ type Track struct {
 	gorm.Model
 
 	// Core Metadata
-	Key       string `gorm:"uniqueIndex;not null"` // The B2 Filepath (music/...)
-	Title     string `gorm:"index"`
-	Artist    string `gorm:"index"`
-	Album     string
-	Genre     string `gorm:"index"`
-	Style     string `gorm:"index"`
-	Year      string
-	Publisher string // Label
-	Country   string `gorm:"size:100"`
+	Key            string `gorm:"uniqueIndex;not null"` // The B2 Filepath (music/...)
+	Title          string `gorm:"index"`
+	Artist         string `gorm:"index"`
+	Album          string
+	Genre          string `gorm:"index"`
+	Style          string `gorm:"index"`
+	Year           string
+	Publisher      string // Label
+	ReleaseCountry string `gorm:"size:100"`
+	ArtistCountry  string `gorm:"size:100"`
 
 	// Tech Details
 	Duration float64 // In seconds (extracted via ffprobe)
