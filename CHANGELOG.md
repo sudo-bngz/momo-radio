@@ -8,6 +8,11 @@
 - *(ingest)* Enable multi-arch Docker builds and expand metadata schema
 - *(radio)* Implement smart track rotation and play stats persistence
 - *(dj)* Implement true random shuffle with repetition protection
+- *(dj)* Implement smart shuffle with artist separation and fallback logic
+- *(metadata)* Enhance discogs enrichment strategy and fix parsing errors
+- *(ingester)* Split repair logic into audio and metadata maintenance modes
+- *(streamer)* Implement state persistence for seamless restarts
+- *(dj)* Implement starvation algorithm for fair track distribution
 
 ### 🐛 Bug Fixes
 
@@ -16,6 +21,11 @@
 ### 🚜 Refactor
 
 - *(ingest)* Optimize Essentia build for Atom C2750 and implement WAV-bypass
+
+### ⚙️ Miscellaneous Tasks
+
+- *(doc)* Changelog
+- *(release)* Add automated GitHub Release workflow
 ## [0.2.1] - 2026-01-11
 
 ### 🚀 Features
