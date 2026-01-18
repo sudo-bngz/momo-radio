@@ -91,31 +91,23 @@ func (d *Deck) Peek(n int) []string {
 func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 	var dbTracks []models.Track
 
-	// --- 1. ARTIST SEPARATION LOGIC ---
-	// Look at the last 5 tracks played to create a lockout list
+	// --- 1. EXCLUSION LOGIC (Artist Separation) ---
+	// Fetch last 10 tracks to ensure good spacing
 	var recentHistory []models.PlayHistory
 	var excludedArtists []string
-	d.db.DB.Preload("Track").Order("played_at DESC").Limit(5).Find(&recentHistory)
+
+	// Increased lookback from 5 to 10 for better artist spacing
+	d.db.DB.Preload("Track").Order("played_at DESC").Limit(10).Find(&recentHistory)
 	for _, h := range recentHistory {
 		if h.Track.Artist != "" {
 			excludedArtists = append(excludedArtists, h.Track.Artist)
 		}
 	}
 
-	// --- 2. THE MAIN SMART QUERY ---
-	// Start with the mandatory prefix (separates music from jingles)
+	// --- 2. BUILD THE QUERY ---
 	query := d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%")
 
-	// Apply Repetition Protection (4h window)
-	fourHoursAgo := time.Now().Add(-4 * time.Hour)
-	query = query.Where("last_played IS NULL OR last_played < ?", fourHoursAgo)
-
-	// Apply Artist Separation
-	if len(excludedArtists) > 0 {
-		query = query.Where("artist NOT IN ?", excludedArtists)
-	}
-
-	// Apply Schedule Filters (Genre, Year, etc.)
+	// A. Apply Criteria (Genre, Year, etc)
 	if criteria != nil {
 		if criteria.Genre != "" {
 			query = query.Where("genre = ?", criteria.Genre)
@@ -129,8 +121,6 @@ func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 		if criteria.MaxYear > 0 {
 			query = query.Where("year::int <= ?", criteria.MaxYear)
 		}
-
-		// Styles and Artists OR logic
 		if len(criteria.Styles) > 0 {
 			query = query.Where(func(db *gorm.DB) *gorm.DB {
 				for i, style := range criteria.Styles {
@@ -145,28 +135,55 @@ func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 		}
 	}
 
-	// EXECUTE: Get 100 random tracks that pass all strict rules
-	result := query.Order("RANDOM()").Limit(100).Find(&dbTracks)
+	// B. Apply Exclusions
+	// 1. Hard Lockout: Don't play anything played in the last 12 hours (Stricter than 4h)
+	// This forces the system to dig deeper into the library.
+	twelveHoursAgo := time.Now().Add(-12 * time.Hour)
+	query = query.Where("last_played IS NULL OR last_played < ?", twelveHoursAgo)
 
-	// --- 3. EMERGENCY FALLBACK ---
-	// If result is empty (library too small or filters too strict), we IGNORE rules
-	// but KEEP the prefix so we don't play jingles as music.
-	if result.Error != nil || len(dbTracks) == 0 {
-		log.Printf("⚠️ Rules too strict for [%s]. Falling back to oldest tracks.", d.prefix)
-		d.db.DB.Model(&models.Track{}).
-			Where("key LIKE ?", d.prefix+"%"). // Mandatory prefix check
-			Order("last_played ASC").          // Get songs that waited the longest
-			Limit(100).
-			Find(&dbTracks)
+	// 2. Artist Lockout
+	if len(excludedArtists) > 0 {
+		query = query.Where("artist NOT IN ?", excludedArtists)
 	}
 
-	// --- 4. SHUFFLE & LOAD ---
+	// --- 3. THE "FAIRNESS" SORTING MAGIC ---
+	// sort by:
+	// 1. Play Count ASC (Tracks played 0 times come first)
+	// 2. Last Played ASC (Oldest played tracks come first)
+	// 3. NULLS FIRST (Ensure tracks never played are at the absolute top)
+
+	// fetch a "Candidate Pool" of 300.
+	// only fetched 50, the playlist would be predictable (always the oldest).
+	// Fetching 300 starved tracks and shuffling them gives us fairness + variety.
+	result := query.Order("play_count ASC, last_played ASC NULLS FIRST").Limit(300).Find(&dbTracks)
+
+	// --- 4. FALLBACK STRATEGY ---
+	// If criteria are too strict (result empty), relax strictness but keep fairness logic
+	if result.Error != nil || len(dbTracks) == 0 {
+		log.Printf("⚠️ Rules too strict for [%s]. Relaxing constraints.", d.prefix)
+
+		fallbackQuery := d.db.DB.Model(&models.Track{}).Where("key LIKE ?", d.prefix+"%")
+
+		// Still try to respect criteria if possible, or strip them here if necessary.
+		// For now, we just remove the Time Lockout and Artist Lockout to find *something*.
+		if criteria != nil && criteria.Genre != "" {
+			fallbackQuery = fallbackQuery.Where("genre = ?", criteria.Genre)
+		}
+
+		// Just get the absolute oldest/least played tracks
+		fallbackQuery.Order("play_count ASC, last_played ASC NULLS FIRST").Limit(100).Find(&dbTracks)
+	}
+
 	if len(dbTracks) == 0 {
 		log.Printf("❌ CRITICAL: No tracks found in DB for prefix: %s", d.prefix)
 		return nil
 	}
 
-	// Fisher-Yates Shuffle the final batch in-memory
+	// --- 5. SHUFFLE THE CANDIDATE POOL ---
+	// We have the 300 most "starved" songs. Now shuffle them so we don't
+	// always play them in exact chronological order of their last play.
+
+	// Fisher-Yates Shuffle
 	n := len(dbTracks)
 	for i := n - 1; i > 0; i-- {
 		jBig, _ := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
@@ -174,12 +191,21 @@ func (d *Deck) refreshAndShuffle(criteria *ActiveCriteria) error {
 		dbTracks[i], dbTracks[j] = dbTracks[j], dbTracks[i]
 	}
 
-	// Fill the queue
-	d.queue = make([]string, len(dbTracks))
-	for i, t := range dbTracks {
-		d.queue[i] = t.Key
+	// Limit queue to 50 items to keep the rotation fresh
+	// (If we load 300, the last one won't play for 24 hours, effectively locking it)
+	queueSize := min(50, len(dbTracks))
+	d.queue = make([]string, queueSize)
+	for i := 0; i < queueSize; i++ {
+		d.queue[i] = dbTracks[i].Key
 	}
 
-	log.Printf("🃏 Deck Ready: [%s] | Tracks: %d | Artist Separation: %d songs", d.currentProg, len(d.queue), len(excludedArtists))
+	log.Printf("🃏 Deck Refreshed: [%s] | Loaded: %d | Candidates Found: %d", d.currentProg, queueSize, n)
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
