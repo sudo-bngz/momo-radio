@@ -190,7 +190,6 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 	if len(targetArtists) > 0 {
 		query = query.Where("artist IN ?", targetArtists)
 	} else {
-		// Fix tracks missing either piece of regional data
 		query = query.Where("release_country = '' OR artist_country = '' OR artist_country IS NULL OR release_country IS NULL")
 	}
 
@@ -199,7 +198,6 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 		return
 	}
 
-	// Cache to save API calls (Artist-based)
 	artistCache := make(map[string]string)
 
 	for _, track := range tracks {
@@ -207,18 +205,18 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 			continue
 		}
 
-		var countryCode string
+		var resultStr string // This might be a code "AU" or a name "Melbourne"
 		var found bool
 
-		if countryCode, found = artistCache[track.Artist]; !found {
+		if resultStr, found = artistCache[track.Artist]; !found {
 			log.Printf("🛰️  %s Search: %s", provider, track.Artist)
 
 			var err error
 			if provider == "discogs" {
-				countryCode, err = metadata.GetArtistCountryViaDiscogs(track.Artist, w.cfg.Services.DiscogsToken)
+				resultStr, err = metadata.GetArtistCountryViaDiscogs(track.Artist, w.cfg.Services.DiscogsToken)
 				time.Sleep(2 * time.Second)
 			} else {
-				countryCode, err = metadata.GetArtistCountryViaMusicBrainz(track.Artist, w.cfg.Services.ContactEmail)
+				resultStr, err = metadata.GetArtistCountryViaMusicBrainz(track.Artist, w.cfg.Services.ContactEmail)
 				time.Sleep(1 * time.Second)
 			}
 
@@ -227,24 +225,34 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 				artistCache[track.Artist] = ""
 				continue
 			}
-			artistCache[track.Artist] = countryCode
+
+			// --- THE GEO FALLBACK LOGIC ---
+			if len(resultStr) != 2 {
+				log.Printf("🔍 Result '%s' is not an ISO code. Consulting GeoAPI...", resultStr)
+				geoCode, err := utils.GetCountryFromArea(resultStr)
+				if err == nil {
+					log.Printf("📍 GeoAPI resolved '%s' -> %s", resultStr, geoCode)
+					resultStr = geoCode
+				}
+				// Optional: slow down for Nominatim rate limits (1 req/sec)
+				time.Sleep(1 * time.Second)
+			}
+
+			artistCache[track.Artist] = resultStr
 		}
 
-		if countryCode == "" {
+		if resultStr == "" {
 			continue
 		}
 
-		// Prepare updates for the new fields
-		updates := make(map[string]interface{})
+		updates := make(map[string]any)
 
-		// 1. Logic for ArtistCountry (Always trust the Artist search for this)
-		if track.ArtistCountry != countryCode {
-			updates["artist_country"] = countryCode
+		if track.ArtistCountry != resultStr {
+			updates["artist_country"] = resultStr
 		}
 
-		// 2. Logic for ReleaseCountry (If missing, we use the Artist's country as a fallback)
 		if track.ReleaseCountry == "" {
-			updates["release_country"] = countryCode
+			updates["release_country"] = resultStr
 		}
 
 		if len(updates) > 0 {
