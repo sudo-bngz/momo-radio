@@ -108,7 +108,7 @@ func (e *Engine) Run() {
 	// If state exists and is recent (< 10 mins), try to resume
 	if err == nil && time.Since(state.UpdatedAt) < 10*time.Minute {
 		log.Printf("🔄 RECOVERED STATE: Resuming HLS sequence at %d", state.Sequence)
-		// We increment by a safe margin (e.g., +2) to ensure no overlap with old segments
+		// increment by a safe margin (e.g., +2) to ensure no overlap with old segments
 		startSequence = state.Sequence + 2
 		resumeTrackID = state.TrackID
 	} else {
@@ -126,7 +126,7 @@ func (e *Engine) Run() {
 	// 1. FFmpeg Consumer
 	// Note: You must update audio.StartStreamProcess to accept 'startSequence'
 	// e.g., using "-start_number" flag in FFmpeg
-	go audio.StartStreamProcess(pr, e.cfg, int64(startSequence))
+	go audio.StartStreamProcess(pr, e.cfg, e.runID, int64(startSequence))
 
 	// 2. DJ Producer
 	go e.runScheduler(pw, musicDeck, jingleDeck, resumeTrackID)
