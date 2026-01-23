@@ -124,7 +124,7 @@ func (e *Engine) Run() {
 	pr, pw := io.Pipe()
 
 	// 1. FFmpeg Consumer
-	// Note: You must update audio.StartStreamProcess to accept 'startSequence'
+	// Note: update audio.StartStreamProcess to accept 'startSequence'
 	// e.g., using "-start_number" flag in FFmpeg
 	go audio.StartStreamProcess(pr, e.cfg, e.runID, int64(startSequence))
 
@@ -285,69 +285,117 @@ func (e *Engine) updateNowPlaying(key string) {
 }
 
 func (e *Engine) startStreamUploader() {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(800 * time.Millisecond)
 	defer ticker.Stop()
-	var lastM3u8Time time.Time
-	dir := e.cfg.Radio.SegmentDir
 
-	// Regex to extract sequence number from stream_123.ts
-	// Adjust "stream" to whatever prefix your FFmpeg is configured to output
-	seqRegex := regexp.MustCompile(`(\d+)\.ts$`)
+	var lastM3u8Time time.Time
+	uploadedSegments := make(map[string]bool)
+	dir := e.cfg.Radio.SegmentDir
+	seqRegex := regexp.MustCompile(`_(\d+)\.ts$`)
+
+	log.Printf("📡 Uploader started. Monitoring: %s", dir)
 
 	for range ticker.C {
 		files, err := os.ReadDir(dir)
 		if err != nil {
-			log.Printf("ReadDir error: %v", err)
+			log.Printf("❌ [Uploader] ReadDir error: %v", err)
 			continue
 		}
 
 		for _, entry := range files {
 			filename := entry.Name()
 			fullPath := filepath.Join(dir, filename)
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			if time.Since(info.ModTime()) < 1*time.Second {
+				continue
+			}
 
 			if filename == "stream.m3u8" {
-				info, err := entry.Info()
-				if err != nil {
-					continue
-				}
 				if info.ModTime().After(lastM3u8Time) {
-					timer := prometheus.NewTimer(uploadDuration.WithLabelValues("playlist"))
-					f, _ := os.Open(fullPath)
-					err := e.storage.UploadStreamFile(filename, f, "application/vnd.apple.mpegurl", "max-age=0, no-cache, no-store, must-revalidate")
-					f.Close()
-					timer.ObserveDuration()
-					if err == nil {
+					if err := e.uploadPlaylist(fullPath, filename); err == nil {
+						log.Printf("📝 [Uploader] Master playlist updated")
 						lastM3u8Time = info.ModTime()
-						uploadsTotal.WithLabelValues("playlist").Inc()
 					}
 				}
 				continue
 			}
 
-			if strings.HasSuffix(filename, ".ts") {
-				// --- PERSISTENCE: Save Sequence Number ---
-				// Extract "123" from "stream123.ts"
+			// ⚡ Segment Upload
+			if strings.HasSuffix(filename, ".ts") && !uploadedSegments[filename] {
+				// Persistence logic
 				matches := seqRegex.FindStringSubmatch(filename)
 				if len(matches) > 1 {
 					if seq, err := strconv.Atoi(matches[1]); err == nil {
-						// Update DB so next container knows where to start
 						e.state.IncrementSequence(seq)
 					}
 				}
-				// -----------------------------------------
 
-				log.Printf("⚡ Segment: %s", filename)
-				timer := prometheus.NewTimer(uploadDuration.WithLabelValues("segment"))
-				f, _ := os.Open(fullPath)
-				err := e.storage.UploadStreamFile(filename, f, "video/MP2T", "public, max-age=86400")
-				f.Close()
-				timer.ObserveDuration()
-				if err == nil {
-					uploadsTotal.WithLabelValues("segment").Inc()
+				if err := e.uploadSegment(fullPath, filename); err != nil {
+					log.Printf("❌ [Uploader] Segment %s upload failed: %v", filename, err)
+				} else {
+					log.Printf("⚡ [Uploader] Segment uploaded: %s", filename)
+					uploadedSegments[filename] = true
 					os.Remove(fullPath)
 				}
 			}
 		}
+
+		// 🧹 Map Housekeeping
+		if len(uploadedSegments) > 100 {
+			e.cleanupUploadedMap(uploadedSegments, dir)
+		}
+	}
+}
+
+func (e *Engine) uploadPlaylist(path, name string) error {
+	timer := prometheus.NewTimer(uploadDuration.WithLabelValues("playlist"))
+	defer timer.ObserveDuration()
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	err = e.storage.UploadStreamFile(name, f, "application/vnd.apple.mpegurl", "max-age=0, no-cache, no-store, must-revalidate")
+	if err == nil {
+		uploadsTotal.WithLabelValues("playlist").Inc()
+	}
+	return err
+}
+
+func (e *Engine) uploadSegment(path, name string) error {
+	// ⏱️ Start Timer
+	timer := prometheus.NewTimer(uploadDuration.WithLabelValues("segment"))
+	defer timer.ObserveDuration()
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	err = e.storage.UploadStreamFile(name, f, "video/MP2T", "public, max-age=86400")
+	if err == nil {
+		uploadsTotal.WithLabelValues("segment").Inc()
+	}
+	return err
+}
+
+func (e *Engine) cleanupUploadedMap(m map[string]bool, dir string) {
+	count := 0
+	for k := range m {
+		if _, err := os.Stat(filepath.Join(dir, k)); os.IsNotExist(err) {
+			delete(m, k)
+			count++
+		}
+	}
+	if count > 0 {
+		log.Printf("🧹 [Uploader] Cleaned %d entries from tracking map", count)
 	}
 }
 
