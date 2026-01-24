@@ -106,6 +106,17 @@ func (c *Client) UploadStreamFile(key string, body io.ReadSeeker, contentType, c
 	return err
 }
 
+// UploadIngestFile uploads a raw file to the ingestion bucket for processing
+func (c *Client) UploadIngestFile(key string, body io.ReadSeeker, contentType string) error {
+	_, err := c.s3.PutObject(&s3.PutObjectInput{
+		Bucket:      aws.String(c.bucketIngest),
+		Key:         aws.String(key),
+		Body:        body,
+		ContentType: aws.String(contentType),
+	})
+	return err
+}
+
 func (c *Client) UploadAssetFile(key string, body io.ReadSeeker, contentType, cacheControl string) error {
 	_, err := c.s3.PutObject(&s3.PutObjectInput{
 		Bucket:       aws.String(c.bucketProd),

@@ -1,0 +1,29 @@
+opencollection: 1.0.0
+
+info:
+  name: Radio MOMO
+config:
+  proxy:
+    inherit: true
+    config:
+      protocol: http
+      hostname: ""
+      port: ""
+      auth:
+        username: ""
+        password: ""
+      bypassProxy: ""
+
+request:
+  variables:
+    - name: base-url
+      value: http://localhost:8081
+bundled: false
+extensions:
+  ignore:
+    - node_modules
+    - .git
+  presets:
+    request:
+      type: http
+      url: http://localhost:9091/

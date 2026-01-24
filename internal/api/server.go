@@ -8,24 +8,26 @@ import (
 
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/storage"
 )
 
 type Server struct {
-	cfg    *config.Config
-	db     *database.Client
-	router *gin.Engine
+	cfg     *config.Config
+	db      *database.Client
+	storage *storage.Client
+	router  *gin.Engine
 }
 
-func New(cfg *config.Config, db *database.Client) *Server {
-	// Set Gin mode based on log level
+func New(cfg *config.Config, db *database.Client, storage *storage.Client) *Server {
 	if cfg.Radio.LogLevel != "debug" {
-		gin.SetMode(gin.ReleaseMode)
+		gin.SetMode(gin.TestMode)
 	}
 
 	s := &Server{
-		cfg:    cfg,
-		db:     db,
-		router: gin.Default(),
+		cfg:     cfg,
+		db:      db,
+		storage: storage, // Assign it
+		router:  gin.Default(),
 	}
 
 	s.setupMiddleware()
@@ -55,6 +57,10 @@ func (s *Server) setupRoutes() {
 	{
 		v1.GET("/tracks", s.GetTracks)
 		v1.GET("/stats", s.GetStats)
+
+		// Upload Workflow
+		v1.POST("/upload/analyze", s.PreAnalyzeFile)
+		v1.POST("/upload/confirm", s.UploadTrack)
 	}
 }
 

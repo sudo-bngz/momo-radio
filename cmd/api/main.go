@@ -9,6 +9,7 @@ import (
 	"momo-radio/internal/api"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/storage"
 )
 
 func main() {
@@ -24,7 +25,10 @@ func main() {
 	// 3. Run Database Migrations
 	db.AutoMigrate()
 
-	// 4. Setup Metrics
+	// 4. Storage
+	store := storage.New(cfg)
+
+	// 5. Setup Metrics
 	go func() {
 		http.Handle("/_metrics", promhttp.Handler())
 		log.Printf("📊 Metrics exposed at http://localhost%s/_metrics", cfg.Server.MetricsPort)
@@ -34,7 +38,7 @@ func main() {
 	}()
 
 	// 5. Start Server
-	server := api.New(cfg, db)
+	server := api.New(cfg, db, store)
 
 	port := ":8081"
 	log.Printf("🚀 API Server starting on %s", port)
