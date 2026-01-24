@@ -134,7 +134,6 @@ func (w *Worker) processFile(key string) error {
 		meta.Danceability = analysis.Danceability
 		meta.Loudness = analysis.Loudness
 		meta.Duration = analysis.Duration
-		// Note: use the Discogs country if found, otherwise we could use analysis.Country
 		log.Printf("   📊 Result: %.2f BPM | Key: %s %s", analysis.BPM, analysis.MusicalKey, analysis.Scale)
 	}
 
@@ -142,7 +141,7 @@ func (w *Worker) processFile(key string) error {
 	searchArtist := meta.Artist
 	searchTitle := meta.Title
 
-	var ac string
+	var artistOrigin string
 
 	if searchArtist == "" || searchTitle == "" {
 		log.Printf("   🔍 ID3 tags missing. Falling back to filename parsing...")
@@ -159,11 +158,9 @@ func (w *Worker) processFile(key string) error {
 	if w.cfg.Services.DiscogsToken != "" {
 		log.Printf("   💿 Querying Discogs: [%s] - [%s]", searchArtist, searchTitle)
 
-		// This now performs 2 calls: Search + Release Details
 		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, w.cfg.Services.DiscogsToken, w.cfg.Services.ContactEmail)
 
 		if err == nil {
-			// Map ALL the new fields
 			meta.Genre = enriched.Genre
 			meta.Style = enriched.Style
 			meta.Country = enriched.Country
@@ -189,11 +186,12 @@ func (w *Worker) processFile(key string) error {
 			time.Sleep(2 * time.Second)
 
 			log.Printf("   👤 Fetching Artist Origin for: %s", meta.Artist)
-			ac, errAc := metadata.GetArtistCountryViaMusicBrainz(meta.Artist, w.cfg.Services.ContactEmail)
-			if errAc == nil {
-				log.Printf("   ✅ Artist Origin: %s", utils.ResolveCountry(ac))
+			mbCountry, errAc := metadata.GetArtistCountryViaMusicBrainz(meta.Artist, w.cfg.Services.ContactEmail)
+			if errAc == nil && mbCountry != "" {
+				artistOrigin = utils.ResolveCountry(mbCountry)
+				log.Printf("   ✅ Artist Origin: %s", artistOrigin)
 			} else {
-				log.Printf("   ⚠️ Artist Origin not found: %v", errAc)
+				log.Printf("   ⚠️ Artist Origin not found via MusicBrainz: %v", errAc)
 			}
 		} else {
 			log.Printf("   ⚠️ Discogs failed: %v", err)
@@ -230,8 +228,9 @@ func (w *Worker) processFile(key string) error {
 	if meta.Title == "" {
 		meta.Title = nameWithoutExt
 	}
-	if ac == "" {
-		ac = meta.Country
+
+	if artistOrigin == "" {
+		artistOrigin = "Unknown"
 	}
 
 	// 5. Normalize & Upload
@@ -259,13 +258,13 @@ func (w *Worker) processFile(key string) error {
 		Title:          meta.Title,
 		Artist:         meta.Artist,
 		Album:          meta.Album,
-		Genre:          meta.Genre, // Broad: "Electronic"
-		Style:          meta.Style, // Specific: "Deep House, Minimal"
+		Genre:          meta.Genre,
+		Style:          meta.Style,
 		Year:           meta.Year,
 		Publisher:      meta.Publisher,
 		CatalogNumber:  meta.CatalogNumber,
-		ReleaseCountry: meta.Country,
-		ArtistCountry:  ac,
+		ReleaseCountry: utils.ResolveCountry(meta.Country),
+		ArtistCountry:  artistOrigin,
 		Format:         "mp3",
 		BPM:            meta.BPM,
 		Duration:       meta.Duration,
@@ -274,7 +273,7 @@ func (w *Worker) processFile(key string) error {
 		Danceability:   meta.Danceability,
 		Loudness:       meta.Loudness,
 	}
-	// Use FirstOrCreate to avoid duplicates, or Upsert logic
+
 	w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track)
 
 	return w.storage.DeleteIngestFile(key)

@@ -5,7 +5,7 @@ info:
 
 http:
   method: POST
-  url: "{{base-url}}/api/v1/tracks"
+  url: "{{base-url}}/api/v1/upload/analyze"
   auth: inherit
 
 settings:
