@@ -13,19 +13,29 @@
 - *(ingester)* Split repair logic into audio and metadata maintenance modes
 - *(streamer)* Implement state persistence for seamless restarts
 - *(dj)* Implement starvation algorithm for fair track distribution
+- *(ingest)* Enhance artist country resolution using MusicBrainz and GeoAPI
+- *(admin)* Setup admin with upload and track  pre-analyze
+- *(dj)* Implement harmonic mixing and timetable scheduling
 
 ### 🐛 Bug Fixes
 
 - *(audio)* Update Essentia JSON mapping for version 2.1-beta6
+- *(streamer)* Enforce hls continuity and unique segment naming
+- *(streamer)* Resolve uploader race condition
+- *(ingest)* Improve metadata enrichment and origin resolution
 
 ### 🚜 Refactor
 
 - *(ingest)* Optimize Essentia build for Atom C2750 and implement WAV-bypass
+- *(ingest)* Implement multi-provider country repair and metadata refactor
+- *(ingest)* Implement GeoAPI fallback in country repair logic
 
 ### ⚙️ Miscellaneous Tasks
 
 - *(doc)* Changelog
 - *(release)* Add automated GitHub Release workflow
+- *(doc)* Update CHANGELOG
+- *(ingester)* Remove country resolution during ingestion
 ## [0.2.1] - 2026-01-11
 
 ### 🚀 Features
