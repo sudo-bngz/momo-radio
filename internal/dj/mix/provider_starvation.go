@@ -3,10 +3,8 @@ package mix
 import (
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"log"
 	"math/big"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,65 +14,34 @@ import (
 	"gorm.io/gorm"
 )
 
-// StarvationProvider implements the "Smart Random" strategy.
+// StarvationProvider implements "Pure Starvation" strategy.
+// It simply looks for tracks with the lowest play count and oldest last_played date.
 type StarvationProvider struct {
-	prefix      string
-	queue       []models.Track
-	db          *gorm.DB
-	mu          sync.Mutex
-	scheduler   *Scheduler
-	currentProg string
+	prefix string
+	queue  []models.Track
+	db     *gorm.DB
+	mu     sync.Mutex
 }
 
-// NewStarvationProvider initializes the provider.
 func NewStarvationProvider(db *gorm.DB, prefix string) *StarvationProvider {
-	var sched *Scheduler
-	if prefix == "music/" {
-		sched = NewScheduler(db)
-	}
-
 	return &StarvationProvider{
-		db:        db,
-		prefix:    prefix,
-		queue:     make([]models.Track, 0),
-		scheduler: sched,
+		db:     db,
+		prefix: prefix,
+		queue:  make([]models.Track, 0),
 	}
 }
 
 func (s *StarvationProvider) Name() string {
-	if s.currentProg != "" {
-		return "Starvation (" + s.currentProg + ")"
-	}
-	return "Starvation (General)"
+	return "Pure Starvation"
 }
 
 func (s *StarvationProvider) GetNextTrack() (*dj.Track, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// FIX 1: Use dj.SlotRules instead of ActiveCriteria
-	var rules *dj.SlotRules
-	newProgName := "General Rotation"
-
-	// FIX 2: Call the new GetCurrentRules method
-	if s.scheduler != nil {
-		rules = s.scheduler.GetCurrentRules()
-		if rules != nil {
-			newProgName = rules.Name
-		}
-	}
-
-	// 2. Detect Program Change -> Flush Queue
-	if s.currentProg != newProgName {
-		log.Printf("📻 Program Change: [%s] -> [%s]. Flushing queue.", s.currentProg, newProgName)
-		s.queue = []models.Track{}
-		s.currentProg = newProgName
-	}
-
-	// 3. Refill Queue if empty
+	// 1. Check if we need to refill
 	if len(s.queue) == 0 {
-		// FIX 3: Pass 'rules' instead of 'criteria'
-		if err := s.refreshAndShuffle(rules); err != nil {
+		if err := s.refillDeck(); err != nil {
 			log.Printf("❌ Error refreshing deck: %v", err)
 			return nil, err
 		}
@@ -84,7 +51,7 @@ func (s *StarvationProvider) GetNextTrack() (*dj.Track, error) {
 		return nil, errors.New("queue is empty (no tracks found)")
 	}
 
-	// 5. Pop the first track
+	// 2. Pop the first track
 	selected := s.queue[0]
 	s.queue = s.queue[1:]
 
@@ -97,11 +64,15 @@ func (s *StarvationProvider) GetNextTrack() (*dj.Track, error) {
 	}, nil
 }
 
-// FIX 4: Update signature to accept *dj.SlotRules
-func (s *StarvationProvider) refreshAndShuffle(rules *dj.SlotRules) error {
+func (s *StarvationProvider) refillDeck() error {
 	var dbTracks []models.Track
 
-	// --- 1. EXCLUSION LOGIC ---
+	// --- 1. BUILD QUERY ---
+	query := s.db.Model(&models.Track{}).Where("key LIKE ?", s.prefix+"%")
+
+	// --- 2. APPLY ARTIST SEPARATION
+	// I don't want to play the same artist back-to-back.
+	// Check the last 10 tracks played globally.
 	var recentHistory []models.PlayHistory
 	var excludedArtists []string
 
@@ -112,75 +83,25 @@ func (s *StarvationProvider) refreshAndShuffle(rules *dj.SlotRules) error {
 			}
 		}
 	}
-
-	// --- 2. BUILD QUERY ---
-	query := s.db.Model(&models.Track{}).Where("key LIKE ?", s.prefix+"%")
-
-	// Dialect check for case-insensitive search
-	operator := "ILIKE"
-	if s.db.Dialector.Name() == "sqlite" {
-		operator = "LIKE"
-	}
-
-	// FIX 5: Use 'rules' fields
-	if rules != nil {
-		if rules.Genre != "" {
-			query = query.Where("genre = ?", rules.Genre)
-		}
-		// SlotRules doesn't usually have Publisher, but if you added it, uncomment:
-		// if rules.Publisher != "" { query = query.Where("publisher ILIKE ?", "%"+rules.Publisher+"%") }
-
-		if rules.MinYear > 0 {
-			query = query.Where("year::int >= ?", rules.MinYear)
-		}
-		if rules.MaxYear > 0 {
-			query = query.Where("year::int <= ?", rules.MaxYear)
-		}
-
-		if len(rules.Styles) > 0 {
-			var conditions []string
-			var args []interface{}
-			for _, style := range rules.Styles {
-				conditions = append(conditions, fmt.Sprintf("(style %s ? OR genre %s ?)", operator, operator))
-				val := "%" + style + "%"
-				args = append(args, val, val)
-			}
-			query = query.Where("("+strings.Join(conditions, " OR ")+")", args...)
-		}
-	}
-
-	// --- 3. APPLY EXCLUSIONS ---
-	twelveHoursAgo := time.Now().Add(-12 * time.Hour)
-	query = query.Where("last_played IS NULL OR last_played < ?", twelveHoursAgo)
-
 	if len(excludedArtists) > 0 {
 		query = query.Where("artist NOT IN ?", excludedArtists)
 	}
 
-	// --- 4. FETCH CANDIDATES ---
+	// --- 3. FETCH THE "HUNGRY" TRACKS ---
+	// Sort by PlayCount (Low -> High), then by LastPlayed (Old -> New)
+	result := query.Order("play_count ASC, last_played ASC NULLS FIRST").Limit(100).Find(&dbTracks)
 
-	result := query.Order("play_count ASC, last_played ASC NULLS FIRST").Limit(300).Find(&dbTracks)
-
-	// --- 5. FALLBACK STRATEGY ---
 	if result.Error != nil || len(dbTracks) == 0 {
-		log.Printf("⚠️ Strict rules failed for [%s]. Relaxing.", s.prefix)
-
-		// Simple fallback: just match prefix
+		// Fallback: If artist exclusion was too strict, try again without it
 		fallbackQuery := s.db.Model(&models.Track{}).Where("key LIKE ?", s.prefix+"%")
-
-		// Try to keep Genre if possible
-		if rules != nil && rules.Genre != "" {
-			fallbackQuery = fallbackQuery.Where("genre = ?", rules.Genre)
-		}
-
-		fallbackQuery.Order("play_count ASC, last_played ASC NULLS FIRST").Limit(100).Find(&dbTracks)
+		fallbackQuery.Order("play_count ASC, last_played ASC NULLS FIRST").Limit(50).Find(&dbTracks)
 	}
 
 	if len(dbTracks) == 0 {
 		return errors.New("no tracks found in library")
 	}
 
-	// --- 6. FISHER-YATES SHUFFLE ---
+	// --- 4. SHUFFLE THE RESULTS ---
 	n := len(dbTracks)
 	for i := n - 1; i > 0; i-- {
 		jBig, _ := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
@@ -188,10 +109,8 @@ func (s *StarvationProvider) refreshAndShuffle(rules *dj.SlotRules) error {
 		dbTracks[i], dbTracks[j] = dbTracks[j], dbTracks[i]
 	}
 
-	// --- 7. FILL QUEUE ---
-	queueSize := min(50, len(dbTracks))
-	s.queue = dbTracks[:queueSize]
-
-	log.Printf("🃏 Deck Refreshed: [%s] | Loaded: %d | Pool: %d", s.currentProg, queueSize, n)
+	// --- 5. FILL QUEUE ---
+	s.queue = dbTracks
+	log.Printf("🃏 Starvation Deck Refreshed | Loaded: %d", len(s.queue))
 	return nil
 }

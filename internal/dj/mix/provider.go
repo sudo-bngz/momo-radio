@@ -23,21 +23,21 @@ type Deck struct {
 	queue       []models.Track
 	client      *storage.Client
 	db          *database.Client
-	scheduler   *Scheduler // <--- Added this field
+	scheduler   *Scheduler
 	mu          sync.Mutex
 	currentProg string
 }
 
 // NewDeck creates a new harmonic mixing deck
 func NewDeck(client *storage.Client, db *database.Client, prefix string) *Deck {
-	// Initialize the real scheduler using the GORM DB instance
+	// Initialize the scheduler using the GORM DB instance
 	sched := NewScheduler(db.DB)
 
 	return &Deck{
 		client:    client,
 		db:        db,
 		prefix:    prefix,
-		scheduler: sched, // <--- Store it here
+		scheduler: sched,
 		queue:     make([]models.Track, 0),
 	}
 }
