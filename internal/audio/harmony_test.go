@@ -1,4 +1,4 @@
-package dj
+package audio
 
 import (
 	"momo-radio/internal/models"

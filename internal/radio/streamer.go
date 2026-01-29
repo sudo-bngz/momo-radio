@@ -21,9 +21,11 @@ import (
 	"momo-radio/internal/audio"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
-	"momo-radio/internal/dj" // Uses the new DJ package
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
+
+	"momo-radio/internal/dj"
+	"momo-radio/internal/dj/mix"
 )
 
 // --- METRICS ---
@@ -52,20 +54,22 @@ func RegisterMetrics() {
 // --- ENGINE ---
 
 type Engine struct {
-	cfg     *config.Config
-	storage *storage.Client
-	db      *database.Client
-	runID   int64
-	cache   *CacheManager
-	state   *StateManager
+	cfg      *config.Config
+	storage  *storage.Client
+	db       *database.Client
+	runID    int64
+	cache    *CacheManager
+	state    *StateManager
+	musicDJ  dj.Provider
+	jingleDJ dj.Provider
 }
 
-// CurrentTrack now includes the "Show" (The Mythology Theme)
+// CurrentTrack represents the metadata sent to the frontend
 type CurrentTrack struct {
 	Artist    string `json:"artist"`
 	Title     string `json:"title"`
 	Album     string `json:"album"`
-	Show      string `json:"show"` // <--- NEW: Display the active program
+	Show      string `json:"show"` // The active radio program
 	StartedAt int64  `json:"started_at"`
 }
 
@@ -114,28 +118,33 @@ func (e *Engine) Run() {
 		log.Println("🆕 Starting Fresh Stream Sequence")
 	}
 
-	// 3. Initialize Decks
-	// The DJ package now handles the Timetable and Harmonic Mixing internally
-	musicDeck := dj.NewDeck(e.storage, e.db, "music/")
-	jingleDeck := dj.NewDeck(e.storage, e.db, "station_id/")
+	// 3. Initialize Decks (The New Way)
+	// We use mix.NewDeck to create the Harmonic Providers.
+	// mix.NewDeck returns a specific implementation, but we treat it as dj.Provider.
+	musicDeck := mix.NewDeck(e.storage, e.db, "music/")
+	jingleDeck := mix.NewDeck(e.storage, e.db, "station_id/")
+
+	e.musicDJ = musicDeck
+	e.jingleDJ = jingleDeck
 
 	// 4. Setup Pipeline
 	pr, pw := io.Pipe()
 
-	// A. FFmpeg Consumer (Encodes the audio to HLS)
+	// A. FFmpeg Consumer
 	go audio.StartStreamProcess(pr, e.cfg, e.runID, int64(startSequence))
 
-	// B. DJ Producer (Selects and feeds tracks)
+	// B. DJ Producer
 	go e.runScheduler(pw, musicDeck, jingleDeck, resumeTrackID)
 
-	// C. Helper Server (Metrics + Redirect)
+	// C. Helper Server
 	go e.startRedirectServer()
 
-	// D. Uploader (Watches for .ts files and pushes to B2)
+	// D. Uploader
 	e.startStreamUploader()
 }
 
-func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.Deck, resumeID uint) {
+// runScheduler is the main loop that picks songs
+func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck dj.Provider, resumeID uint) {
 	defer output.Close()
 	songsSinceJingle := 0
 
@@ -147,101 +156,105 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck *dj.D
 	firstRun := true
 
 	for {
-		var trackKey string
+		var selectedTrack *dj.Track
+		var err error
 
 		// --- RESUME OLD TRACK ---
 		if firstRun && resumeID != 0 {
 			var t models.Track
-			if err := e.db.DB.First(&t, resumeID).Error; err == nil {
+			if dbErr := e.db.DB.First(&t, resumeID).Error; dbErr == nil {
 				log.Printf("🔙 Resuming Previous Track: %s", t.Title)
-				trackKey = t.Key
+				// Manually construct the dj.Track since we bypassed the provider
+				selectedTrack = &dj.Track{
+					ID:     t.ID,
+					Key:    t.Key,
+					Artist: t.Artist,
+					Title:  t.Title,
+				}
 			}
 			firstRun = false
 		}
 
-		// --- SCHEDULER LOGIC ---
-		if trackKey == "" {
-			// Jingle Logic (every 3 songs)
+		// --- SELECTION LOGIC ---
+		if selectedTrack == nil {
+			// Jingle Logic (Every 3 songs)
 			if songsSinceJingle >= 3 {
 				log.Println("\n>>> 🔔 Jingle Time")
-				trackKey = jingleDeck.NextTrack()
-				// Jingle deck might fail if no tracks found (unlikely for station_id)
-				if trackKey != "" {
+				selectedTrack, err = jingleDeck.GetNextTrack()
+				if err == nil {
 					songsSinceJingle = 0
+				} else {
+					log.Printf("⚠️ Jingle deck skipped: %v", err)
 				}
 			}
 
 			// Music Logic
-			if trackKey == "" {
-				// musicDeck.NextTrack() triggers the whole Harmonic + Timetable engine
-				trackKey = musicDeck.NextTrack()
-
-				if trackKey != "" {
+			if selectedTrack == nil {
+				// This triggers the Scheduler + Harmonic Mixing internally
+				selectedTrack, err = musicDeck.GetNextTrack()
+				if err == nil {
 					songsSinceJingle++
-					log.Println("\n>>> 🎵 Music Time")
+					log.Printf("\n>>> 🎵 Music Time (%s)", musicDeck.Name())
+				} else {
+					log.Printf("❌ Music deck error: %v", err)
 				}
 			}
 		}
 
 		// Safety Net
-		if trackKey == "" {
-			log.Println("❌ Library empty or Deck failed. Retrying in 10s...")
+		if selectedTrack == nil {
+			log.Println("❌ No track selected. Retrying in 10s...")
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		// --- TRACK STARTED ---
+		// --- PLAYOUT ---
 
-		// 1. Update Persistence
-		var currentTrackModel models.Track
-		if err := e.db.DB.Select("id").Where("key = ?", trackKey).First(&currentTrackModel).Error; err == nil {
-			e.state.UpdateTrack(currentTrackModel.ID, 0)
-		}
+		// 1. Update Persistence (DB State)
+		e.state.UpdateTrack(selectedTrack.ID, 0)
 
-		// 2. Prefetch Next Tracks
-		// We peek into the DJ's harmonic queue to download ahead of time
-		keys := []string{trackKey}
-		if nexts := musicDeck.Peek(prefetchCount); len(nexts) > 0 {
-			keys = append(keys, nexts...)
-		}
-		e.cache.Prefetch(keys)
-		go e.cache.Cleanup(keys)
+		// 2. Prefetch Next Tracks (Lookahead)
+		// We can't officially 'Peek' on the generic interface,
+		// but since we know it's a *mix.Deck, we could assert it if we really needed peeking.
+		// For now, we just prefetch the current track to ensure it's ready.
+		e.cache.Prefetch([]string{selectedTrack.Key})
+		go e.cache.Cleanup([]string{selectedTrack.Key})
 
 		// 3. Stats & Metadata
-		log.Printf("▶️  Playing: %s", trackKey)
+		log.Printf("▶️  Playing: %s - %s", selectedTrack.Artist, selectedTrack.Title)
 		tracksPlayed.Inc()
 
-		go e.updateNowPlaying(trackKey) // Updates JSON on B2
-		go e.recordTrackPlay(trackKey)  // Updates DB history
+		// We pass the full track object now to updateNowPlaying, to be more accurate
+		go e.updateNowPlaying(selectedTrack, musicDeck.Name())
+		go e.recordTrackPlay(selectedTrack)
 
 		// 4. Stream Audio
-		if err := e.streamFileToPipe(trackKey, output); err != nil {
+		if err := e.streamFileToPipe(selectedTrack.Key, output); err != nil {
 			log.Printf("❌ Stream error: %v (Skipping)", err)
 			continue
 		}
 	}
 }
 
-func (e *Engine) recordTrackPlay(key string) {
+func (e *Engine) recordTrackPlay(t *dj.Track) {
 	now := time.Now()
-	var track models.Track
 
-	// Update Play Count & Last Played
-	err := e.db.DB.Model(&track).
-		Where("key = ?", key).
+	// We update the DB model based on the ID we got from the DJ
+	err := e.db.DB.Model(&models.Track{}).
+		Where("id = ?", t.ID).
 		Updates(map[string]any{
 			"play_count":  gorm.Expr("play_count + 1"),
 			"last_played": now,
-		}).First(&track).Error
+		}).Error
 
 	if err != nil {
-		log.Printf("⚠️  DB Error updating track stats for %s: %v", key, err)
+		log.Printf("⚠️  DB Error updating track stats: %v", err)
 		return
 	}
 
 	// Insert History Record
 	history := models.PlayHistory{
-		TrackID:  track.ID,
+		TrackID:  t.ID,
 		PlayedAt: now,
 	}
 	if err := e.db.DB.Create(&history).Error; err != nil {
@@ -265,36 +278,40 @@ func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
 	return err
 }
 
-func (e *Engine) updateNowPlaying(key string) {
-	// Parse Filename (Artist - Title.mp3)
-	parts := strings.Split(key, "/")
-	filename := parts[len(parts)-1]
-	cleanName := strings.TrimSuffix(filename, filepath.Ext(filename))
+func (e *Engine) updateNowPlaying(t *dj.Track, deckName string) {
+	// If deckName contains the show name "Harmonic Deck (Morning Jazz)", extract it
+	showName := "General Rotation"
+	if strings.Contains(deckName, "(") {
+		start := strings.Index(deckName, "(")
+		end := strings.Index(deckName, ")")
+		if start != -1 && end != -1 {
+			showName = deckName[start+1 : end]
+		}
+	}
 
-	// Get Current "World" Name from the DJ Timetable
-	currentSlot := dj.GetCurrentSlot(time.Now())
-
-	track := CurrentTrack{
-		Title:     strings.ReplaceAll(cleanName, "_", " "),
-		Artist:    "Unknown",
-		Show:      currentSlot.Name, // Shows "Berlin Deep" or "Morning Dub"
+	trackData := CurrentTrack{
+		Title:     t.Title,
+		Artist:    t.Artist,
+		Show:      showName,
 		StartedAt: time.Now().Unix(),
 	}
 
-	// Heuristic to split "Artist - Title"
-	nameParts := strings.SplitN(cleanName, "-", 2)
-	if len(nameParts) == 2 {
-		track.Artist = strings.ReplaceAll(nameParts[0], "_", " ")
-		track.Title = strings.ReplaceAll(nameParts[1], "_", " ")
+	// Fallback if metadata is missing (e.g. filename parse)
+	if trackData.Title == "" {
+		parts := strings.Split(t.Key, "/")
+		filename := parts[len(parts)-1]
+		trackData.Title = strings.TrimSuffix(filename, filepath.Ext(filename))
+		trackData.Artist = "Unknown"
 	}
 
-	// Heuristic to find Album (Folder name)
+	// Heuristic for Album (Folder name)
+	parts := strings.Split(t.Key, "/")
 	if len(parts) >= 2 {
-		track.Album = strings.ReplaceAll(parts[len(parts)-2], "_", " ")
+		trackData.Album = strings.ReplaceAll(parts[len(parts)-2], "_", " ")
 	}
 
 	// Upload to B2
-	data, _ := json.Marshal(track)
+	data, _ := json.Marshal(trackData)
 	e.storage.UploadStreamFile("now_playing.json",
 		bytes.NewReader(data),
 		"application/json",
