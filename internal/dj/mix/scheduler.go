@@ -21,66 +21,70 @@ func NewScheduler(db *gorm.DB) *Scheduler {
 	return &Scheduler{db: db}
 }
 
-// GetCurrentRules checks the DB for active schedules matching the current time.
-// NOTE: This method name MUST be 'GetCurrentRules' to match provider.go
+// GetCurrentRules queries the DB for the active schedule slot.
 func (s *Scheduler) GetCurrentRules() *dj.SlotRules {
 	now := time.Now()
 
-	// 1. Get current constraints
-	// Weekday: "Mon", "Tue"...
-	weekday := now.Weekday().String()[0:3]
-	// Time: "15:04"
-	currentTime := now.Format("15:04")
+	// 1. Get current time context
+	weekday := now.Weekday().String()[0:3] // "Mon", "Tue"...
+	currentTime := now.Format("15:04")     // "14:30"
 
 	var schedules []models.Schedule
 
-	// 2. Fetch all active schedules
+	// 2. Fetch ALL active schedules
+	// We fetch all active rows first because handling "Mon,Tue,Wed" and
+	// cross-midnight time logic is cleaner in Go than in SQL.
 	if err := s.db.Where("is_active = ?", true).Find(&schedules).Error; err != nil {
 		log.Printf("⚠️ Error fetching schedules: %v", err)
-		return nil
+		return s.fallbackRules()
 	}
 
+	// 3. Find the matching slot
 	for _, slot := range schedules {
-		// A. Check Day (e.g. "Mon,Tue,Fri")
+		// A. Check Day
 		if !strings.Contains(slot.Days, weekday) {
 			continue
 		}
 
 		// B. Check Time
 		if s.isTimeMatch(slot.Start, slot.End, currentTime) {
-			// Found a match!
 			return &dj.SlotRules{
 				Name:    slot.Name,
 				Genre:   slot.Genre,
-				Styles:  splitAndTrim(slot.Styles), // Helper to parse "Techno, Dub"
+				Styles:  s.parseCSV(slot.Styles),
+				MinBPM:  slot.MinBPM,
+				MaxBPM:  slot.MaxBPM,
 				MinYear: slot.MinYear,
 				MaxYear: slot.MaxYear,
-				// Map other fields if your models.Schedule has them:
-				// MinBPM: slot.MinBPM,
-				// MaxBPM: slot.MaxBPM,
 			}
 		}
 	}
 
-	// No specific schedule found? Return default fallback.
+	// 4. No Match Found? Return Default.
+	return s.fallbackRules()
+}
+
+// fallbackRules returns the default rotation when no show is scheduled.
+func (s *Scheduler) fallbackRules() *dj.SlotRules {
 	return &dj.SlotRules{
 		Name: "General Rotation",
+		// You can define default constraints here if you want
+		// e.g., MinBPM: 0, MaxBPM: 200
 	}
 }
 
-// isTimeMatch handles standard ranges (09:00-11:00) and cross-midnight ranges (23:00-02:00).
+// isTimeMatch handles standard ranges (09:00-11:00) and crossover ranges (22:00-02:00).
 func (s *Scheduler) isTimeMatch(start, end, current string) bool {
 	if start <= end {
-		// Standard: 09:00 to 17:00
+		// Standard: Start < Current < End
 		return current >= start && current < end
 	}
-	// Crossover: 22:00 to 04:00
-	// Match if we are after start (23:00) OR before end (01:00)
+	// Crossover: (Current > Start) OR (Current < End)
 	return current >= start || current < end
 }
 
-// Helper to parse "Techno, Dub, Ambient" into ["Techno", "Dub", "Ambient"]
-func splitAndTrim(input string) []string {
+// parseCSV helper splits "Techno, Dub" into ["Techno", "Dub"]
+func (s *Scheduler) parseCSV(input string) []string {
 	var result []string
 	if input == "" {
 		return result

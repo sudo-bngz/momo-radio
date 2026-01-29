@@ -1,21 +1,32 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type Schedule struct {
-	gorm.Model
-	Name  string `json:"name"`
-	Days  string `json:"days"`  // Comma-separated: "Mon,Tue,Wed"
-	Start string `json:"start"` // HH:MM (24h format)
-	End   string `json:"end"`   // HH:MM (24h format)
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	// Filtering Criteria
-	Genre     string `json:"genre"`     // Broad Genre (e.g., "Electronic")
-	Styles    string `json:"styles"`    // Comma-separated (e.g., "Dub Techno,Deep House")
-	Publisher string `json:"publisher"` // Label (e.g., "Basic Channel")
-	Artists   string `json:"artists"`   // Comma-separated (e.g., "Maurizio,Rhythm & Sound")
-	MinYear   int    `json:"min_year"`
-	MaxYear   int    `json:"max_year"`
+	// Configuration
+	Name     string `gorm:"uniqueIndex;not null" json:"name"` // e.g., "Morning Coffee"
+	IsActive bool   `gorm:"default:true" json:"is_active"`
 
-	IsActive bool `json:"is_active" gorm:"default:true"`
+	// Timing
+	Days  string `json:"days"`  // "Mon,Tue,Wed,Thu,Fri"
+	Start string `json:"start"` // "07:00"
+	End   string `json:"end"`   // "10:00"
+
+	// Content Rules (The Vibe)
+	Genre     string  `json:"genre"`    // e.g. "Electronic"
+	Styles    string  `json:"styles"`   // e.g. "Downtempo, Lo-Fi" (Comma separated)
+	MinYear   int     `json:"min_year"` // e.g. 1990
+	MaxYear   int     `json:"max_year"` // e.g. 2005
+	MinBPM    float64 `json:"min_bpm"`
+	MaxBPM    float64 `json:"max_bpm"`
+	Publisher string  `json:"publisher"` // Optional label filter
 }

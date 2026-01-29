@@ -98,8 +98,11 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine
 	}
 }
 
+// ... imports
+
 func (e *Engine) Run() {
 	log.Printf("🆔 Engine Run ID: %d", e.runID)
+	log.Printf("🎛️ Active Provider: %s", e.cfg.Radio.Provider) // Log the choice
 
 	// 1. Prepare output dir
 	os.RemoveAll(e.cfg.Radio.SegmentDir)
@@ -118,12 +121,30 @@ func (e *Engine) Run() {
 		log.Println("🆕 Starting Fresh Stream Sequence")
 	}
 
-	// 3. Initialize Decks (The New Way)
-	// We use mix.NewDeck to create the Harmonic Providers.
-	// mix.NewDeck returns a specific implementation, but we treat it as dj.Provider.
-	musicDeck := mix.NewDeck(e.storage, e.db, "music/")
-	jingleDeck := mix.NewDeck(e.storage, e.db, "station_id/")
+	// 3. Initialize Music Deck based on Config
+	var musicDeck dj.Provider
 
+	switch strings.ToLower(e.cfg.Radio.Provider) {
+	case "harmonic":
+		musicDeck = mix.NewDeck(e.storage, e.db, "music/")
+	case "starvation":
+		// The smart random deck (uses DB only)
+		musicDeck = mix.NewStarvationProvider(e.db.DB, "music/")
+	case "timetable":
+		// Wraps starvation but strictly enforces time slots (if you implemented the wrapper)
+		// For now, let's just default to Starvation as the base
+		base := mix.NewStarvationProvider(e.db.DB, "music/")
+		// If you had a Timetable wrapper: musicDeck = mix.NewTimetableWrapper(base)
+		musicDeck = base
+	default:
+		log.Printf("⚠️ Unknown provider '%s'. Defaulting to Starvation.", e.cfg.Radio.Provider)
+		musicDeck = mix.NewStarvationProvider(e.db.DB, "music/")
+	}
+
+	// Initialize Jingle Deck (Always simple starvation is usually best for jingles)
+	jingleDeck := mix.NewStarvationProvider(e.db.DB, "station_id/")
+
+	// Assign to Engine
 	e.musicDJ = musicDeck
 	e.jingleDJ = jingleDeck
 

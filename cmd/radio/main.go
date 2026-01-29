@@ -27,6 +27,9 @@ func main() {
 	log.Println("📦 Running Database Migrations...")
 	db.AutoMigrate()
 
+	// Seeds (Create default schedule if missing)
+	database.SeedSchedules(db.DB)
+
 	// 5. Register Prometheus Metrics
 	radio.RegisterMetrics()
 
