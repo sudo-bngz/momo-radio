@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.3.0-alpha] - 2026-01-30
 
 ### 🚀 Features
 
@@ -16,6 +16,10 @@
 - *(ingest)* Enhance artist country resolution using MusicBrainz and GeoAPI
 - *(admin)* Setup admin with upload and track  pre-analyze
 - *(dj)* Implement harmonic mixing and timetable scheduling
+- *(radio)* Implement dynamic DJ providers and DB-backed scheduling
+- *(seed)* Implement full 24/7 radio grid with genre-specific scheduling
+- *(radio)* Implement harmonic daily provider and refined electronic grid
+- *(radio)* Implement CLI simulation mode and provider overrides
 
 ### 🐛 Bug Fixes
 
@@ -29,6 +33,8 @@
 - *(ingest)* Optimize Essentia build for Atom C2750 and implement WAV-bypass
 - *(ingest)* Implement multi-provider country repair and metadata refactor
 - *(ingest)* Implement GeoAPI fallback in country repair logic
+- *(dj)* Decouple radio engine and modularize mixing logic
+- Simplify StarvationProvider to pure rotation logic
 
 ### ⚙️ Miscellaneous Tasks
 
