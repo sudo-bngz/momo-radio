@@ -35,8 +35,8 @@ type Config struct {
 		AudioChannels string `mapstructure:"audio_channels"`
 		HLSFlags      string `mapstructure:"hls_flags"`
 		PrefetchCount int    `mapstructure:"prefetch_count"`
-		// NEW: Add the provider field here
-		Provider string `mapstructure:"provider"`
+		DryRun        bool   `mapstructure:"dry_run"`
+		Provider      string `mapstructure:"provider"`
 	} `mapstructure:"radio"`
 	Database struct {
 		Host     string `mapstructure:"host"`

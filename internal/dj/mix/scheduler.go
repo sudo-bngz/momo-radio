@@ -68,7 +68,7 @@ func (s *Scheduler) GetCurrentRules() *dj.SlotRules {
 func (s *Scheduler) fallbackRules() *dj.SlotRules {
 	return &dj.SlotRules{
 		Name: "General Rotation",
-		// You can define default constraints here if you want
+		// Define default constraints here if you want
 		// e.g., MinBPM: 0, MaxBPM: 200
 	}
 }

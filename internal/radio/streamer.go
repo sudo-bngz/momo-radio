@@ -101,6 +101,11 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine
 // ... imports
 
 func (e *Engine) Run() {
+	if e.cfg.Radio.DryRun {
+		e.runSimulation()
+		return
+	}
+
 	log.Printf("🆔 Engine Run ID: %d", e.runID)
 	log.Printf("🎛️ Active Provider: %s", e.cfg.Radio.Provider) // Log the choice
 
@@ -131,10 +136,7 @@ func (e *Engine) Run() {
 		// The smart random deck (uses DB only)
 		musicDeck = mix.NewStarvationProvider(e.db.DB, "music/")
 	case "timetable":
-		// Wraps starvation but strictly enforces time slots (if you implemented the wrapper)
-		// For now, let's just default to Starvation as the base
 		base := mix.NewStarvationProvider(e.db.DB, "music/")
-		// If you had a Timetable wrapper: musicDeck = mix.NewTimetableWrapper(base)
 		musicDeck = base
 	default:
 		log.Printf("⚠️ Unknown provider '%s'. Defaulting to Starvation.", e.cfg.Radio.Provider)
@@ -235,9 +237,6 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck dj.Pr
 		e.state.UpdateTrack(selectedTrack.ID, 0)
 
 		// 2. Prefetch Next Tracks (Lookahead)
-		// We can't officially 'Peek' on the generic interface,
-		// but since we know it's a *mix.Deck, we could assert it if we really needed peeking.
-		// For now, we just prefetch the current track to ensure it's ready.
 		e.cache.Prefetch([]string{selectedTrack.Key})
 		go e.cache.Cleanup([]string{selectedTrack.Key})
 
@@ -245,7 +244,7 @@ func (e *Engine) runScheduler(output *io.PipeWriter, musicDeck, jingleDeck dj.Pr
 		log.Printf("▶️  Playing: %s - %s", selectedTrack.Artist, selectedTrack.Title)
 		tracksPlayed.Inc()
 
-		// We pass the full track object now to updateNowPlaying, to be more accurate
+		// Pass the full track object now to updateNowPlaying, to be more accurate
 		go e.updateNowPlaying(selectedTrack, musicDeck.Name())
 		go e.recordTrackPlay(selectedTrack)
 

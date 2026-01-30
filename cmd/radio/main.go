@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 
 	"momo-radio/internal/config"
@@ -10,34 +11,43 @@ import (
 )
 
 func main() {
-	// 1. Setup Logging
+	// 1. Parse Flags
+	// We add flags to override config.yaml values
+	simulate := flag.Bool("simulate", false, "Dry run: Generate playlist to stdout without streaming")
+	provider := flag.String("provider", "", "Override DJ provider (harmonic, starvation, timetable)")
+	flag.Parse()
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Println("🚀 Starting Momo Radio Engine (Modular + DB Scheduler)...")
 
 	// 2. Load Config
 	cfg := config.Load()
 
-	// 3. Init Infrastructure
-	// We initialize the storage (S3/B2) and the Database (Postgres/SQLite)
+	// 3. Apply Flag Overrides
+	if *simulate {
+		cfg.Radio.DryRun = true
+	}
+	if *provider != "" {
+		cfg.Radio.Provider = *provider
+	}
+
+	if cfg.Radio.DryRun {
+		log.Println("🧪 MODE: DRY RUN / SIMULATION")
+		log.Println("   - No Audio Output")
+		log.Println("   - Database will NOT be updated (Read-Only)")
+		log.Println("   - Storage will NOT be touched")
+	} else {
+		log.Println("🚀 Starting Momo Radio Engine (Live Mode)...")
+	}
+
+	// 4. Init Infrastructure
 	store := storage.New(cfg)
 	db := database.New(cfg)
 
-	// 4. Run Database Migrations
-	// This ensures the 'tracks', 'play_histories', and 'schedules' tables exist
-	log.Println("📦 Running Database Migrations...")
+	// 5. Run Migrations (Safe to run even in dry run)
 	db.AutoMigrate()
-
-	// Seeds (Create default schedule if missing)
 	database.SeedSchedules(db.DB)
 
-	// 5. Register Prometheus Metrics
-	radio.RegisterMetrics()
-
-	// 6. Start the Radio Engine
-	// The engine will internally initialize the DJs (Mixer + Scheduler)
-	log.Println("🎧 Initializing Radio Engine...")
+	// 6. Start Engine
 	engine := radio.New(cfg, store, db)
-
-	// This blocks forever
 	engine.Run()
 }
