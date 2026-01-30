@@ -23,7 +23,7 @@ type Schedule struct {
 
 	// Content Rules (The Vibe)
 	Genre     string  `json:"genre"`    // e.g. "Electronic"
-	Styles    string  `json:"styles"`   // e.g. "Downtempo, Lo-Fi" (Comma separated)
+	Styles    string  `json:"styles"`   // e.g. "Downtempo, Dub" (Comma separated)
 	MinYear   int     `json:"min_year"` // e.g. 1990
 	MaxYear   int     `json:"max_year"` // e.g. 2005
 	MinBPM    float64 `json:"min_bpm"`

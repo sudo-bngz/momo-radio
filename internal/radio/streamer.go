@@ -126,7 +126,7 @@ func (e *Engine) Run() {
 
 	switch strings.ToLower(e.cfg.Radio.Provider) {
 	case "harmonic":
-		musicDeck = mix.NewDeck(e.storage, e.db, "music/")
+		musicDeck = mix.NewHarmonicDailyProvider(e.db.DB)
 	case "starvation":
 		// The smart random deck (uses DB only)
 		musicDeck = mix.NewStarvationProvider(e.db.DB, "music/")

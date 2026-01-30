@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SeedSchedules populates the DB with a full 24/7 radio grid
+// SeedSchedules populates the DB with a full 24/7 Electronic Radio grid
 func SeedSchedules(db *gorm.DB) {
 	schedules := []models.Schedule{
 		// --- MORNING (06:00 - 10:00) ---
@@ -16,20 +16,20 @@ func SeedSchedules(db *gorm.DB) {
 			Name:     "Morning Haze",
 			Days:     "Mon,Tue,Wed,Thu,Fri",
 			Start:    "06:00",
-			End:      "09:00",
+			End:      "10:00",
 			Genre:    "Electronic",
-			Styles:   "Ambient, Downtempo, Easy Listening, New Age, Balearic, Berlin-School",
-			MinBPM:   60,
+			Styles:   "Ambient, Drone, New Age, Berlin-School, Field Recording",
+			MinBPM:   0,
 			MaxBPM:   100,
 			IsActive: true,
 		},
 		{
-			Name:     "Weekend Soul",
+			Name:     "Balearic Breakfast",
 			Days:     "Sat,Sun",
 			Start:    "07:00",
 			End:      "11:00",
-			Genre:    "Jazz/Soul",
-			Styles:   "Soul, Funk, Fusion, Future Jazz, Rhythm & Blues",
+			Genre:    "Electronic",
+			Styles:   "Balearic, Downtempo, Easy Listening, Trip Hop",
 			MinBPM:   80,
 			MaxBPM:   115,
 			IsActive: true,
@@ -37,23 +37,23 @@ func SeedSchedules(db *gorm.DB) {
 
 		// --- WORKDAY (10:00 - 13:00) ---
 		{
-			Name:     "Deep Focus",
+			Name:     "Deep Space",
 			Days:     "Mon,Wed,Fri",
-			Start:    "09:00",
+			Start:    "10:00",
 			End:      "13:00",
 			Genre:    "Electronic",
-			Styles:   "Deep Techno, Dub Techno, Minimal, IDM, Deep Tech",
+			Styles:   "Deep Techno, Dub Techno, Minimal, Minimal Techno, IDM",
 			MinBPM:   110,
 			MaxBPM:   126,
 			IsActive: true,
 		},
 		{
-			Name:     "Office Groove",
+			Name:     "Micro House",
 			Days:     "Tue,Thu",
-			Start:    "09:00",
+			Start:    "10:00",
 			End:      "13:00",
 			Genre:    "Electronic",
-			Styles:   "Deep House, Garage House, Tech House, Progressive House",
+			Styles:   "Deep House, Tech House, Deep Tech, Minimal",
 			MinBPM:   118,
 			MaxBPM:   126,
 			IsActive: true,
@@ -61,34 +61,34 @@ func SeedSchedules(db *gorm.DB) {
 
 		// --- AFTERNOON (13:00 - 17:00) ---
 		{
-			Name:     "Afternoon Digging",
+			Name:     "Glitch & Breaks",
 			Days:     "Mon,Tue,Wed,Thu,Fri",
 			Start:    "13:00",
 			End:      "17:00",
 			Genre:    "Electronic",
-			Styles:   "Abstract, Trip Hop, Broken Beat, Leftfield, Experimental, Hip Hop, Turntablism",
+			Styles:   "Glitch, Broken Beat, Leftfield, IDM, Abstract, Electro",
 			IsActive: true,
 		},
 
 		// --- SUNSET (17:00 - 21:00) ---
 		{
-			Name:     "Sunset Boulevard",
+			Name:     "Synth Horizon",
 			Days:     "Mon,Tue,Wed,Thu",
 			Start:    "17:00",
-			End:      "20:00",
-			Genre:    "Pop/Disco",
-			Styles:   "Synth-pop, Disco, Italo-Disco, Dance-pop, Funk, Synthwave",
+			End:      "21:00",
+			Genre:    "Electronic",
+			Styles:   "Synth-pop, Synthwave, Disco, Italo-Disco, Hi NRG, Dance-pop",
 			MinBPM:   100,
-			MaxBPM:   125,
+			MaxBPM:   128,
 			IsActive: true,
 		},
 		{
-			Name:     "Friday Warmup",
+			Name:     "Friday Starter",
 			Days:     "Fri",
 			Start:    "17:00",
 			End:      "21:00",
 			Genre:    "Electronic",
-			Styles:   "Electro, Breaks, Breakbeat, Big Beat, UK Funky, Electro House",
+			Styles:   "Big Beat, Breakbeat, Breaks, UK Funky, Electro House",
 			MinBPM:   125,
 			MaxBPM:   135,
 			IsActive: true,
@@ -100,73 +100,84 @@ func SeedSchedules(db *gorm.DB) {
 			Days:     "Fri,Sat",
 			Start:    "21:00",
 			End:      "00:00",
-			Genre:    "Techno",
-			Styles:   "Techno, Hard Techno, Industrial, Acid, Minimal Techno",
+			Genre:    "Electronic",
+			Styles:   "Techno, Hard Techno, Industrial, Acid, Acid House",
 			MinBPM:   130,
 			MaxBPM:   145,
 			IsActive: true,
 		},
 		{
-			Name:     "Urban Night",
+			Name:     "UK Bass Culture",
 			Days:     "Wed",
 			Start:    "21:00",
 			End:      "00:00",
-			Genre:    "Hip Hop",
-			Styles:   "Hip Hop, Gangsta, Thug Rap, Grime, Hardcore Hip-Hop, Rap",
+			Genre:    "Electronic",
+			Styles:   "Dubstep, Grime, UK Garage, Speed Garage, Bass Music",
 			IsActive: true,
 		},
 		{
-			Name:     "Rock Session",
+			Name:     "House Nation",
 			Days:     "Thu",
 			Start:    "21:00",
 			End:      "00:00",
-			Genre:    "Rock",
-			Styles:   "Rock, Indie Rock, Post Rock, Krautrock, Psychedelic Rock, Classic Rock, Art Rock",
+			Genre:    "Electronic",
+			Styles:   "House, Garage House, Italo House, Euro House, Acid House",
 			IsActive: true,
 		},
 
-		// --- LATE NIGHT / CLUB (00:00 - 05:00) ---
+		// --- LATE NIGHT (00:00 - 05:00) ---
 		{
-			Name:     "Deep State",
-			Days:     "Fri,Sat", // Technically Sat/Sun early morning
+			Name:     "Trance State",
+			Days:     "Fri,Sat",
 			Start:    "00:00",
 			End:      "05:00",
 			Genre:    "Electronic",
-			Styles:   "Trance, Progressive Trance, Hard Trance, Goa Trance, Psychedelic, Hardstyle, Hardcore",
+			Styles:   "Trance, Progressive Trance, Hard Trance, Goa Trance, Psychedelic",
 			MinBPM:   135,
-			MaxBPM:   155,
+			MaxBPM:   150,
 			IsActive: true,
 		},
 		{
-			Name:     "Bass Pressure",
-			Days:     "Sun", // Sunday night -> Monday morning
+			Name:     "Hardcore Energy",
+			Days:     "Sun",
 			Start:    "22:00",
 			End:      "02:00",
-			Genre:    "Bass",
-			Styles:   "Drum n Bass, Dubstep, UK Garage, Speed Garage, Bass Music",
-			MinBPM:   140,
+			Genre:    "Electronic",
+			Styles:   "Hardcore, Hardstyle, Hard House",
+			MinBPM:   150,
+			MaxBPM:   190,
+			IsActive: true,
+		},
+		{
+			Name:     "Jungle Vibes",
+			Days:     "Tue",
+			Start:    "22:00",
+			End:      "01:00",
+			Genre:    "Electronic",
+			Styles:   "Drum n Bass, Breakbeat, Bass Music",
+			MinBPM:   160,
 			MaxBPM:   180,
 			IsActive: true,
 		},
 
-		// --- OVERNIGHT / EXPERIMENTAL (02:00 - 06:00) ---
+		// --- OVERNIGHT (02:00 - 06:00) ---
 		{
-			Name:     "Night Signal",
-			Days:     "Mon,Tue,Wed,Thu",
+			Name:     "Experimental Signal",
+			Days:     "Mon,Tue,Wed,Thu,Sun",
 			Start:    "01:00",
 			End:      "06:00",
-			Genre:    "Experimental",
-			Styles:   "Drone, Dark Ambient, Noise, Glitch, Musique Concrète, Field Recording, Sound Collage, Harsh Noise Wall",
+			Genre:    "Electronic",
+			Styles:   "Dark Ambient, Drone, Noise, Harsh Noise Wall, Musique Concrète, Sound Collage, Industrial",
 			IsActive: true,
 		},
 	}
 
-	log.Printf("🌱 Seeding %d Schedules...", len(schedules))
+	log.Printf("🌱 Seeding %d Electronic Schedules...", len(schedules))
 	for _, s := range schedules {
 		// UPSERT based on 'Name' to prevent duplicates on restart
 		db.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "name"}},
-			DoNothing: true, // If it exists, leave it alone.
+			DoNothing: true,
 		}).Create(&s)
 	}
 }

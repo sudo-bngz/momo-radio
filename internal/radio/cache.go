@@ -18,7 +18,7 @@ type CacheManager struct {
 	storage StorageProvider
 	baseDir string
 	mu      sync.Mutex
-	pending map[string]bool // Tracks currently downloading files to avoid duplicates
+	pending map[string]chan struct{}
 }
 
 func NewCacheManager(storage StorageProvider, tmpDir string) *CacheManager {
@@ -30,24 +30,41 @@ func NewCacheManager(storage StorageProvider, tmpDir string) *CacheManager {
 	return &CacheManager{
 		storage: storage,
 		baseDir: cacheDir,
-		pending: make(map[string]bool),
+		pending: make(map[string]chan struct{}),
 	}
 }
 
-// GetLocalPath returns the path to the cached file.
-// If not cached, it downloads it synchronously (blocking, fallback mode).
 func (c *CacheManager) GetLocalPath(key string) (string, error) {
 	localPath := c.filePath(key)
 
-	// 1. Check if exists and is valid
+	// 1. Check if it already exists
 	if c.exists(localPath) {
-		// Reset mtime to mark as recently used (for cleanup logic)
 		os.Chtimes(localPath, time.Now(), time.Now())
 		return localPath, nil
 	}
 
-	// 2. Download if missing (Blocking)
-	log.Printf("📥 Cache Miss (Just-in-Time): Downloading %s", key)
+	// 2. Check if it's currently being downloaded by Prefetch
+	c.mu.Lock()
+	waitCh, isDownloading := c.pending[key]
+	if isDownloading {
+		c.mu.Unlock()
+		<-waitCh              // Wait for the other goroutine to finish
+		return localPath, nil // Return now that it's downloaded
+	}
+
+	// 3. Not exists and not downloading: Register our intent to download
+	done := make(chan struct{})
+	c.pending[key] = done
+	c.mu.Unlock()
+
+	defer func() {
+		close(done)
+		c.mu.Lock()
+		delete(c.pending, key)
+		c.mu.Unlock()
+	}()
+
+	log.Printf("📥 Cache Miss: Downloading %s", key)
 	if err := c.download(key, localPath); err != nil {
 		return "", err
 	}
@@ -55,36 +72,14 @@ func (c *CacheManager) GetLocalPath(key string) (string, error) {
 	return localPath, nil
 }
 
-// Prefetch downloads a list of keys in the background
 func (c *CacheManager) Prefetch(keys []string) {
 	for _, key := range keys {
-		localPath := c.filePath(key)
-
-		c.mu.Lock()
-		isPending := c.pending[key]
-		c.mu.Unlock()
-
-		if c.exists(localPath) || isPending {
-			continue
-		}
-
-		// Launch download in background
-		go func(k, p string) {
-			c.mu.Lock()
-			c.pending[k] = true
-			c.mu.Unlock()
-
-			defer func() {
-				c.mu.Lock()
-				delete(c.pending, k)
-				c.mu.Unlock()
-			}()
-
-			log.Printf("📥 Prefetching: %s", k)
-			if err := c.download(k, p); err != nil {
+		go func(k string) {
+			_, err := c.GetLocalPath(k)
+			if err != nil {
 				log.Printf("❌ Prefetch failed for %s: %v", k, err)
 			}
-		}(key, localPath)
+		}(key)
 	}
 }
 
