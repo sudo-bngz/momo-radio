@@ -42,6 +42,7 @@
 - *(release)* Add automated GitHub Release workflow
 - *(doc)* Update CHANGELOG
 - *(ingester)* Remove country resolution during ingestion
+- *(doc)* Update CHANGELOG
 ## [0.2.1] - 2026-01-11
 
 ### 🚀 Features
