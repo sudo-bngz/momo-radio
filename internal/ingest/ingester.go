@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -75,10 +76,19 @@ func (w *Worker) processQueue() {
 	}
 
 	for _, key := range keys {
-		if strings.HasSuffix(key, "/") || !audio.IsSupportedFormat(key) {
+
+		if strings.HasSuffix(key, "/") {
 			continue
 		}
 
+		// 2. Immediate cleanup of unsupported files (txt, jpg, etc.)
+		if !audio.IsSupportedFormat(key) {
+			log.Printf("🗑️ Removing junk file: %s", key)
+			_ = w.storage.DeleteIngestFile(key)
+			continue
+		}
+
+		// 3. Process the audio
 		log.Printf("Processing: %s", key)
 		if err := w.processFile(key); err != nil {
 			log.Printf("❌ FAILED %s: %v", key, err)
@@ -88,6 +98,9 @@ func (w *Worker) processQueue() {
 			jobs.WithLabelValues("success").Inc()
 		}
 	}
+
+	// 4. Clean up empty directories
+	w.cleanupFolders(keys)
 }
 
 func (w *Worker) processFile(key string) error {
@@ -277,4 +290,25 @@ func (w *Worker) processFile(key string) error {
 	w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track)
 
 	return w.storage.DeleteIngestFile(key)
+}
+
+func (w *Worker) cleanupFolders(allKeys []string) {
+	var dirs []string
+	for _, k := range allKeys {
+		if strings.HasSuffix(k, "/") {
+			dirs = append(dirs, k)
+		}
+	}
+
+	sort.Slice(dirs, func(i, j int) bool {
+		return len(dirs[i]) > len(dirs[j])
+	})
+
+	for _, dir := range dirs {
+		isEmpty, err := w.storage.IsPrefixEmpty(dir)
+		if err == nil && isEmpty {
+			log.Printf("🧹 Removing empty folder: %s", dir)
+			_ = w.storage.DeleteIngestFile(dir)
+		}
+	}
 }

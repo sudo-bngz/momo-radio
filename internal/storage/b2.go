@@ -159,3 +159,25 @@ func (c *Client) DeleteIngestFile(key string) error {
 	})
 	return err
 }
+
+func (c *Client) IsPrefixEmpty(prefix string) (bool, error) {
+	input := &s3.ListObjectsV2Input{
+		Bucket:  aws.String(c.bucketIngest),
+		Prefix:  aws.String(prefix),
+		MaxKeys: aws.Int64(2),
+	}
+
+	resp, err := c.s3.ListObjectsV2(input)
+	if err != nil {
+		return false, err
+	}
+
+	if len(resp.Contents) == 0 {
+		return true, nil
+	}
+	if len(resp.Contents) == 1 && *resp.Contents[0].Key == prefix {
+		return true, nil
+	}
+
+	return false, nil
+}
