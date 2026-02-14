@@ -46,12 +46,15 @@ func New(cfg *config.Config) *Client {
 
 // AutoMigrate creates/updates tables based on struct definitions
 func (c *Client) AutoMigrate() {
-	log.Println("🔄 Running Database Migrations...")
+	log.Println("Running Database Migrations...")
 	err := c.DB.AutoMigrate(
+		&models.PlayHistory{},
+		&models.Playlist{},
+		&models.PlaylistTrack{},
+		&models.Schedule{},
+		&models.ScheduleSlot{},
 		&models.StreamState{},
 		&models.Track{},
-		&models.PlayHistory{},
-		&models.Schedule{},
 	)
 	if err != nil {
 		log.Fatalf("Migration failed: %v", err)

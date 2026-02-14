@@ -1,0 +1,22 @@
+info:
+  name: create-schedule
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: "{{base-url}}/api/v1/schedule"
+  body:
+    type: json
+    data: |-
+      {
+        "playlist_id": 1,
+        "start_time": "2026-02-14T20:00:00Z"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

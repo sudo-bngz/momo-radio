@@ -1,0 +1,21 @@
+info:
+  name: reassign-playlists
+  type: http
+  seq: 3
+
+http:
+  method: PUT
+  url: "{{base-url}}/api/v1/playlists/1/tracks"
+  body:
+    type: json
+    data: |-
+      {
+        "track_ids": [10, 15, 3, 22]
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

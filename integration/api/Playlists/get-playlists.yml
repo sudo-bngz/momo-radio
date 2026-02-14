@@ -1,11 +1,11 @@
 info:
-  name: upload-analyze
+  name: get-playlists
   type: http
   seq: 1
 
 http:
-  method: POST
-  url: "{{base-url}}/api/v1/upload/analyze"
+  method: GET
+  url: "{{base-url}}/api/v1/playlists"
   auth: inherit
 
 settings:

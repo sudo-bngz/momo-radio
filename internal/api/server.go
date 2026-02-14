@@ -61,6 +61,16 @@ func (s *Server) setupRoutes() {
 		// Upload Workflow
 		v1.POST("/upload/analyze", s.PreAnalyzeFile)
 		v1.POST("/upload/confirm", s.UploadTrack)
+
+		// Playlists
+		v1.POST("/playlists", s.CreatePlaylist)
+		v1.GET("/playlists", s.GetPlaylists)
+		v1.PUT("/playlists/:id/tracks", s.UpdatePlaylistTracks)
+
+		// Scheduler
+		v1.GET("/schedule", s.GetSchedule)
+		v1.POST("/schedule", s.CreateScheduleSlot)
+		v1.DELETE("/schedule/:id", s.DeleteScheduleSlot)
 	}
 }
 
