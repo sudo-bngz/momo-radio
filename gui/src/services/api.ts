@@ -1,28 +1,6 @@
 // src/services/api.ts
 import axios from 'axios';
-import type { AnalyzeResponse, TrackMetadata } from '../types';
-
-// Depending on your types.ts file, you might want to move these interfaces there.
-export interface Track {
-  ID: number;
-  Title: string;
-  Artist: string;
-  Duration: number;
-}
-
-export interface Playlist {
-  ID: number;
-  Name: string;
-  Color: string;
-  TotalDuration: number;
-}
-
-export interface ScheduleSlot {
-  ID: number;
-  PlaylistID: number;
-  StartTime: string;
-  EndTime: string;
-}
+import type { AnalyzeResponse, TrackMetadata, Track, Playlist, ScheduleSlot } from '../types';
 
 const API_URL = 'http://localhost:8081/api/v1';
 

@@ -23,8 +23,8 @@ export const PlaylistBuilder: React.FC = () => {
     savePlaylist
   } = usePlaylistBuilder();
 
-  // Calculate total duration roughly
-  const totalSeconds = playlistTracks.reduce((acc, t) => acc + (t.Duration || 0), 0);
+  // Calculate total duration using rounded seconds
+  const totalSeconds = playlistTracks.reduce((acc, t) => acc + Math.round(t.Duration || 0), 0);
   const totalMinutes = Math.floor(totalSeconds / 60);
 
   return (
@@ -49,7 +49,14 @@ export const PlaylistBuilder: React.FC = () => {
                 <Text fontSize="sm" fontWeight="bold" color="gray.800">{track.Title}</Text>
                 <Text fontSize="xs" color="gray.500">{track.Artist}</Text>
               </VStack>
-              <Button size="xs" colorPalette="blue" variant="ghost" onClick={() => addTrackToPlaylist(track)}>
+              {/* FIX 2: Explicit Light Blue Button */}
+              <Button 
+                size="xs" 
+                bg="blue.50" 
+                color="blue.500"
+                _hover={{ bg: "blue.100" }}
+                onClick={() => addTrackToPlaylist(track)}
+              >
                 <Plus size={16} />
               </Button>
             </HStack>
@@ -77,7 +84,14 @@ export const PlaylistBuilder: React.FC = () => {
               fontWeight="bold"
               color="gray.800"
             />
-            <Button colorPalette="blue" onClick={savePlaylist} loading={isSaving}>
+            {/* FIX 2: Explicit Solid Blue Button */}
+            <Button 
+              bg="blue.500" 
+              color="white" 
+              _hover={{ bg: "blue.600" }}
+              onClick={savePlaylist} 
+              loading={isSaving}
+            >
               <HStack gap={2}>
                 <Save size={16} />
                 <Text>Save</Text>

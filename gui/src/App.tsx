@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar";
 import UploadManager from "./components/UploadManager";
 // I'm importing the Playlists feature we just built!
 import { PlaylistsFeature } from "./features/playlists"; 
+import { ScheduleFeature } from "./features/schedule";
 
 export const App = () => {
   // 1. State to track the active screen (defaulting to the Ingest Manager)
@@ -27,7 +28,7 @@ export const App = () => {
           {/* Placeholders for the other screens we will build */}
           {currentView === "dashboard" && <Box p={4}>Dashboard View (Coming Soon)</Box>}
           {currentView === "library" && <Box p={4}>Library View (Coming Soon)</Box>}
-          {currentView === "schedule" && <Box p={4}>Schedule Calendar View (Coming Soon)</Box>}
+          {currentView === "schedule" && <ScheduleFeature />}
         </Box>
         
       </Flex>

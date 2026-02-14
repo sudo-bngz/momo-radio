@@ -39,14 +39,15 @@ export interface Track {
 
 export interface Playlist {
   ID: number;
-  Name: string;
-  Color: string;
-  TotalDuration: number;
+  name: string;           // Changed from Name
+  color: string;          // Changed from Color
+  total_duration: number; // Changed from TotalDuration
 }
 
 export interface ScheduleSlot {
   ID: number;
-  PlaylistID: number;
-  StartTime: string;
-  EndTime: string;
+  playlist_id: number;
+  playlist: Playlist;
+  start_time: string;
+  end_time: string;
 }

@@ -21,6 +21,12 @@ export const SortableTrack: React.FC<SortableTrackProps> = ({ track, onRemove })
     opacity: isDragging ? 0.5 : 1,
   };
 
+  // FIX 1: Round the total seconds before doing the math
+  const totalSeconds = Math.round(track.Duration || 0);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  const timeString = `${m}:${s.toString().padStart(2, '0')}`;
+
   return (
     <Card.Root ref={setNodeRef} style={style} mb={2} variant="outline" bg="white" borderColor="gray.200">
       <Card.Body p={3}>
@@ -36,13 +42,19 @@ export const SortableTrack: React.FC<SortableTrackProps> = ({ track, onRemove })
             <Text fontSize="xs" color="gray.500">{track.Artist}</Text>
           </VStack>
 
-          {/* Duration (Mocked if missing) */}
+          {/* Clean Rounded Duration */}
           <Text fontSize="xs" fontWeight="mono" color="blue.500">
-            {track.Duration ? `${Math.floor(track.Duration / 60)}:${(track.Duration % 60).toString().padStart(2, '0')}` : '--:--'}
+            {timeString}
           </Text>
 
-          {/* Remove Button */}
-          <Button size="xs" colorPalette="red" variant="ghost" onClick={() => onRemove(track.ID)}>
+          {/* FIX 2: Explicitly style the button to prevent black dark-mode bleed */}
+          <Button 
+            size="xs" 
+            bg="red.50" 
+            color="red.500" 
+            _hover={{ bg: "red.100" }}
+            onClick={() => onRemove(track.ID)}
+          >
             <Trash2 size={14} />
           </Button>
         </HStack>
