@@ -10,10 +10,10 @@ const Sidebar = ({ currentView, onChangeView }: SidebarProps) => {
   // Define all the available routes for the WebRadio admin
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity },
+    { id: 'ingest', label: 'Upload Track', icon: Upload },
     { id: 'library', label: 'Music Library', icon: Library },
     { id: 'playlists', label: 'Playlists', icon: ListMusic },
-    { id: 'schedule', label: 'Schedule', icon: Calendar },
-    { id: 'ingest', label: 'Ingest Manager', icon: Upload },
+    { id: 'schedule', label: 'Timetable', icon: Calendar },
   ];
 
   return (

@@ -9,7 +9,7 @@ export const ScheduleFeature: React.FC = () => {
     <Container maxW="container.xl" h="100%" data-theme="light">
       <Heading size="lg" mb={6} display="flex" alignItems="center" gap={2} color="gray.800">
         <Icon as={CalendarIcon} color="blue.500" />
-        Broadcast Scheduler
+        Timetable
       </Heading>
       
       <Box h="calc(100% - 80px)">

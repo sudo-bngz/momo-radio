@@ -75,3 +75,28 @@ button:focus-visible {
   margin: 0;
   padding: 0;
 }
+
+/* Force the browser to use light-mode base UI (fixes the black scrollbars) */
+html {
+  color-scheme: light;
+}
+
+/* Custom, elegant scrollbars for Chrome/Safari/Edge */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e0; /* Chakra gray.300 */
+  border-radius: 10px;
+  border: 3px solid #ffffff; /* Creates a nice padded effect inside the white app */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a0aec0; /* Chakra gray.400 */
+}

@@ -1,13 +1,16 @@
 // src/types/index.ts
 
+// src/types/index.ts
 export interface TrackMetadata {
   title: string;
   artist: string;
   album: string;
   genre: string;
   year: string;
-  bpm: string;
-  key: string;
+  label: string; 
+  catalog_number: string;
+  country: string;
+  style: string;
 }
 
 export interface AnalyzeResponse {

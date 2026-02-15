@@ -114,11 +114,6 @@ func (s *Server) PreAnalyzeFile(c *gin.Context) {
 		"album":    metadata.Album(),
 		"genre":    metadata.Genre(),
 		"year":     yearStr,
-		// dhowden/tag handles basic tags.
-		// BPM/Key are often in custom TXXX frames which are harder to access broadly,
-		// so we leave them empty for the user to fill in the UI.
-		"bpm": "",
-		"key": "",
 	})
 }
 
