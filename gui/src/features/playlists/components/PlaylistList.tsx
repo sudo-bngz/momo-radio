@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, Flex, Heading, Text, Button, Grid, HStack, VStack, Spinner, Circle 
+  Box, Flex, Heading, Text, Button, Icon, HStack, VStack, Spinner 
 } from '@chakra-ui/react';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, ListMusic, AlertTriangle, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api'; 
 import type { Playlist } from '../../../types';
 
-interface PlaylistListProps {
-  onCreate: () => void;
-  onEdit: (id: number) => void;
-}
-
-export const PlaylistList: React.FC<PlaylistListProps> = ({ onCreate, onEdit }) => {
+export const PlaylistList: React.FC = () => { 
+  const navigate = useNavigate();
+  
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Modal states
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
+  const [playlistToDelete, setPlaylistToDelete] = useState<Playlist | null>(null);
 
   const fetchPlaylists = async () => {
     setIsLoading(true);
@@ -32,103 +33,169 @@ export const PlaylistList: React.FC<PlaylistListProps> = ({ onCreate, onEdit }) 
     fetchPlaylists();
   }, []);
 
-  const handleDelete = async (id: number) => {
-    if (!id) return; 
-    if (!window.confirm("Are you sure you want to delete this playlist?")) return;
-    
-    setIsDeleting(id);
+  const confirmDelete = async () => {
+    if (!playlistToDelete) return;
+    setIsDeleting(playlistToDelete.id);
     try {
-      await api.deletePlaylist(id);
+      await api.deletePlaylist(playlistToDelete.id);
       fetchPlaylists();
     } catch (error) {
       console.error("Failed to delete playlist:", error);
     } finally {
       setIsDeleting(null);
+      setPlaylistToDelete(null);
     }
   };
 
   return (
-    <Box w="full" bg="white" borderRadius="xl" borderWidth="1px" borderColor="gray.200" shadow="sm" overflow="hidden">
-      
-      {/* Header: Blue Button Fixed */}
-      <Flex p={6} borderBottomWidth="1px" borderColor="gray.200" justify="space-between" align="center" bg="gray.50">
-        <VStack align="start" gap={1}>
-          <Heading size="md" color="gray.900">All Playlists</Heading>
-          <Text fontSize="sm" color="gray.500">Manage your station's rotation and scheduled blocks.</Text>
-        </VStack>
-        
-        <Button 
-          onClick={onCreate}
-          bg="blue.600" 
-          color="white"
-          _hover={{ bg: "blue.700" }}
-          size="lg"
-          px={6}
+    <>
+      {/* --- SLEEK DELETE MODAL --- */}
+      {playlistToDelete && (
+        <Flex 
+          position="fixed" top="0" left="0" w="100vw" h="100vh" 
+          bg="blackAlpha.600" zIndex={9999} align="center" justify="center" backdropFilter="blur(4px)"
         >
-          <Plus size={18} style={{ marginRight: '8px' }} />
-          ADD PLAYLIST
-        </Button>
-      </Flex>
+          <VStack bg="white" p={8} borderRadius="2xl" shadow="2xl" gap={5} maxW="sm" textAlign="center">
+            <Box p={3} bg="red.50" borderRadius="full">
+              <Icon as={AlertTriangle} boxSize={8} color="red.500" />
+            </Box>
+            <VStack gap={2}>
+              <Text fontSize="xl" fontWeight="bold" color="gray.900">Delete Playlist?</Text>
+              <Text color="gray.500" fontSize="sm">
+                Are you sure you want to delete <b>"{playlistToDelete.name}"</b>? 
+              </Text>
+            </VStack>
+            <HStack w="full" mt={2} gap={3}>
+              <Button flex={1} variant="outline" color="gray.600" onClick={() => setPlaylistToDelete(null)} disabled={isDeleting === playlistToDelete.id}>
+                Cancel
+              </Button>
+              <Button flex={1} bg="red.600" color="white" _hover={{ bg: "red.700" }} onClick={confirmDelete} loading={isDeleting === playlistToDelete.id}>
+                Delete
+              </Button>
+            </HStack>
+          </VStack>
+        </Flex>
+      )}
 
-      {/* Table Header */}
-      <Grid templateColumns="2fr 2fr 1fr 180px" gap={4} px={6} py={4} bg="white" borderBottomWidth="1px" borderColor="gray.200" fontSize="xs" fontWeight="bold" color="gray.500" textTransform="uppercase">
-        <Text>Playlist Name</Text>
-        <Text>Details</Text>
-        <Text>Tracks</Text>
-        <Text textAlign="right">Actions</Text>
-      </Grid>
+      {/* --- MINIMALIST MAIN UI --- */}
+      <Box w="full" h="full" bg="transparent">
+        
+        {/* 1. Minimal Header */}
+        <Flex justify="space-between" align="end" mb={6} px={1}>
+          <Heading size="lg" fontWeight="semibold" color="gray.900" letterSpacing="tight">
+            Playlists
+          </Heading>
+          
+          <Button 
+            onClick={() => navigate('/playlists/new')}
+            bg="gray.900"
+            color="white"
+            _hover={{ bg: "black", transform: "translateY(-1px)" }}
+            transition="all 0.2s"
+            size="sm"
+            borderRadius="full"
+            px={5}
+            shadow="sm"
+          >
+            <Plus size={16} style={{ marginRight: '6px' }} />
+            New Playlist
+          </Button>
+        </Flex>
 
-      <Box overflowY="auto">
+        {/* 2. List Content */}
         {isLoading ? (
           <Flex justify="center" align="center" h="200px"><Spinner color="blue.500" /></Flex>
+        ) : playlists.length === 0 ? (
+          <VStack justify="center" py={20} color="gray.400" bg="white" borderRadius="2xl" border="1px dashed" borderColor="gray.200">
+            <Icon as={ListMusic} boxSize={12} mb={3} opacity={0.3} />
+            <Text fontSize="lg" fontWeight="medium" color="gray.500">No playlists yet</Text>
+            <Text fontSize="sm">Create your first rotation to get started.</Text>
+          </VStack>
         ) : (
-          <>
-            {playlists.map((playlist) => (
-              /* The 'id' is now lowercase because we updated the Go struct tags */
-              <Grid key={playlist.id} templateColumns="2fr 2fr 1fr 180px" gap={4} px={6} py={5} borderBottomWidth="1px" borderColor="gray.100" _hover={{ bg: "gray.50" }} transition="all 0.2s" alignItems="center">
-                
-                <VStack align="start" gap={1.5}>
-                  <Text fontWeight="bold" fontSize="md" color="gray.800">{playlist.name}</Text>
-                  <HStack bg="gray.100" px={2} py={0.5} borderRadius="full" borderWidth="1px" borderColor="gray.200">
-                    <Circle size="8px" bg={playlist.color || "#3182ce"} />
-                    <Text fontSize="10px" fontWeight="bold" color="gray.600">ROTATION</Text>
-                  </HStack>
-                </VStack>
+          <VStack gap={3} align="stretch" pb={10}>
+            {playlists.map((playlist) => {
+              // Calculate minutes safely
+              const totalMinutes = Math.floor((playlist.total_duration || 0) / 60);
+              const trackCount = playlist.tracks?.length || playlist.tracks?.length || 0;
 
-                <Text fontSize="sm" color="gray.600" fontWeight="medium">Standard Rotation</Text>
-
-                <Text fontSize="sm" fontWeight="bold" color="blue.600">
-                  {playlist.tracks?.length || 0} tracks
-                </Text>
-
-                {/* Actions: Colors Locked */}
-                <HStack justify="flex-end" gap={2}>
-                  <Button 
-                    size="sm" 
-                    bg="gray.800" 
-                    color="white" 
-                    _hover={{ bg: "gray.900" }}
-                    onClick={() => onEdit(playlist.id)}
-                  >
-                    <Edit2 size={14} style={{ marginRight: '4px' }} /> Edit
-                  </Button>
+              return (
+                <Flex 
+                  key={playlist.id} 
+                  bg="white" 
+                  p={4} 
+                  borderRadius="xl" 
+                  borderWidth="1px" 
+                  borderColor="gray.100" 
+                  shadow="sm" 
+                  align="center"
+                  justify="space-between"
+                  transition="all 0.2s"
+                  _hover={{ shadow: "md", borderColor: "gray.200" }}
+                >
                   
-                  <Button 
-                    size="sm" 
-                    bg="red.600" 
-                    color="white" 
-                    _hover={{ bg: "red.700" }}
-                    onClick={() => handleDelete(playlist.id)}
-                    loading={isDeleting === playlist.id}
-                  >
-                    <Trash2 size={16} />
-                  </Button>
-                </HStack>
-              </Grid>
-            ))}
-          </>
+                  {/* Left Side: Icon, Title & Description */}
+                  <HStack gap={4} flex="1">
+                    <Flex 
+                      align="center" justify="center" w={12} h={12} borderRadius="lg" flexShrink={0}
+                      bg={`${playlist.color || '#3182ce'}15`} 
+                      color={playlist.color || "blue.500"}
+                    >
+                      <ListMusic size={20} />
+                    </Flex>
+                    
+                    <VStack align="start" gap={0} maxW="70%">
+                      <Text fontWeight="bold" fontSize="md" color="gray.900" truncate>{playlist.name}</Text>
+                      {/* NEW: Displays the description if it exists, otherwise shows default text */}
+                      <Text fontSize="xs" color="gray.500" fontWeight="medium" truncate>
+                        {playlist.description || "Standard Rotation"}
+                      </Text>
+                    </VStack>
+                  </HStack>
+
+                  {/* Right Side: Stats & Actions */}
+                  <HStack gap={6} flexShrink={0}>
+                    
+                    {/* NEW: Clean Stats Block (Tracks + Duration) */}
+                    <HStack gap={4} bg="gray.50" px={4} py={1.5} borderRadius="full" border="1px solid" borderColor="gray.100">
+                      <HStack gap={1.5} color="gray.700">
+                        <ListMusic size={14} />
+                        <Text fontSize="xs" fontWeight="bold">{trackCount}</Text>
+                      </HStack>
+                      <Box w="1px" h="12px" bg="gray.300" />
+                      <HStack gap={1.5} color="gray.600">
+                        <Clock size={14} />
+                        <Text fontSize="xs" fontWeight="bold">{totalMinutes}m</Text>
+                      </HStack>
+                    </HStack>
+
+                    {/* Actions - Always visible now, but subtle gray */}
+                    <HStack gap={1}>
+                      <Button 
+                        size="sm" variant="ghost" color="gray.400" 
+                        _hover={{ color: "blue.600", bg: "blue.50" }}
+                        onClick={() => navigate(`/playlists/edit/${playlist.id}`)}
+                        px={2}
+                      >
+                        <Edit2 size={18} />
+                      </Button>
+                      
+                      <Button 
+                        size="sm" variant="ghost" color="gray.400" 
+                        _hover={{ color: "red.600", bg: "red.50" }}
+                        onClick={() => setPlaylistToDelete(playlist)}
+                        px={2}
+                      >
+                        <Trash2 size={18} />
+                      </Button>
+                    </HStack>
+
+                  </HStack>
+                </Flex>
+              );
+            })}
+          </VStack>
         )}
       </Box>
-    </Box>
+    </>
   );
 };

@@ -49,6 +49,7 @@ export interface Track {
 export interface Playlist {
   id: number;
   name: string;
+  description: string;
   color: string;
   total_duration: number; 
   tracks?: Track[]; // Optional because it might not be loaded in the list view

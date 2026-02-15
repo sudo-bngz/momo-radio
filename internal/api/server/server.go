@@ -97,12 +97,14 @@ func (s *Server) setupRoutes() {
 			protected.GET("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylist) // For fetching one to edit
 			protected.POST("/playlists", middleware.RequireRole("dj", "manager"), playlistHandler.CreatePlaylist)
 			protected.DELETE("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.DeletePlaylist) // For deleting
+			protected.PUT("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylist)
 			protected.PUT("/playlists/:id/tracks", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylistTracks)
 
 			// --- MANAGER ONLY (Program Directors) ---
 			// Only Managers (and Admins) can change the station's broadcast schedule.
-			protected.POST("/schedule", middleware.RequireRole("manager"), schedulerHandler.CreateScheduleSlot)
-			protected.DELETE("/schedule/:id", middleware.RequireRole("manager"), schedulerHandler.DeleteScheduleSlot)
+			protected.GET("/schedules", middleware.RequireRole("dj"), schedulerHandler.GetSchedule)
+			protected.POST("/schedules", middleware.RequireRole("manager"), schedulerHandler.CreateScheduleSlot)
+			protected.DELETE("/schedules/:id", middleware.RequireRole("manager"), schedulerHandler.DeleteScheduleSlot)
 		}
 	}
 }

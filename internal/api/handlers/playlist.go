@@ -69,7 +69,7 @@ func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	var playlists []models.Playlist
 
 	// Replaced s.db.DB with h.db
-	result := h.db.Order("name asc").Find(&playlists)
+	result := h.db.Preload("Tracks").Order("name asc").Find(&playlists)
 
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch playlists"})
@@ -79,6 +79,50 @@ func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": playlists,
 	})
+}
+
+func (h *PlaylistHandler) UpdatePlaylist(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid playlist ID"})
+		return
+	}
+
+	var input struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Color       string `json:"color"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var playlist models.Playlist
+	if err := h.db.First(&playlist, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
+		return
+	}
+
+	// Update fields if they were provided in the JSON payload
+	if input.Name != "" {
+		playlist.Name = input.Name
+	}
+	// We always update the description (even if empty string) so users can clear it
+	playlist.Description = input.Description
+
+	if input.Color != "" {
+		playlist.Color = input.Color
+	}
+
+	if err := h.db.Save(&playlist).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update playlist metadata"})
+		return
+	}
+
+	c.JSON(http.StatusOK, playlist)
 }
 
 // UpdatePlaylistTracks reorders and replaces tracks in a playlist

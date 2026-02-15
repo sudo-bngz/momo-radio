@@ -10,7 +10,6 @@ export const DashboardLayout = () => {
       <Flex direction="column" flex="1" overflow="hidden">
         <TopNav />
         <Box flex="1" p={8} overflowY="auto">
-          {/* This renders the current feature based on the URL */}
           <Outlet />
         </Box>
       </Flex>

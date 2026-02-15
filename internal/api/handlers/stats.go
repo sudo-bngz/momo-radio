@@ -30,7 +30,7 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 	// 1. Basic Aggregates (using h.db instead of s.db.DB)
 	h.db.Model(&models.Track{}).Count(&totalTracks)
 	h.db.Model(&models.Playlist{}).Count(&totalPlaylists)
-	h.db.Model(&models.Track{}).Select("SUM(file_size)").Scan(&storageUsed)
+	h.db.Model(&models.Track{}).Select("COALESCE(SUM(file_size), 0)").Scan(&storageUsed)
 
 	// 2. Determine Active Schedule (The "Show")
 	now := time.Now()

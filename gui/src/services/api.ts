@@ -67,7 +67,7 @@ export const api = {
   },
 
   // 3. PLAYLIST BUILDER
-  createPlaylist: async (data: { name: string; color?: string }): Promise<Playlist> => {
+  createPlaylist: async (data: { name: string; description: string, color?: string }): Promise<Playlist> => {
     const response = await apiClient.post<Playlist>('/playlists', data);
     return response.data;
   },
@@ -82,6 +82,12 @@ export const api = {
     return response.data;
   },
 
+  updatePlaylist: async (
+    playlistId: number, 
+    data: { name?: string; description?: string; color?: string }
+  ): Promise<void> => {
+    await apiClient.put(`/playlists/${playlistId}`, data);
+  },
   updatePlaylistTracks: async (playlistId: number, trackIds: number[]): Promise<void> => {
     await apiClient.put(`/playlists/${playlistId}/tracks`, { track_ids: trackIds });
   },
@@ -92,14 +98,14 @@ export const api = {
 
   // 4. SCHEDULER
   getSchedule: async (start: string, end: string): Promise<ScheduleSlot[]> => {
-    const response = await apiClient.get<ScheduleSlot[]>('/schedule', {
+    const response = await apiClient.get<ScheduleSlot[]>('/schedules', {
       params: { start, end }
     });
     return response.data;
   },
 
   createScheduleSlot: async (playlistId: number, startTime: string): Promise<ScheduleSlot> => {
-    const response = await apiClient.post<ScheduleSlot>('/schedule', {
+    const response = await apiClient.post<ScheduleSlot>('/schedules', {
       playlist_id: playlistId,
       start_time: startTime
     });

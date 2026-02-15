@@ -100,3 +100,10 @@ html {
 ::-webkit-scrollbar-thumb:hover {
   background-color: #a0aec0; /* Chakra gray.400 */
 }
+
+button:hover, 
+[role="button"]:hover {
+  /* This prevents the "black box" look */
+  background-color: var(--chakra-colors-blue-50) !important;
+  color: var(--chakra-colors-blue-600) !important;
+}
