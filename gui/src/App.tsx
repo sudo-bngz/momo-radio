@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ChakraProvider, defaultSystem, Box, Flex } from "@chakra-ui/react";
 
 import Sidebar from "./components/Sidebar";
+import { DashboardFeature } from "./features/dashboard";
 import { IngestFeature } from "./features/ingest";
 import { PlaylistsFeature } from "./features/playlists"; 
 import { ScheduleFeature } from "./features/schedule";
@@ -34,7 +35,7 @@ export const App = () => {
           {currentView === "schedule" && <ScheduleFeature />}
           {currentView === "library" && <LibraryFeature />}
           
-          {currentView === "dashboard" && <Box p={4}>Dashboard View (Coming Soon)</Box>}
+         {currentView === "dashboard" && <DashboardFeature />}
         </Box>
         
       </Flex>

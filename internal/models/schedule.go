@@ -1,3 +1,4 @@
+// internal/models/schedule.go
 package models
 
 import (
@@ -6,27 +7,28 @@ import (
 	"gorm.io/gorm"
 )
 
+// Schedule defines WHEN something plays (The Station Manager)
 type Schedule struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"` // Hidden from JSON responses
 
-	// Configuration
-	Name     string `gorm:"uniqueIndex;not null" json:"name"` // e.g., "Morning Coffee"
+	// --- Identification ---
+	Name     string `gorm:"type:varchar(255);not null" json:"name"`
 	IsActive bool   `gorm:"default:true" json:"is_active"`
 
-	// Timing
-	Days  string `json:"days"`  // "Mon,Tue,Wed,Thu,Fri"
-	Start string `json:"start"` // "07:00"
-	End   string `json:"end"`   // "10:00"
+	// --- Timing ---
+	Days      string `gorm:"type:varchar(50);not null" json:"days"`            // e.g., "Mon,Tue,Wed"
+	StartTime string `gorm:"type:varchar(5);not null;index" json:"start_time"` // e.g., "22:00"
+	EndTime   string `gorm:"type:varchar(5);not null;index" json:"end_time"`   // e.g., "02:00"
 
-	// Content Rules (The Vibe)
-	Genre     string  `json:"genre"`    // e.g. "Electronic"
-	Styles    string  `json:"styles"`   // e.g. "Downtempo, Dub" (Comma separated)
-	MinYear   int     `json:"min_year"` // e.g. 1990
-	MaxYear   int     `json:"max_year"` // e.g. 2005
-	MinBPM    float64 `json:"min_bpm"`
-	MaxBPM    float64 `json:"max_bpm"`
-	Publisher string  `json:"publisher"` // Optional label filter
+	// --- The Target (What to play) ---
+	// Pointers are used so these can be NULL in Postgres.
+	// A schedule slot points to EITHER a Playlist OR a RuleSet.
+	PlaylistID *uint     `gorm:"index" json:"playlist_id"`
+	Playlist   *Playlist `gorm:"foreignKey:PlaylistID" json:"playlist,omitempty"`
+
+	RuleSetID *uint    `gorm:"index" json:"ruleset_id"`
+	RuleSet   *RuleSet `gorm:"foreignKey:RuleSetID" json:"ruleset,omitempty"`
 }

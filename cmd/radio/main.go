@@ -45,7 +45,6 @@ func main() {
 
 	// 5. Run Migrations (Safe to run even in dry run)
 	db.AutoMigrate()
-	database.SeedSchedules(db.DB)
 
 	// 6. Start Engine
 	engine := radio.New(cfg, store, db)

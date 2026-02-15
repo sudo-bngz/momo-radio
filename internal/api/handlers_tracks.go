@@ -56,20 +56,6 @@ func (s *Server) GetTracks(c *gin.Context) {
 	})
 }
 
-// GetStats returns basic database statistics
-func (s *Server) GetStats(c *gin.Context) {
-	var trackCount int64
-	var distinctArtists int64
-
-	s.db.DB.Model(&models.Track{}).Count(&trackCount)
-	s.db.DB.Model(&models.Track{}).Distinct("artist").Count(&distinctArtists)
-
-	c.JSON(http.StatusOK, gin.H{
-		"total_tracks":   trackCount,
-		"unique_artists": distinctArtists,
-	})
-}
-
 // AnalyzeFile reads the uploaded file in memory and extracts ID3 tags
 // It does NOT upload to S3 or save to DB yet.
 func (s *Server) PreAnalyzeFile(c *gin.Context) {
