@@ -3,70 +3,82 @@ package api
 import (
 	"momo-radio/internal/models"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// GetStats aggregates station data for the Dashboard
 func (s *Server) GetStats(c *gin.Context) {
-	var stats struct {
-		TotalTracks      int64  `json:"total_tracks"`
-		TotalPlaylists   int64  `json:"total_playlists"`
-		StorageUsedBytes int64  `json:"storage_used_bytes"`
-		Uptime           string `json:"uptime"`
-	}
+	var totalTracks int64
+	var totalPlaylists int64
+	var storageUsed int64
 
+	// 1. Basic Aggregates
+	s.db.DB.Model(&models.Track{}).Count(&totalTracks)
+	s.db.DB.Model(&models.Playlist{}).Count(&totalPlaylists)
+	s.db.DB.Model(&models.Track{}).Select("SUM(file_size)").Scan(&storageUsed)
+
+	// 2. Determine Active Schedule (The "Show")
 	now := time.Now()
+	currentTimeStr := now.Format("15:04")
+	currentWeekday := now.Weekday().String()[0:3]
 
-	// 1. Calculate Counts and Storage
-	// Assuming 'bitrate' or a 'file_size' column exists to estimate storage.
-	// If you don't have file_size, we sum duration as a proxy or use 0.
-	s.db.DB.Model(&models.Track{}).Count(&stats.TotalTracks)
-	s.db.DB.Model(&models.Playlist{}).Count(&stats.TotalPlaylists)
+	var schedules []models.Schedule
+	s.db.DB.Preload("Playlist").Preload("RuleSet").Where("is_active = ?", true).Find(&schedules)
 
-	// Summing bitrate * duration as a rough storage estimate if file_size is missing,
-	// otherwise replace "bitrate" with your actual file size column.
-	s.db.DB.Model(&models.Track{}).Select("COALESCE(SUM(bitrate), 0)").Scan(&stats.StorageUsedBytes)
+	activeShowName := "General Rotation"
+	for _, slot := range schedules {
+		if strings.Contains(slot.Days, currentWeekday) && isTimeMatch(slot.StartTime, slot.EndTime, currentTimeStr) {
+			activeShowName = slot.Name
+			break
+		}
+	}
 
-	stats.Uptime = "100%" // Placeholder for system health
+	// 3. Determine Currently Playing Track (The "Song")
+	// We pull this from the stream_state table which the Engine updates every time a song starts
+	var streamState models.StreamState
+	var currentTrack models.Track
 
-	// 2. Fetch Recent Tracks
+	// We get the most recent state record
+	if err := s.db.DB.Order("updated_at DESC").First(&streamState).Error; err == nil {
+		s.db.DB.First(&currentTrack, streamState.TrackID)
+	}
+
+	// 4. Fetch Recent Tracks (History)
 	var recentTracks []models.Track
-	if err := s.db.DB.Order("created_at desc").Limit(5).Find(&recentTracks).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch recent tracks"})
-		return
-	}
+	s.db.DB.Table("tracks").
+		Joins("JOIN play_histories ON play_histories.track_id = tracks.id").
+		Order("play_histories.played_at DESC").
+		Limit(5).
+		Find(&recentTracks)
 
-	// 3. Logic for "Now Playing"
-	// We look for a schedule slot where the current time falls between start and end.
-	var nowPlaying struct {
-		Title        string    `json:"title"`
-		Artist       string    `json:"artist"`
-		PlaylistName string    `json:"playlist_name"`
-		StartsAt     time.Time `json:"starts_at"`
-		EndsAt       time.Time `json:"ends_at"`
-	}
-
-	err := s.db.DB.Table("schedules").
-		Select("tracks.title, tracks.artist, playlists.name as playlist_name, schedules.start_time as starts_at, schedules.end_time as ends_at").
-		Joins("JOIN playlists ON playlists.id = schedules.playlist_id").
-		Joins("JOIN playlist_tracks ON playlist_tracks.playlist_id = playlists.id").
-		Joins("JOIN tracks ON tracks.id = playlist_tracks.track_id").
-		Where("? BETWEEN schedules.start_time AND schedules.end_time", now).
-		Order("playlist_tracks.sort_order ASC"). // Pick the first track in the sequence
-		First(&nowPlaying).Error
-	// Prepare the final response
-	response := gin.H{
-		"stats":         stats,
+	// 5. Build Response
+	c.JSON(http.StatusOK, gin.H{
+		"stats": gin.H{
+			"total_tracks":       totalTracks,
+			"total_playlists":    totalPlaylists,
+			"storage_used_bytes": storageUsed,
+			"uptime":             "99.9%", // You can calculate real uptime if stored
+		},
+		"now_playing": gin.H{
+			"title":         currentTrack.Title,
+			"artist":        currentTrack.Artist,
+			"playlist_name": activeShowName,
+			"starts_at":     streamState.UpdatedAt, // When this specific track started
+			"ends_at":       streamState.UpdatedAt.Add(time.Duration(currentTrack.Duration) * time.Second),
+		},
 		"recent_tracks": recentTracks,
-	}
+	})
+}
 
-	if err == nil {
-		response["now_playing"] = nowPlaying
-	} else {
-		response["now_playing"] = nil
+// Internal helper for time matching (Standard vs Midnight Crossover)
+func isTimeMatch(start, end, current string) bool {
+	if start == "" || end == "" {
+		return false
 	}
-
-	c.JSON(http.StatusOK, response)
+	if start <= end {
+		return current >= start && current < end
+	}
+	return current >= start || current < end
 }

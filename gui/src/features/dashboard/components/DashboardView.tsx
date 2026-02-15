@@ -45,19 +45,19 @@ export const DashboardView: React.FC = () => {
             </Badge>
             
             <Box>
-              <Text fontSize="lg" color="gray.400" mb={1}>{nowPlaying.artist}</Text>
+              <Text fontSize="lg" color="gray.400" mb={1}>{nowPlaying.artist || "Momo Radio"}</Text>
               <Heading size="3xl" fontWeight="semibold" letterSpacing="tight" mb={2}>
-                {nowPlaying.title}
+                {nowPlaying.title || "Tuning in..."}
               </Heading>
               <HStack color="blue.300" fontSize="sm" gap={6}>
                 <HStack gap={1}>
                   <Icon as={ListMusic} boxSize="14px" />
-                  {/* FIX: Change nowPlaying.playlist to nowPlaying.playlist_name */}
-                  <Text>{nowPlaying.playlist_name}</Text>
+                  {/* Fixed mapping for the new Go Backend structure */}
+                  <Text>{nowPlaying.playlist_name || "General Rotation"}</Text>
                 </HStack>
                 <HStack gap={1}>
                   <Icon as={Clock} boxSize="14px" />
-                  <Text>{nowPlaying.timeRemaining} remaining</Text>
+                  <Text>{nowPlaying.timeRemaining || "0:00"} remaining</Text>
                 </HStack>
               </HStack>
             </Box>
@@ -94,9 +94,10 @@ export const DashboardView: React.FC = () => {
           Recently Ingested
         </Heading>
         <VStack align="stretch" gap={3}>
-          {recentTracks.map((track) => (
+          {recentTracks.map((track, index) => (
             <HStack 
-              key={track.id} 
+              // Added fallback key to prevent React warnings if ID is missing
+              key={track.id || `recent-${index}`} 
               justify="space-between" 
               p={4} 
               bg="gray.50" 
@@ -118,7 +119,7 @@ export const DashboardView: React.FC = () => {
               
               <HStack gap={8}>
                 <Text color="gray.400" fontSize="xs" fontWeight="mono">
-                  {new Date(track.created_at).toLocaleDateString()}
+                  {track.created_at ? new Date(track.created_at).toLocaleDateString() : "New"}
                 </Text>
                 <Badge variant="outline" colorPalette="gray" size="sm">
                   {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
