@@ -6,10 +6,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"momo-radio/internal/api"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/storage"
+
+	// Use an alias to prevent naming collisions with the 'server' variable
+	apiserver "momo-radio/internal/api/server"
 )
 
 func main() {
@@ -24,6 +26,9 @@ func main() {
 
 	// 3. Run Database Migrations
 	db.AutoMigrate()
+	// Optional: Seed initial data
+	// If you just added RBAC, you should create a default Admin user here!
+	database.SeedAdminUser(db.DB)
 
 	// 4. Storage
 	store := storage.New(cfg)
@@ -37,13 +42,14 @@ func main() {
 		}
 	}()
 
-	// 5. Start Server
-	server := api.New(cfg, db, store)
+	// 6. Start Server
+	// Call New() from the aliased package
+	srv := apiserver.New(cfg, db, store)
 
 	port := ":8081"
 	log.Printf("🚀 API Server starting on %s", port)
 
-	if err := server.Start(port); err != nil {
+	if err := srv.Start(port); err != nil {
 		log.Fatalf("❌ Server failed to start: %v", err)
 	}
 }

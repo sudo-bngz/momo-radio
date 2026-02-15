@@ -1,0 +1,25 @@
+info:
+  name: 05-register-unauthorized-user
+  type: http
+  seq: 5
+
+http:
+  method: POST
+  url: "{{base-url}}/api/v1/auth/register"
+  body:
+    type: json
+    data: |
+      {
+            "username": "dj_mike",
+            "password": "supersecretpassword",
+            "role": "dj"
+      }
+  auth:
+    type: bearer
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzE0MTcyODQsInJvbGUiOiJ2aWV3ZXIiLCJzdWIiOjJ9.YHP-EyzaS-eVdmT-l6Ja9bqaNxyWWBmCaGYo46JGd2s
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

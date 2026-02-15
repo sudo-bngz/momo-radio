@@ -1,16 +1,27 @@
-package api
+package handlers
 
 import (
-	"momo-radio/internal/models"
 	"net/http"
-	"strconv" // Required for string conversion
+	"strconv"
+
+	"momo-radio/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
+// PlaylistHandler handles playlist-related requests independently of the main server
+type PlaylistHandler struct {
+	db *gorm.DB
+}
+
+// NewPlaylistHandler creates a new PlaylistHandler instance
+func NewPlaylistHandler(db *gorm.DB) *PlaylistHandler {
+	return &PlaylistHandler{db: db}
+}
+
 // CreatePlaylist creates a new empty playlist container
-func (s *Server) CreatePlaylist(c *gin.Context) {
+func (h *PlaylistHandler) CreatePlaylist(c *gin.Context) {
 	var input struct {
 		Name  string `json:"name" binding:"required"`
 		Color string `json:"color"`
@@ -26,7 +37,8 @@ func (s *Server) CreatePlaylist(c *gin.Context) {
 		Color: input.Color,
 	}
 
-	if err := s.db.DB.Create(&playlist).Error; err != nil {
+	// Replaced s.db.DB with h.db
+	if err := h.db.Create(&playlist).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create playlist"})
 		return
 	}
@@ -34,12 +46,12 @@ func (s *Server) CreatePlaylist(c *gin.Context) {
 	c.JSON(http.StatusCreated, playlist)
 }
 
-func (s *Server) GetPlaylists(c *gin.Context) {
+// GetPlaylists fetches all playlists
+func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	var playlists []models.Playlist
 
-	// We use Preload("Tracks") if you want the full track data,
-	// or just fetch the playlists if you only need names and durations.
-	result := s.db.DB.Order("name asc").Find(&playlists)
+	// Replaced s.db.DB with h.db
+	result := h.db.Order("name asc").Find(&playlists)
 
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch playlists"})
@@ -52,8 +64,7 @@ func (s *Server) GetPlaylists(c *gin.Context) {
 }
 
 // UpdatePlaylistTracks reorders and replaces tracks in a playlist
-func (s *Server) UpdatePlaylistTracks(c *gin.Context) {
-	// FIX 1: Convert string ID from URL to uint
+func (h *PlaylistHandler) UpdatePlaylistTracks(c *gin.Context) {
 	idStr := c.Param("id")
 	playlistID, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
@@ -70,14 +81,17 @@ func (s *Server) UpdatePlaylistTracks(c *gin.Context) {
 		return
 	}
 
-	err = s.db.DB.Transaction(func(tx *gorm.DB) error {
+	// Declare totalDuration outside the transaction so we can return it at the end
+	var totalDuration int
+
+	// Replaced s.db.DB with h.db
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// 1. Remove existing associations
 		if err := tx.Where("playlist_id = ?", playlistID).Delete(&models.PlaylistTrack{}).Error; err != nil {
 			return err
 		}
 
 		// 2. Insert new associations and calculate duration
-		var totalDuration int
 		for i, trackID := range input.TrackIDs {
 			assoc := models.PlaylistTrack{
 				PlaylistID: uint(playlistID),
@@ -94,8 +108,7 @@ func (s *Server) UpdatePlaylistTracks(c *gin.Context) {
 				return err
 			}
 
-			// FIX 2: Convert float64 to int for the total calculation
-			// We assume Duration in models.Track is float64 (seconds)
+			// Convert float64 to int for the total calculation
 			totalDuration += int(t.Duration)
 		}
 
@@ -108,5 +121,9 @@ func (s *Server) UpdatePlaylistTracks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "success", "total_duration": "calculated"})
+	// Return the actual calculated duration instead of the word "calculated"
+	c.JSON(http.StatusOK, gin.H{
+		"status":         "success",
+		"total_duration": totalDuration,
+	})
 }

@@ -1,0 +1,24 @@
+info:
+  name: 03-login-dj
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{base-url}}/api/v1/auth/login"
+  body:
+    type: json
+    data: |
+      {
+            "username": "dj_mike",
+            "password": "supersecretpassword"
+      }
+  auth:
+    type: bearer
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzE0MTcxMDEsInJvbGUiOiJhZG1pbiIsInN1YiI6MX0.RA6NmrdoIr0G9vUnKH0Vm43_-2aYmaYkJmEyK6Dl0XM
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

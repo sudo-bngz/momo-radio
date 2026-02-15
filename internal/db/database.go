@@ -48,6 +48,7 @@ func New(cfg *config.Config) *Client {
 func (c *Client) AutoMigrate() {
 	log.Println("Running Database Migrations...")
 	err := c.DB.AutoMigrate(
+		&models.Users{},
 		&models.PlayHistory{},
 		&models.Playlist{},
 		&models.PlaylistTrack{},

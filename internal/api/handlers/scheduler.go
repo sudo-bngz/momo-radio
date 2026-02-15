@@ -1,15 +1,28 @@
-package api
+package handlers
 
 import (
-	"momo-radio/internal/models"
 	"net/http"
 	"strconv"
 	"time"
 
+	"momo-radio/internal/models"
+
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-func (s *Server) CreateScheduleSlot(c *gin.Context) {
+// SchedulerHandler handles scheduling-related requests independently of the main server
+type SchedulerHandler struct {
+	db *gorm.DB
+}
+
+// NewSchedulerHandler creates a new SchedulerHandler instance
+func NewSchedulerHandler(db *gorm.DB) *SchedulerHandler {
+	return &SchedulerHandler{db: db}
+}
+
+// CreateScheduleSlot creates a new broadcasting time slot
+func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 	var input struct {
 		PlaylistID uint      `json:"playlist_id" binding:"required"`
 		StartTime  time.Time `json:"start_time" binding:"required"`
@@ -22,7 +35,7 @@ func (s *Server) CreateScheduleSlot(c *gin.Context) {
 
 	// 1. Fetch playlist to get duration
 	var playlist models.Playlist
-	if err := s.db.DB.First(&playlist, input.PlaylistID).Error; err != nil {
+	if err := h.db.First(&playlist, input.PlaylistID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
 		return
 	}
@@ -37,7 +50,7 @@ func (s *Server) CreateScheduleSlot(c *gin.Context) {
 		EndTime:    endTime,
 	}
 
-	if err := s.db.DB.Create(&slot).Error; err != nil {
+	if err := h.db.Create(&slot).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Overlap or DB error"})
 		return
 	}
@@ -45,19 +58,21 @@ func (s *Server) CreateScheduleSlot(c *gin.Context) {
 	c.JSON(http.StatusCreated, slot)
 }
 
-func (s *Server) GetSchedule(c *gin.Context) {
+// GetSchedule fetches schedule slots within a given date range
+func (h *SchedulerHandler) GetSchedule(c *gin.Context) {
 	start := c.Query("start") // e.g. 2026-02-01
 	end := c.Query("end")     // e.g. 2026-02-08
 
 	var slots []models.ScheduleSlot
-	s.db.DB.Preload("Playlist").
+	h.db.Preload("Playlist").
 		Where("start_time >= ? AND start_time <= ?", start, end).
 		Find(&slots)
 
 	c.JSON(http.StatusOK, slots)
 }
 
-func (s *Server) DeleteScheduleSlot(c *gin.Context) {
+// DeleteScheduleSlot removes a time slot from the schedule
+func (h *SchedulerHandler) DeleteScheduleSlot(c *gin.Context) {
 	// 1. Convert the ID from string to uint
 	idStr := c.Param("id")
 	slotID, err := strconv.ParseUint(idStr, 10, 32)
@@ -67,8 +82,7 @@ func (s *Server) DeleteScheduleSlot(c *gin.Context) {
 	}
 
 	// 2. Perform the Soft Delete
-	// We use an empty model with the ID to tell GORM which record to "delete"
-	result := s.db.DB.Delete(&models.ScheduleSlot{}, uint(slotID))
+	result := h.db.Delete(&models.ScheduleSlot{}, uint(slotID))
 
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove slot from schedule"})

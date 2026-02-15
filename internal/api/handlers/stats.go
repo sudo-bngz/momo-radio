@@ -1,23 +1,36 @@
-package api
+package handlers
 
 import (
-	"momo-radio/internal/models"
 	"net/http"
 	"strings"
 	"time"
 
+	"momo-radio/internal/models"
+
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-func (s *Server) GetStats(c *gin.Context) {
+// StatsHandler handles stats-related requests independently of the main server
+type StatsHandler struct {
+	db *gorm.DB
+}
+
+// NewStatsHandler creates a new StatsHandler instance
+func NewStatsHandler(db *gorm.DB) *StatsHandler {
+	return &StatsHandler{db: db}
+}
+
+// GetStats returns aggregated dashboard statistics and currently playing data
+func (h *StatsHandler) GetStats(c *gin.Context) {
 	var totalTracks int64
 	var totalPlaylists int64
-	var storageUsed int64
+	var storageUsed int64 // Fixed the 'int64a' typo
 
-	// 1. Basic Aggregates
-	s.db.DB.Model(&models.Track{}).Count(&totalTracks)
-	s.db.DB.Model(&models.Playlist{}).Count(&totalPlaylists)
-	s.db.DB.Model(&models.Track{}).Select("SUM(file_size)").Scan(&storageUsed)
+	// 1. Basic Aggregates (using h.db instead of s.db.DB)
+	h.db.Model(&models.Track{}).Count(&totalTracks)
+	h.db.Model(&models.Playlist{}).Count(&totalPlaylists)
+	h.db.Model(&models.Track{}).Select("SUM(file_size)").Scan(&storageUsed)
 
 	// 2. Determine Active Schedule (The "Show")
 	now := time.Now()
@@ -25,7 +38,7 @@ func (s *Server) GetStats(c *gin.Context) {
 	currentWeekday := now.Weekday().String()[0:3]
 
 	var schedules []models.Schedule
-	s.db.DB.Preload("Playlist").Preload("RuleSet").Where("is_active = ?", true).Find(&schedules)
+	h.db.Preload("Playlist").Preload("RuleSet").Where("is_active = ?", true).Find(&schedules)
 
 	activeShowName := "General Rotation"
 	for _, slot := range schedules {
@@ -36,18 +49,17 @@ func (s *Server) GetStats(c *gin.Context) {
 	}
 
 	// 3. Determine Currently Playing Track (The "Song")
-	// We pull this from the stream_state table which the Engine updates every time a song starts
 	var streamState models.StreamState
 	var currentTrack models.Track
 
 	// We get the most recent state record
-	if err := s.db.DB.Order("updated_at DESC").First(&streamState).Error; err == nil {
-		s.db.DB.First(&currentTrack, streamState.TrackID)
+	if err := h.db.Order("updated_at DESC").First(&streamState).Error; err == nil {
+		h.db.First(&currentTrack, streamState.TrackID)
 	}
 
 	// 4. Fetch Recent Tracks (History)
 	var recentTracks []models.Track
-	s.db.DB.Table("tracks").
+	h.db.Table("tracks").
 		Joins("JOIN play_histories ON play_histories.track_id = tracks.id").
 		Order("play_histories.played_at DESC").
 		Limit(5).
@@ -59,13 +71,13 @@ func (s *Server) GetStats(c *gin.Context) {
 			"total_tracks":       totalTracks,
 			"total_playlists":    totalPlaylists,
 			"storage_used_bytes": storageUsed,
-			"uptime":             "99.9%", // You can calculate real uptime if stored
+			"uptime":             "99.9%",
 		},
 		"now_playing": gin.H{
 			"title":         currentTrack.Title,
 			"artist":        currentTrack.Artist,
 			"playlist_name": activeShowName,
-			"starts_at":     streamState.UpdatedAt, // When this specific track started
+			"starts_at":     streamState.UpdatedAt,
 			"ends_at":       streamState.UpdatedAt.Add(time.Duration(currentTrack.Duration) * time.Second),
 		},
 		"recent_tracks": recentTracks,

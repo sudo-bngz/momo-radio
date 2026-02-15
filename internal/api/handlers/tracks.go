@@ -1,24 +1,41 @@
-package api
+package handlers
 
 import (
 	"io"
 	"log/slog"
-	"momo-radio/internal/metadata"
-	"momo-radio/internal/models"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"momo-radio/internal/metadata"
+	"momo-radio/internal/models"
+	"momo-radio/internal/storage" // Required for the storage client
+
 	"github.com/bogem/id3v2"
 	"github.com/dhowden/tag"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+// TrackHandler handles track-related requests and file uploads
+type TrackHandler struct {
+	db      *gorm.DB
+	storage *storage.Client
+}
+
+// NewTrackHandler creates a new TrackHandler instance with its required dependencies
+func NewTrackHandler(db *gorm.DB, st *storage.Client) *TrackHandler {
+	return &TrackHandler{
+		db:      db,
+		storage: st,
+	}
+}
 
 // GetTracks returns a paginated list of tracks from the database
 // Query Params: page (default 1), limit (default 50), search (optional)
-func (s *Server) GetTracks(c *gin.Context) {
+func (h *TrackHandler) GetTracks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	search := c.Query("search")
@@ -28,7 +45,8 @@ func (s *Server) GetTracks(c *gin.Context) {
 	var tracks []models.Track
 	var total int64
 
-	query := s.db.DB.Model(&models.Track{})
+	// Replaced s.db.DB with h.db
+	query := h.db.Model(&models.Track{})
 
 	if search != "" {
 		// Basic search on artist or title
@@ -56,9 +74,9 @@ func (s *Server) GetTracks(c *gin.Context) {
 	})
 }
 
-// AnalyzeFile reads the uploaded file in memory and extracts ID3 tags
+// PreAnalyzeFile reads the uploaded file in memory and extracts ID3 tags
 // It does NOT upload to S3 or save to DB yet.
-func (s *Server) PreAnalyzeFile(c *gin.Context) {
+func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	// 1. Get File
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -75,7 +93,6 @@ func (s *Server) PreAnalyzeFile(c *gin.Context) {
 	defer file.Close()
 
 	// 3. Extract Metadata
-	// We try to parse tags. If it fails, we fail gracefully and return just the filename.
 	metadata, err := tag.ReadFrom(file)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -86,7 +103,6 @@ func (s *Server) PreAnalyzeFile(c *gin.Context) {
 	}
 
 	// 4. Format Response for React Form
-	// Parse Year safely
 	yearStr := ""
 	if metadata.Year() != 0 {
 		yearStr = strconv.Itoa(metadata.Year())
@@ -103,7 +119,8 @@ func (s *Server) PreAnalyzeFile(c *gin.Context) {
 	})
 }
 
-func (s *Server) UploadTrack(c *gin.Context) {
+// UploadTrack processes the file, tags it, and uploads it to cloud storage
+func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	// 1. Parse File & Form
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -150,7 +167,6 @@ func (s *Server) UploadTrack(c *gin.Context) {
 			return
 		}
 	} else if ext == ".flac" {
-		// Corrected FLAC Stamper
 		if err := metadata.StampFLAC(tempFile.Name(), meta); err != nil {
 			slog.Error("failed to tag flac", "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to tag FLAC"})
@@ -158,7 +174,7 @@ func (s *Server) UploadTrack(c *gin.Context) {
 		}
 	}
 
-	// 5. Upload to S3 (Same as previous)
+	// 5. Upload to S3
 	finalFile, err := os.Open(tempFile.Name())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read processed file"})
@@ -169,7 +185,8 @@ func (s *Server) UploadTrack(c *gin.Context) {
 	b2Key := "incoming/" + filepath.Base(fileHeader.Filename)
 	contentType := fileHeader.Header.Get("Content-Type")
 
-	err = s.storage.UploadIngestFile(b2Key, finalFile, contentType)
+	// Replaced s.storage with h.storage
+	err = h.storage.UploadIngestFile(b2Key, finalFile, contentType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Storage upload failed"})
 		return
