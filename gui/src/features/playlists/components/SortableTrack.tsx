@@ -1,6 +1,5 @@
-// src/features/playlists/components/SortableTrack.tsx
 import React from 'react';
-import { Box, HStack, VStack, Text, Button, Icon, Card } from '@chakra-ui/react';
+import { Box, Text, Button, Icon, Grid } from '@chakra-ui/react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Trash2 } from 'lucide-react';
@@ -8,57 +7,65 @@ import type { Track } from '../hook/usePlaylistBuilder';
 
 interface SortableTrackProps {
   track: Track;
+  index: number;
   onRemove: (id: number) => void;
 }
 
-export const SortableTrack: React.FC<SortableTrackProps> = ({ track, onRemove }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: track.ID });
+export const SortableTrack: React.FC<SortableTrackProps> = ({ track, index, onRemove }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
+    id: track.ID.toString() 
+  });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
     zIndex: isDragging ? 10 : 1,
-    opacity: isDragging ? 0.5 : 1,
-  };
+    boxShadow: isDragging ? "0 10px 15px -3px rgba(0, 0, 0, 0.1)" : "none",
+    position: isDragging ? "relative" : "static",
+  } as React.CSSProperties; 
 
-  // FIX 1: Round the total seconds before doing the math
   const totalSeconds = Math.round(track.Duration || 0);
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
   const timeString = `${m}:${s.toString().padStart(2, '0')}`;
 
   return (
-    <Card.Root ref={setNodeRef} style={style} mb={2} variant="outline" bg="white" borderColor="gray.200">
-      <Card.Body p={3}>
-        <HStack gap={4}>
-          {/* Drag Handle */}
-          <Box {...attributes} {...listeners} cursor="grab" _active={{ cursor: "grabbing" }}>
-            <Icon as={GripVertical} color="gray.400" />
-          </Box>
-          
-          {/* Track Info */}
-          <VStack align="start" flex="1" gap={0}>
-            <Text fontWeight="bold" fontSize="sm" color="gray.800">{track.Title}</Text>
-            <Text fontSize="xs" color="gray.500">{track.Artist}</Text>
-          </VStack>
-
-          {/* Clean Rounded Duration */}
-          <Text fontSize="xs" fontWeight="mono" color="blue.500">
-            {timeString}
+    <Box 
+      ref={setNodeRef} style={style} 
+      bg="white" borderBottomWidth="1px" borderColor="gray.100"
+      _hover={{ bg: "gray.50" }} transition="background 0.2s"
+      className="group"
+    >
+      <Grid templateColumns="40px 1fr 1fr 80px 50px" gap={4} px={6} py={3} alignItems="center">
+        
+        {/* DRAG HANDLE */}
+        <Box 
+          {...attributes} {...listeners} 
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          display="flex" justifyContent="center" alignItems="center"
+          touchAction="none" position="relative" w="24px" h="24px"
+        >
+          <Text fontSize="sm" color="gray.400" fontWeight="medium" position="absolute" opacity={1} _groupHover={{ opacity: 0 }} transition="opacity 0.2s">
+            {index}
           </Text>
+          <Icon as={GripVertical} color="gray.500" position="absolute" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s" />
+        </Box>
+        
+        <Text fontWeight="bold" fontSize="sm" color="gray.800" truncate>{track.Title}</Text>
+        <Text fontSize="sm" color="gray.600" truncate>{track.Artist}</Text>
+        <Text fontSize="sm" fontWeight="mono" color="gray.500" textAlign="right">{timeString}</Text>
 
-          {/* FIX 2: Explicitly style the button to prevent black dark-mode bleed */}
+        <Box display="flex" justifyContent="flex-end" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s">
           <Button 
-            size="xs" 
-            bg="red.50" 
-            color="red.500" 
-            _hover={{ bg: "red.100" }}
+            size="xs" bg="transparent" color="red.500" _hover={{ bg: "red.50" }} 
+            onPointerDown={(e) => e.stopPropagation()} 
             onClick={() => onRemove(track.ID)}
           >
-            <Trash2 size={14} />
+            <Trash2 size={16} />
           </Button>
-        </HStack>
-      </Card.Body>
-    </Card.Root>
+        </Box>
+
+      </Grid>
+    </Box>
   );
 };

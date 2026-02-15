@@ -73,9 +73,6 @@ func (s *Server) setupRoutes() {
 		v1.POST("/auth/login", authHandler.Login)
 
 		v1.GET("/stats", statsHandler.GetStats)
-		v1.GET("/tracks", trackHandler.GetTracks)
-		v1.GET("/playlists", playlistHandler.GetPlaylists)
-		v1.GET("/schedule", schedulerHandler.GetSchedule)
 
 		// ==========================================
 		// PROTECTED ROUTES (JWT Token Required)
@@ -87,12 +84,19 @@ func (s *Server) setupRoutes() {
 			// Only Admins can register new staff/users to the station.
 			protected.POST("/auth/register", middleware.RequireRole("admin"), authHandler.Register)
 
+			// --- TRACK
+			protected.GET("/tracks", middleware.RequireRole("dj", "manager"), trackHandler.GetTracks)
+
 			// --- DJ & MANAGER (Content Creators) ---
 			// DJs and Managers can upload music and manage playlists.
 			protected.POST("/upload/analyze", middleware.RequireRole("dj", "manager"), trackHandler.PreAnalyzeFile)
 			protected.POST("/upload/confirm", middleware.RequireRole("dj", "manager"), trackHandler.UploadTrack)
 
+			// --- PLAYLIST
+			protected.GET("/playlists", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylists)
+			protected.GET("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylist) // For fetching one to edit
 			protected.POST("/playlists", middleware.RequireRole("dj", "manager"), playlistHandler.CreatePlaylist)
+			protected.DELETE("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.DeletePlaylist) // For deleting
 			protected.PUT("/playlists/:id/tracks", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylistTracks)
 
 			// --- MANAGER ONLY (Program Directors) ---

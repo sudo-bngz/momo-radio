@@ -1,6 +1,3 @@
-// src/types/index.ts
-
-// src/types/index.ts
 export interface TrackMetadata {
   title: string;
   artist: string;
@@ -33,32 +30,38 @@ export type UploadStatus =
   | 'success' 
   | 'error';
 
+/**
+ * Single Track definition (unified version)
+ */
 export interface Track {
-  ID: number;
-  Title: string;
-  Artist: string;
-  Duration: number;
+  id: number;
+  title: string;
+  artist: string;
+  album?: string;
+  genre?: string;
+  duration: number; // in seconds
+  created_at?: string;
 }
 
+/**
+ * Playlist definition including its tracks
+ */
 export interface Playlist {
-  ID: number;
-  name: string;           // Changed from Name
-  color: string;          // Changed from Color
-  total_duration: number; // Changed from TotalDuration
+  id: number;
+  name: string;
+  color: string;
+  total_duration: number; 
+  tracks?: Track[]; // Optional because it might not be loaded in the list view
 }
 
 export interface ScheduleSlot {
-  ID: number;
+  id: number;
   playlist_id: number;
   playlist: Playlist;
   start_time: string;
   end_time: string;
 }
 
-/**
- * Represents the aggregated data returned by the /stats endpoint
- * for the Dashboard view.
- */
 export interface DashboardData {
   stats: {
     total_tracks: number;
@@ -70,27 +73,18 @@ export interface DashboardData {
   recent_tracks: Track[];
 }
 
-/**
- * Details about the currently broadcasting track
- */
 export interface NowPlayingInfo {
   title: string;
   artist: string;
   playlist_name: string;
-  starts_at: string; // ISO Date string from Go time.Time
-  ends_at: string;   // ISO Date string from Go time.Time
+  starts_at: string; 
+  ends_at: string;   
 }
 
-/**
- * Existing Track interface (ensure it matches your DB columns)
- */
-export interface Track {
+export interface User {
   id: number;
-  title: string;
-  artist: string;
-  album?: string;
-  genre?: string;
-  duration: number; // in seconds
-  created_at: string;
-  // ... other fields like label, country, etc.
+  username: string;
+  email?: string; // Optional depending on your Go model
+  role: 'admin' | 'manager' | 'viewer'; // Enforce specific roles
+  created_at?: string;
 }

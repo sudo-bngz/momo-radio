@@ -8,24 +8,34 @@ import (
 
 // Playlist represents a curated collection of tracks
 type Playlist struct {
-	gorm.Model
+	// FIX: Unroll gorm.Model to explicitly set json:"id"
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"` // Hiding DeletedAt from the API
+
 	Name          string  `json:"name" gorm:"not null"`
 	Description   string  `json:"description"`
-	Color         string  `json:"color" gorm:"default:'#3182ce'"` // For the UI calendar
-	TotalDuration int     `json:"total_duration"`                 // In seconds
-	Tracks        []Track `json:"tracks" gorm:"many2many:playlist_tracks;order:sort_order"`
+	Color         string  `json:"color" gorm:"default:'#3182ce'"`
+	TotalDuration int     `json:"total_duration"`
+	Tracks        []Track `json:"tracks" gorm:"many2many:playlist_tracks;"`
 }
 
 // PlaylistTrack is the join table that stores the specific order of tracks
 type PlaylistTrack struct {
-	PlaylistID uint `gorm:"primaryKey"`
-	TrackID    uint `gorm:"primaryKey"`
-	SortOrder  int  `json:"sort_order"` // Crucial for manual ordering
+	PlaylistID uint `gorm:"primaryKey" json:"playlist_id"`
+	TrackID    uint `gorm:"primaryKey" json:"track_id"`
+	SortOrder  int  `json:"sort_order"`
 }
 
 // ScheduleSlot represents a playlist assigned to a specific time on the calendar
 type ScheduleSlot struct {
-	gorm.Model
+	// FIX: Unroll here too for consistency
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
 	PlaylistID uint      `json:"playlist_id" gorm:"index"`
 	Playlist   Playlist  `json:"playlist"`
 	StartTime  time.Time `json:"start_time" gorm:"index"`

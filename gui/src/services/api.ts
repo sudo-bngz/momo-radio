@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useAuthStore } from '../store/useAuthStore'; // We will create this next
 import type { 
   AnalyzeResponse, 
   TrackMetadata, 
@@ -10,16 +11,37 @@ import type {
 
 const API_URL = 'http://localhost:8081/api/v1';
 
-export const api = {
-  // ---------------------------------------------------------
-  // 1. INGESTION & UPLOAD 
-  // ---------------------------------------------------------
+// Create a dedicated Axios instance
+export const apiClient = axios.create({
+  baseURL: API_URL,
+});
+
+apiClient.interceptors.request.use((config) => {
+  const state = useAuthStore.getState();
+  const token = state.token;
   
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+    console.log('API Request: Token attached');
+  } else {
+    console.warn('API Request: No token found in store');
+  }
+  
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+/**
+ * GLOBAL API METHODS
+ */
+export const api = {
+  // 1. INGESTION & UPLOAD
   analyzeFile: async (file: File): Promise<AnalyzeResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     
-    const response = await axios.post<AnalyzeResponse>(`${API_URL}/upload/analyze`, formData, {
+    const response = await apiClient.post<AnalyzeResponse>('/upload/analyze', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return response.data;
@@ -30,54 +52,54 @@ export const api = {
     formData.append('file', file);
     
     (Object.keys(metadata) as Array<keyof TrackMetadata>).forEach((key) => {
-      formData.append(key, metadata[key]);
+      formData.append(key, (metadata as any)[key]);
     });
 
-    await axios.post(`${API_URL}/upload/confirm`, formData, {
+    await apiClient.post('/upload/confirm', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
   },
 
-  // ---------------------------------------------------------
   // 2. LIBRARY MANAGEMENT
-  // ---------------------------------------------------------
-
   getTracks: async (): Promise<{ data: Track[] }> => {
-    const response = await axios.get<{ data: Track[] }>(`${API_URL}/tracks`);
+    const response = await apiClient.get<{ data: Track[] }>('/tracks');
     return response.data;
   },
 
-  // ---------------------------------------------------------
   // 3. PLAYLIST BUILDER
-  // ---------------------------------------------------------
-
-  createPlaylist: async (data: { name: string; color: string }): Promise<Playlist> => {
-    const response = await axios.post<Playlist>(`${API_URL}/playlists`, data);
+  createPlaylist: async (data: { name: string; color?: string }): Promise<Playlist> => {
+    const response = await apiClient.post<Playlist>('/playlists', data);
     return response.data;
   },
 
   getPlaylists: async (): Promise<{ data: Playlist[] }> => {
-    const response = await axios.get<{ data: Playlist[] }>(`${API_URL}/playlists`);
+    const response = await apiClient.get<{ data: Playlist[] }>('/playlists');
+    return response.data;
+  },
+
+  getPlaylist: async (playlistId: number): Promise<Playlist> => {
+    const response = await apiClient.get<Playlist>(`/playlists/${playlistId}`);
     return response.data;
   },
 
   updatePlaylistTracks: async (playlistId: number, trackIds: number[]): Promise<void> => {
-    await axios.put(`${API_URL}/playlists/${playlistId}/tracks`, { track_ids: trackIds });
+    await apiClient.put(`/playlists/${playlistId}/tracks`, { track_ids: trackIds });
   },
 
-  // ---------------------------------------------------------
-  // 4. SCHEDULER (CALENDAR)
-  // ---------------------------------------------------------
+  deletePlaylist: async (playlistId: number): Promise<void> => {
+    await apiClient.delete(`/playlists/${playlistId}`);
+  },
 
+  // 4. SCHEDULER
   getSchedule: async (start: string, end: string): Promise<ScheduleSlot[]> => {
-    const response = await axios.get<ScheduleSlot[]>(`${API_URL}/schedule`, {
+    const response = await apiClient.get<ScheduleSlot[]>('/schedule', {
       params: { start, end }
     });
     return response.data;
   },
 
   createScheduleSlot: async (playlistId: number, startTime: string): Promise<ScheduleSlot> => {
-    const response = await axios.post<ScheduleSlot>(`${API_URL}/schedule`, {
+    const response = await apiClient.post<ScheduleSlot>('/schedule', {
       playlist_id: playlistId,
       start_time: startTime
     });
@@ -85,19 +107,12 @@ export const api = {
   },
 
   deleteScheduleSlot: async (slotId: number): Promise<void> => {
-    await axios.delete(`${API_URL}/schedule/${slotId}`);
+    await apiClient.delete(`/schedule/${slotId}`);
   },
 
-  // ---------------------------------------------------------
-  // 5. STATION STATS (DASHBOARD)
-  // ---------------------------------------------------------
-
-  /**
-   * Fetches the aggregated station data for the Dashboard.
-   * Maps to the Go backend's /stats endpoint.
-   */
+  // 5. DASHBOARD STATS
   getDashboardStats: async (): Promise<DashboardData> => {
-    const response = await axios.get<DashboardData>(`${API_URL}/stats`);
+    const response = await apiClient.get<DashboardData>('/stats');
     return response.data;
   }
 };

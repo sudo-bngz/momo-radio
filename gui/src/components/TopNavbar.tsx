@@ -1,21 +1,23 @@
-// src/components/TopNav.tsx
 import React from 'react';
 import { Box, HStack, Text, Avatar, Menu, Flex, Icon, Spinner } from '@chakra-ui/react';
 import { LogOut, Settings, BookOpen, Users, Music, ChevronDown } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+// FIX 1: Import the Zustand store instead of the old Context
+import { useAuthStore } from '../store/useAuthStore';
 import { useDashboard } from '../features/dashboard/hook/useDashboard';
 
 export const TopNav: React.FC = () => {
-  const { user, logout } = useAuth();
+  // FIX 2: Access user and logout directly from Zustand
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
   const { nowPlaying, isLoading } = useDashboard(); 
 
+  // If the store hasn't hydrated or user isn't logged in, don't show the nav
   if (!user) return null;
 
   const roleColor = user.role === 'admin' ? 'red' : user.role === 'manager' ? 'purple' : 'blue';
   const trackText = nowPlaying?.artist ? `${nowPlaying.artist} - ${nowPlaying.title}` : "AutoDJ is loading...";
 
   return (
-    // FIX 1: Changed background to "gray.50" for a subtle visual separation from the main app
     <Box h="64px" px={6} bg="gray.50" borderBottom="1px solid" borderColor="gray.200" shadow="sm">
       
       <style>
@@ -29,9 +31,10 @@ export const TopNav: React.FC = () => {
 
       <Flex justify="flex-end" align="center" h="100%" gap={6}>
 
+        {/* ON AIR PILL */}
         <HStack 
           gap={4} 
-          bg="white" // Make the pill pop against the new gray.50 navbar background
+          bg="white" 
           px={4} 
           py={1.5} 
           borderRadius="full" 
@@ -79,7 +82,7 @@ export const TopNav: React.FC = () => {
           </HStack>
         </HStack>
 
-        {/* FIX 2: Wrapped the Menu in a relative Box to anchor the absolute dropdown */}
+        {/* USER MENU */}
         <Box position="relative">
           <Menu.Root positioning={{ placement: "bottom-end" }}>
             <Menu.Trigger asChild>
@@ -118,7 +121,6 @@ export const TopNav: React.FC = () => {
               </HStack>
             </Menu.Trigger>
 
-            {/* FIX 3: Forced absolute positioning! This physically prevents it from expanding the navbar */}
             <Menu.Content 
               position="absolute" 
               top="calc(100% + 12px)" 
@@ -144,6 +146,7 @@ export const TopNav: React.FC = () => {
                 </HStack>
               </Menu.Item>
               <Menu.Separator />
+              {/* FIX 3: Correctly triggers the Zustand logout action */}
               <Menu.Item value="logout" color="red.500" onClick={logout}>
                 <HStack gap={2}>
                   <LogOut size={16} />

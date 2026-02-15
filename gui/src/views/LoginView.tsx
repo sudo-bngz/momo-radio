@@ -1,26 +1,36 @@
-// src/views/LoginView.tsx
 import React, { useState } from 'react';
 import { Box, Button, Input, VStack, Heading, Text, Icon } from '@chakra-ui/react';
 import { Radio } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../store/useAuthStore';
 
 export const LoginView: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null); // FIX: Local error state
-  const { login } = useAuth();
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  const navigate = useNavigate();
+  
+  // This line will no longer throw an error once the store interface is updated
+  const login = useAuthStore((state) => state.login);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setErrorMsg(null); // Clear previous errors
+    setErrorMsg(null);
     
     try {
+      // 1. Authenticate via Zustand Store
       await login(username, password);
-      // App.tsx handles the redirect automatically when state updates
+      
+      // 2. On success, navigate to the dashboard layout
+      // This works now because App.tsx wraps this in <BrowserRouter>
+      navigate('/dashboard'); 
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.error || 'Invalid credentials. Please try again.');
+      // Handle various error formats from Axios/Go
+      const message = err.response?.data?.error || err.message || 'Invalid credentials.';
+      setErrorMsg(message);
     } finally {
       setIsLoading(false);
     }
@@ -29,9 +39,9 @@ export const LoginView: React.FC = () => {
  return (
     <Box minH="100vh" display="flex" alignItems="center" justifyContent="center" bg="gray.50">
       <Box p={8} maxW="md" w="full" bg="white" boxShadow="xl" borderRadius="2xl">
-        {/* FIX: Add color="gray.900" to the VStack form to cascade dark text to all children */}
         <VStack gap={6} as="form" onSubmit={handleLogin} color="gray.900">
           <Icon as={Radio} boxSize={12} color="blue.500" />
+          
           <VStack gap={1}>
             <Heading size="lg">Momo Radio</Heading>
             <Text color="gray.500">Sign in to manage the station</Text>
@@ -43,37 +53,44 @@ export const LoginView: React.FC = () => {
             </Box>
           )}
 
-          {/* FIX: Explicitly set the text and border color for the inputs */}
-          <Input 
-            placeholder="Username" 
-            size="lg" 
-            value={username} 
-            onChange={(e) => setUsername(e.target.value)} 
-            color="gray.900" 
-            borderColor="gray.300"
-            _placeholder={{ color: "gray.400" }}
-            required 
-          />
-          <Input 
-            placeholder="Password" 
-            type="password" 
-            size="lg" 
-            value={password} 
-            onChange={(e) => setPassword(e.target.value)} 
-            color="gray.900"
-            borderColor="gray.300"
-            _placeholder={{ color: "gray.400" }}
-            required 
-          />
+          <VStack w="full" gap={3}>
+            <Input 
+              placeholder="Username" 
+              size="lg" 
+              value={username} 
+              onChange={(e) => setUsername(e.target.value)} 
+              color="gray.900" 
+              borderColor="gray.300"
+              _focus={{ borderColor: "blue.500", boxShadow: "0 0 0 1px #3182ce" }}
+              _placeholder={{ color: "gray.400" }}
+              required 
+            />
+            <Input 
+              placeholder="Password" 
+              type="password" 
+              size="lg" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              color="gray.900"
+              borderColor="gray.300"
+              _focus={{ borderColor: "blue.500", boxShadow: "0 0 0 1px #3182ce" }}
+              _placeholder={{ color: "gray.400" }}
+              required 
+            />
+          </VStack>
 
           <Button 
             type="submit" 
-            colorPalette="blue" 
+            bg="blue.600" 
+            _hover={{ bg: "blue.700" }}
+            color="white"
             size="lg" 
             w="full" 
             loading={isLoading}
+            fontSize="md"
+            fontWeight="bold"
           >
-            Sign In
+            SIGN IN
           </Button>
         </VStack>
       </Box>

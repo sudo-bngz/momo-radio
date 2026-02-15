@@ -46,6 +46,24 @@ func (h *PlaylistHandler) CreatePlaylist(c *gin.Context) {
 	c.JSON(http.StatusCreated, playlist)
 }
 
+func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid playlist ID"})
+		return
+	}
+
+	var playlist models.Playlist
+	// Preload("Tracks") is essential so the Playlist Studio shows the current songs
+	if err := h.db.Preload("Tracks").First(&playlist, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, playlist)
+}
+
 // GetPlaylists fetches all playlists
 func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	var playlists []models.Playlist
@@ -126,4 +144,35 @@ func (h *PlaylistHandler) UpdatePlaylistTracks(c *gin.Context) {
 		"status":         "success",
 		"total_duration": totalDuration,
 	})
+}
+
+// DeletePlaylist removes a playlist and cleans up its track associations
+func (h *PlaylistHandler) DeletePlaylist(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
+	// Use a transaction to ensure we delete the playlist and its associations cleanly
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		// 1. Delete the associations in the join table first
+		if err := tx.Where("playlist_id = ?", id).Delete(&models.PlaylistTrack{}).Error; err != nil {
+			return err
+		}
+
+		// 2. Delete the playlist itself
+		if err := tx.Delete(&models.Playlist{}, id).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete playlist"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Playlist deleted successfully"})
 }
