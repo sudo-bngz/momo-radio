@@ -113,7 +113,7 @@ export const api = {
   },
 
   deleteScheduleSlot: async (slotId: number): Promise<void> => {
-    await apiClient.delete(`/schedule/${slotId}`);
+    await apiClient.delete(`/schedules/${slotId}`);
   },
 
   // 5. DASHBOARD STATS

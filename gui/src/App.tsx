@@ -12,6 +12,7 @@ import { PlaylistBuilder } from "./features/playlists/components/PlaylistBuilder
 import { LibraryFeature } from "./features/library";
 import { IngestFeature } from './features/ingest';
 import { ScheduleFeature } from './features/schedule';
+import { SettingsFeature } from './features/settings';
 
 export const App = () => {
   return (
@@ -35,6 +36,7 @@ export const App = () => {
               <Route path="/schedule" element={<ScheduleFeature />} />
               {/* Add more as needed */}
             </Route>
+            <Route path="/settings" element={<SettingsFeature />} />
           </Route>
 
           {/* Catch-all Redirect */}

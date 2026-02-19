@@ -38,6 +38,7 @@ func main() {
 	cfg := config.Load()
 
 	// 3. Initialize Infrastructure
+	// storage.New now internally switches between S3/B2 and Local based on cfg.Storage.Provider
 	store := storage.New(cfg)
 	db := database.New(cfg)
 
@@ -50,12 +51,13 @@ func main() {
 	}
 
 	// 5. Create Worker
+	// This still takes the same Client type, but it's now powered by the selected Provider
 	worker := ingest.New(cfg, store, db)
 
 	// 6. MODE SELECTION
-	// If any repair flag is set, run the specific repair and exit.
 	if *repairMeta || *repairAudio || *repairCountry {
 		log.Println("🛠️ MAINTENANCE MODE ACTIVE")
+		log.Printf("📦 Storage Provider: %s", cfg.Storage.Provider)
 
 		if *repairAudio {
 			log.Println(">>> Starting Audio Repair (Essentia)...")
@@ -63,7 +65,7 @@ func main() {
 		}
 
 		if *repairMeta {
-			log.Println(">>> Starting Metadata Repair (Discogs)...")
+			log.Println(">>> Starting Metadata Repair...")
 			worker.RepairMetadata()
 		}
 
@@ -71,7 +73,7 @@ func main() {
 			if *dryRun {
 				log.Println("🧪 MODE: DRY RUN (No DB writes)")
 			}
-			log.Printf(">>> Starting Country Repair (MusicBrainz) for %d targets...", len(targetArtists))
+			log.Printf(">>> Starting Country Repair (%s) for %d targets...", *repairProvider, len(targetArtists))
 			worker.RepairCountry(*dryRun, targetArtists, *repairProvider)
 		}
 
@@ -80,7 +82,7 @@ func main() {
 	}
 
 	// 7. NORMAL OPERATION
-	log.Println("📻 Starting Radio Ingestion Worker...")
+	log.Printf("📻 Starting Radio Ingestion Worker [Storage: %s]...", cfg.Storage.Provider)
 
 	// Setup Metrics
 	ingest.RegisterMetrics()

@@ -1,19 +1,48 @@
-b2:
-  key_id: "YOUR_B2_KEY_ID"
-  app_key: "YOUR_B2_APP_KEY"
-  endpoint: "https://s3.us-west-000.backblazeb2.com"
-  region: "us-west-000"
-  bucket_ingest: "radio-ingest-raw"
-  bucket_prod: "radio-assets-files"
+# --- STORAGE CONFIGURATION ---
+storage:
+  # Choose "s3" for Cloud (Backblaze/AWS) or "local" for Development
+  provider: "s3"
 
+  # S3 / Backblaze Credentials (used when provider: "s3")
+  key_id: "example_access_key_id_12345"
+  app_key: "example_secret_application_key_abcde"
+  endpoint: "https://s3.us-east-001.backblazeb2.com"
+  region: "us-east-001"
+
+  # Bucket Names (Will become folder names in local mode)
+  bucket_ingest: "radio-ingest-bucket"
+  bucket_prod: "radio-assets-bucket"
+  bucket_stream_live: "radio-stream-bucket"
+
+  # Local Mode Settings (used when provider: "local")
+  # Root directory where folders for the buckets above will be created
+  local_storage_path: "./radio_storage_root"
+
+# --- SERVER CONFIGURATION ---
 server:
   port: ":8081"
-  webhook_secret: "YOUR_SECRET_STRING_FROM_B2_CONSOLE"
+  metrics_port: ":9091"
+  webhook_secret: "your_secure_webhook_token_here"
   temp_dir: "./temp_processing"
-  
+  polling_interval_seconds: 10
+
+# --- RADIO ENGINE CONFIGURATION ---
+radio:
+  bitrate: "128k"
+  audio_codec: "aac"
+  segment_time: "4"
+  list_size: "15"
+  segment_dir: "./hls_output"
+
+# --- DATABASE CONFIGURATION ---
 database:
-  host: "postgres" # Use "localhost" if running outside Docker
+  host: "localhost" # Set to "postgres" if running inside a Docker network
   port: "5432"
-  user: "radio"
-  password: "radiopassword"
-  name: "radio"
+  user: "radio_user"
+  password: "secure_database_password"
+  name: "momo_radio_db"
+
+# --- THIRD PARTY SERVICES ---
+services:
+  discogs_token: "example_discogs_api_token_xyz"
+  contact_email: "admin@example.com"

@@ -8,15 +8,17 @@ import (
 )
 
 type Config struct {
-	B2 struct {
-		KeyID        string `mapstructure:"key_id"`
-		AppKey       string `mapstructure:"app_key"`
+	Storage struct {
+		Provider     string `mapstructure:"provider"` // "s3", "local", "gdrive"
+		KeyID        string `mapstructure:"key_id"`   // S3 Access Key / B2 KeyID
+		AppKey       string `mapstructure:"app_key"`  // S3 Secret Key / B2 AppKey
 		Endpoint     string `mapstructure:"endpoint"`
 		Region       string `mapstructure:"region"`
 		BucketIngest string `mapstructure:"bucket_ingest"`
 		BucketProd   string `mapstructure:"bucket_prod"`
 		BucketStream string `mapstructure:"bucket_stream_live"`
-	} `mapstructure:"b2"`
+		LocalStorage string `mapstructure:"local_storage_path"` // For local provider
+	} `mapstructure:"storage"`
 	Server struct {
 		TempDir         string `mapstructure:"temp_dir"`
 		PollingInterval int    `mapstructure:"polling_interval_seconds"`
@@ -56,14 +58,17 @@ func Load() *Config {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	// Register keys
-	viper.BindEnv("b2.key_id")
-	viper.BindEnv("b2.app_key")
-	viper.BindEnv("b2.endpoint")
-	viper.BindEnv("b2.region")
-	viper.BindEnv("b2.bucket_ingest")
-	viper.BindEnv("b2.bucket_prod")
-	viper.BindEnv("b2.bucket_stream_live")
+	// Storage Bindings
+	viper.BindEnv("storage.provider")
+	viper.BindEnv("storage.key_id")
+	viper.BindEnv("storage.app_key")
+	viper.BindEnv("storage.endpoint")
+	viper.BindEnv("storage.region")
+	viper.BindEnv("storage.bucket_ingest")
+	viper.BindEnv("storage.bucket_prod")
+	viper.BindEnv("storage.bucket_stream_live")
+	viper.BindEnv("storage.local_storage_path")
+
 	viper.BindEnv("server.temp_dir")
 	viper.BindEnv("server.polling_interval_seconds")
 	viper.BindEnv("server.metrics_port")
@@ -132,9 +137,16 @@ func Load() *Config {
 		log.Fatalf("Unable to decode config: %v", err)
 	}
 
-	if cfg.B2.KeyID == "" {
-		log.Fatal("Critical: B2 KeyID is missing (RADIO_B2_KEY_ID)")
-	}
+	validateConfig(&cfg)
 
 	return &cfg
+}
+
+func validateConfig(cfg *Config) {
+	if cfg.Storage.Provider == "s3" && cfg.Storage.KeyID == "" {
+		log.Fatal("Critical: S3/B2 KeyID is missing (RADIO_STORAGE_KEY_ID)")
+	}
+	if cfg.Storage.Provider == "local" && cfg.Storage.LocalStorage == "" {
+		log.Fatal("Critical: Local storage path is missing (RADIO_STORAGE_LOCAL_STORAGE_PATH)")
+	}
 }

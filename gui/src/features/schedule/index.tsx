@@ -1,21 +1,17 @@
 import React from 'react';
-import { Box, Heading, Icon } from '@chakra-ui/react';
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { Box } from '@chakra-ui/react';
 import { ScheduleBuilder } from './components/ScheduleBuilder';
 
 export const ScheduleFeature: React.FC = () => {
   return (
-    <Box w="full" h="100%" data-theme="light">
-      
-      <Heading size="lg" mb={6} display="flex" alignItems="center" gap={2} color="gray.800">
-        <Icon as={CalendarIcon} color="blue.500" />
-        Timetable
-      </Heading>
-      
-      <Box h="calc(100% - 80px)" w="full">
+    <Box w="full" h="100%" data-theme="light" bg="transparent">
+      {/* We removed the duplicate Heading and Icon here. 
+          The 'ScheduleBuilder' now handles the 'Broadcast Schedule' 
+          title and pill-shaped navigation internally.
+      */}
+      <Box h="full" w="full">
         <ScheduleBuilder />
       </Box>
-      
     </Box>
   );
 };

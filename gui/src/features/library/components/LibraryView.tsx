@@ -1,12 +1,11 @@
-// src/features/library/components/LibraryView.tsx
-// src/features/library/components/LibraryView.tsx
 import React from 'react';
 import { 
   Box, VStack, HStack, Text, Input, Icon, Spinner, Table, Heading, Button 
 } from '@chakra-ui/react';
-import { Search, Clock, Play, Disc } from 'lucide-react';
+import { Search, Clock, Play, Pause, Disc } from 'lucide-react'; // Added Pause
 import { useLibrary } from '../hook/useLibrary';
-import type { SortOption } from '../hook/useLibrary'
+import { usePlayer } from '../../../context/PlayerContext'; // Import the player hook
+import type { SortOption } from '../hook/useLibrary';
 
 export const LibraryView: React.FC = () => {
   const { 
@@ -19,10 +18,27 @@ export const LibraryView: React.FC = () => {
     sortBy
   } = useLibrary();
 
+  // 1. Pull in the global player state
+  const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();
+
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // 2. Main Play Button Logic (Plays the first track if nothing is playing)
+  const handleMainPlayClick = () => {
+    if (isPlaying) {
+      togglePlayPause();
+    } else if (tracks.length > 0) {
+      // If paused but we have a track loaded, toggle it. Otherwise play the first track.
+      if (currentTrack) {
+        togglePlayPause();
+      } else {
+        playTrack(tracks[0]);
+      }
+    }
   };
 
   return (
@@ -41,7 +57,7 @@ export const LibraryView: React.FC = () => {
       {/* 2. Smart Search & Filters Row */}
       <HStack justify="space-between" w="100%" gap={6}>
         <HStack gap={4} flex="1">
-          {/* Main Play Action */}
+          {/* Main Play Action integrated with PlayerContext */}
           <Button 
             bg="blue.600" 
             color="white" 
@@ -49,9 +65,15 @@ export const LibraryView: React.FC = () => {
             w="48px" 
             h="48px" 
             p={0}
-            _hover={{ bg: "blue.700" }}
+            _hover={{ bg: "blue.700", transform: "scale(1.05)" }}
+            transition="all 0.2s"
+            onClick={handleMainPlayClick}
           >
-            <Play fill="currentColor" size={20} style={{ marginLeft: '4px' }} />
+            {isPlaying ? (
+              <Pause fill="currentColor" size={20} />
+            ) : (
+              <Play fill="currentColor" size={20} style={{ marginLeft: '4px' }} />
+            )}
           </Button>
 
           {/* Smart Search Bar */}
@@ -76,7 +98,7 @@ export const LibraryView: React.FC = () => {
               borderRadius="xl"
               bg="gray.50"
               border="none"
-              color="gray.800" // FIX: Explicitly set text color to dark
+              color="gray.900" 
               _placeholder={{ color: "gray.400" }}
               _focus={{ bg: "white", ring: "2px", ringColor: "blue.500" }}
             />
@@ -94,8 +116,9 @@ export const LibraryView: React.FC = () => {
               fontSize: '14px',
               backgroundColor: 'var(--chakra-colors-gray-50)',
               cursor: 'pointer',
-              color: 'var(--chakra-colors-gray-800)', // FIX: Explicitly set text color
-              fontWeight: '500'
+              color: 'var(--chakra-colors-gray-900)', 
+              fontWeight: '500',
+              outline: 'none'
             }}
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortOption)}
@@ -114,22 +137,13 @@ export const LibraryView: React.FC = () => {
         ) : (
           <Box overflowY="auto" flex="1">
             <Table.Root css={{
-              "& th": { 
-                borderBottom: "1px solid var(--chakra-colors-gray-200)", 
-                py: 4, 
-                fontWeight: "500",
-                color: "var(--chakra-colors-gray-600)"
-              },
-              "& td": { 
-                py: 4, 
-                borderBottom: "1px solid var(--chakra-colors-gray-50)",
-                color: "var(--chakra-colors-gray-800)" 
-              }
+              "& th": { borderBottom: "1px solid var(--chakra-colors-gray-200)", py: 4, fontWeight: "500", color: "var(--chakra-colors-gray-600)" },
+              "& td": { py: 4, borderBottom: "1px solid var(--chakra-colors-gray-50)", color: "var(--chakra-colors-gray-800)" }
             }}>
               <Table.Header position="sticky" top={0} bg="white" zIndex={1}>
                 <Table.Row>
                   <Table.ColumnHeader w="60px">#</Table.ColumnHeader>
-                  <Table.ColumnHeader w="50px"></Table.ColumnHeader>
+                  <Table.ColumnHeader w="60px"></Table.ColumnHeader>
                   <Table.ColumnHeader>Title</Table.ColumnHeader>
                   <Table.ColumnHeader>Artist</Table.ColumnHeader>
                   <Table.ColumnHeader textAlign="right">
@@ -137,22 +151,76 @@ export const LibraryView: React.FC = () => {
                   </Table.ColumnHeader>
                 </Table.Row>
               </Table.Header>
+              
               <Table.Body>
-                {tracks.map((track, index) => (
-                  <Table.Row key={track.ID} _hover={{ bg: "gray.50" }}>
-                    <Table.Cell color="gray.400" fontSize="xs">{index + 1}</Table.Cell>
-                    <Table.Cell px={0}>
-                      <Box w="36px" h="36px" bg="gray.100" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
-                        <Disc size={18} color="#A0AEC0" />
-                      </Box>
-                    </Table.Cell>
-                    <Table.Cell fontWeight="500">{track.Title}</Table.Cell>
-                    <Table.Cell color="gray.600">{track.Artist}</Table.Cell>
-                    <Table.Cell textAlign="right" color="gray.500" fontVariantNumeric="tabular-nums">
-                      {formatDuration(track.Duration)}
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
+                {tracks.map((track, index) => {
+                  // Determine if THIS specific row is the one currently loaded in the player
+                  const isThisTrackPlaying = currentTrack?.id === track.id;
+                  const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
+
+                  return (
+                    <Table.Row 
+                      key={track.id} 
+                      className="group" // Enables _groupHover on children!
+                      _hover={{ bg: "gray.50" }}
+                      bg={isThisTrackPlaying ? "blue.50" : "transparent"} // Highlight row if playing
+                      transition="background 0.2s"
+                    >
+                      <Table.Cell color="gray.400" fontSize="xs">
+                        {index + 1}
+                      </Table.Cell>
+                      
+                      <Table.Cell px={0}>
+                        {/* Interactive Play/Pause Square */}
+                        <Box 
+                          w="36px" h="36px" 
+                          bg={isThisTrackPlaying ? "blue.500" : "gray.100"} 
+                          borderRadius="md" 
+                          display="flex" alignItems="center" justifyContent="center"
+                          cursor="pointer"
+                          color={isThisTrackPlaying ? "white" : "gray.400"}
+                          _groupHover={{ bg: "blue.500", color: "white" }}
+                          transition="all 0.2s"
+                          onClick={() => {
+                            if (isThisTrackPlaying) {
+                              togglePlayPause();
+                            } else {
+                              playTrack(track);
+                            }
+                          }}
+                        >
+                          {/* We use conditional rendering based on playback state, 
+                              and CSS hover for the default state */}
+                          {isThisTrackActiveAndPlaying ? (
+                            <Pause size={18} fill="currentColor" />
+                          ) : isThisTrackPlaying ? (
+                            <Play size={18} fill="currentColor" style={{ marginLeft: '2px' }} />
+                          ) : (
+                            <>
+                              <Box display="block" _groupHover={{ display: "none" }}>
+                                <Disc size={18} />
+                              </Box>
+                              <Box display="none" _groupHover={{ display: "block" }}>
+                                <Play size={18} fill="currentColor" style={{ marginLeft: '2px' }} />
+                              </Box>
+                            </>
+                          )}
+                        </Box>
+                      </Table.Cell>
+
+                      {/* Text turns blue if it's the currently playing track */}
+                      <Table.Cell fontWeight={isThisTrackPlaying ? "bold" : "500"} color={isThisTrackPlaying ? "blue.600" : "inherit"}>
+                        {track.title}
+                      </Table.Cell>
+                      <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"}>
+                        {track.artist}
+                      </Table.Cell>
+                      <Table.Cell textAlign="right" color="gray.500" fontVariantNumeric="tabular-nums">
+                        {formatDuration(track.duration)}
+                      </Table.Cell>
+                    </Table.Row>
+                  );
+                })}
               </Table.Body>
             </Table.Root>
           </Box>

@@ -1,16 +1,14 @@
 import { useState } from 'react';
-import { VStack, Text, Icon, HStack, Flex } from '@chakra-ui/react';
-import { NavLink } from 'react-router-dom'; // FIX: Use NavLink for routing
+import { VStack, Text, Icon, HStack, Flex, Box } from '@chakra-ui/react';
+import { NavLink } from 'react-router-dom';
 import { 
   Upload, Radio, Activity, Library, ListMusic, 
   Calendar, Settings, PanelLeftClose, PanelLeftOpen 
 } from 'lucide-react';
 
-// FIX: SidebarProps no longer needs currentView/onChangeView
 const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // FIX: Added 'path' to match your Route definitions in App.tsx
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity, path: '/dashboard' },
     { id: 'ingest', label: 'Upload Track', icon: Upload, path: '/ingest' },
@@ -22,28 +20,31 @@ const Sidebar = () => {
   return (
     <Flex 
       direction="column"
-      w={isCollapsed ? "72px" : "250px"} 
+      w={isCollapsed ? "76px" : "260px"} 
       bg="gray.900" 
-      borderRightWidth="1px" 
-      borderColor="gray.800" 
-      py={6} 
+      borderRight="1px solid" 
+      borderColor="whiteAlpha.100" 
+      pt={8}          // <--- FIX: Keep top padding at 8
+      pb="96px"       // <--- FIX: Add large bottom padding to clear the 72px player
       color="gray.400"
-      transition="width 0.3s ease-in-out" 
+      transition="width 0.3s cubic-bezier(0.4, 0, 0.2, 1)" 
       flexShrink={0}
       h="100%"
+      position="relative"
     >
-      <HStack mb={8} px={isCollapsed ? 0 : 6} justify={isCollapsed ? "center" : "flex-start"} h="32px">
-        <Icon as={Radio} boxSize={7} color="blue.400" flexShrink={0} />
+      {/* Brand Logo */}
+      <HStack mb={10} px={isCollapsed ? 0 : 8} justify={isCollapsed ? "center" : "flex-start"} h="32px">
+        <Icon as={Radio} boxSize={6} color="blue.500" flexShrink={0} />
         {!isCollapsed && (
-          <Text fontSize="xl" fontWeight="bold" color="white" whiteSpace="nowrap">
+          <Text fontSize="lg" fontWeight="bold" color="white" letterSpacing="tight" truncate>
             Momo Radio
           </Text>
         )}
       </HStack>
       
-      <VStack align="stretch" gap={2} px={3} flex="1">
+      {/* Main Navigation */}
+      <VStack align="stretch" gap={1} px={4} flex="1">
         {navItems.map((item) => (
-          /* FIX: Wrap NavItem in NavLink to handle the URL change */
           <NavLink 
             key={item.id} 
             to={item.path} 
@@ -53,7 +54,7 @@ const Sidebar = () => {
               <NavItem 
                 icon={item.icon} 
                 label={item.label} 
-                isActive={isActive} // NavLink automatically determines isActive
+                isActive={isActive} 
                 isCollapsed={isCollapsed}
               />
             )}
@@ -61,16 +62,16 @@ const Sidebar = () => {
         ))}
       </VStack>
 
-      <VStack align="stretch" gap={2} px={3} mt="auto" pt={4} borderTop="1px solid" borderColor="gray.800">
-        <NavItem 
-          icon={Settings} 
-          label="Settings" 
-          isCollapsed={isCollapsed}
-          onClick={() => console.log("Open settings")} 
-        />
+      {/* Bottom Actions */}
+      <VStack align="stretch" gap={1} px={4} mt="auto" pt={6} borderTop="1px solid" borderColor="whiteAlpha.100">
+        <NavLink to="/settings" style={{ textDecoration: 'none' }}>
+          {({ isActive }) => (
+            <NavItem icon={Settings} label="Settings" isActive={isActive} isCollapsed={isCollapsed} />
+          )}
+        </NavLink>
         <NavItem 
           icon={isCollapsed ? PanelLeftOpen : PanelLeftClose} 
-          label="Collapse Menu" 
+          label="Collapse" 
           isCollapsed={isCollapsed}
           onClick={() => setIsCollapsed(!isCollapsed)}
         />
@@ -84,29 +85,33 @@ interface NavItemProps {
   label: string;
   isActive?: boolean;
   isCollapsed: boolean;
-  onClick?: () => void; // Made optional since NavLink handles most clicks
+  onClick?: () => void;
 }
 
 const NavItem = ({ icon, label, isActive = false, isCollapsed, onClick }: NavItemProps) => (
   <HStack 
     onClick={onClick}
-    py={3} 
-    px={isCollapsed ? 0 : 3} 
+    py={2.5} 
+    px={isCollapsed ? 0 : 4} 
     justify={isCollapsed ? "center" : "flex-start"}
-    rounded="md" 
+    borderRadius="xl" 
     cursor="pointer" 
-    bg={isActive ? 'whiteAlpha.200' : 'transparent'} 
-    color={isActive ? 'white' : 'gray.400'} 
-    _hover={{ bg: 'whiteAlpha.200', color: 'white' }}
-    gap={3} 
+    bg={isActive ? 'whiteAlpha.100' : 'transparent'} 
+    color={isActive ? 'white' : 'gray.500'} 
+    _hover={{ bg: 'whiteAlpha.100', color: 'white' }}
+    gap={4} 
     transition="all 0.2s"
     title={isCollapsed ? label : undefined}
   >
     <Icon as={icon} boxSize={5} flexShrink={0} />
     {!isCollapsed && (
-      <Text fontWeight="medium" fontSize="sm" whiteSpace="nowrap" overflow="hidden">
+      <Text fontWeight="bold" fontSize="sm" truncate>
         {label}
       </Text>
+    )}
+    {/* Active Indicator Bar */}
+    {isActive && !isCollapsed && (
+      <Box position="absolute" left="0" w="3px" h="16px" bg="blue.500" borderRadius="full" />
     )}
   </HStack>
 );

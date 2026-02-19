@@ -11,7 +11,7 @@ import (
 
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
-	"momo-radio/internal/storage" // Required for the storage client
+	"momo-radio/internal/storage"
 
 	"github.com/bogem/id3v2"
 	"github.com/dhowden/tag"
@@ -160,13 +160,14 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	tempFile.Close() // Close to allow tagging
 
 	// 4. STAMP METADATA
-	if ext == ".mp3" {
+	switch ext {
+	case ".mp3":
 		if err := metadata.StampMP3(tempFile.Name(), meta); err != nil {
 			slog.Error("failed to tag mp3", "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to tag MP3"})
 			return
 		}
-	} else if ext == ".flac" {
+	case ".flac":
 		if err := metadata.StampFLAC(tempFile.Name(), meta); err != nil {
 			slog.Error("failed to tag flac", "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to tag FLAC"})

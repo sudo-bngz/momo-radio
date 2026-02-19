@@ -56,7 +56,11 @@ func (w *Worker) Run() {
 	ticker := time.NewTicker(time.Duration(w.cfg.Server.PollingInterval) * time.Second)
 	defer ticker.Stop()
 
-	log.Printf("Watcher started on '%s'...", w.cfg.B2.BucketIngest)
+	log.Printf("Watcher started on '%s' [Provider: %s]...",
+		w.cfg.Storage.BucketIngest,
+		w.cfg.Storage.Provider,
+	)
+
 	w.processQueue()
 
 	for range ticker.C {

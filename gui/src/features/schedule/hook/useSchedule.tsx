@@ -31,7 +31,7 @@ export const useSchedule = () => {
       // We use the lowercase keys (playlist, name, start_time) to match 
       // the JSON response from your Go backend exactly.
       const formattedEvents: EventInput[] = slots.map((slot: any) => ({
-        id: slot.ID.toString(),
+        id: slot.id.toString(),
         title: slot.playlist?.name || 'Unknown Playlist',
         start: slot.start_time,
         end: slot.end_time,

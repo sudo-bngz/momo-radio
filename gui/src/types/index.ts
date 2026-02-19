@@ -89,3 +89,14 @@ export interface User {
   role: 'admin' | 'manager' | 'viewer'; // Enforce specific roles
   created_at?: string;
 }
+
+export interface PlayerContextType {
+  currentTrack: Track | null;
+  isPlaying: boolean;
+  progress: number;
+  playTrack: (track: Track) => void;
+  togglePlayPause: () => void;
+  audioRef: React.RefObject<HTMLAudioElement | null>; 
+  isPlayerVisible: boolean;
+  setPlayerVisible: (visible: boolean) => void;
+}

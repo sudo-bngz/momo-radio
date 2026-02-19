@@ -432,8 +432,9 @@ func (e *Engine) cleanupUploadedMap(m map[string]bool, dir string) {
 }
 
 func (e *Engine) startRedirectServer() {
-	endpoint := strings.TrimRight(e.cfg.B2.Endpoint, "/")
-	publicURL := fmt.Sprintf("%s/%s/stream.m3u8", endpoint, e.cfg.B2.BucketStream)
+	endpoint := strings.TrimRight(e.cfg.Storage.Endpoint, "/")
+
+	publicURL := fmt.Sprintf("%s/%s/stream.m3u8", endpoint, e.cfg.Storage.BucketStream)
 	port := ":8080"
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

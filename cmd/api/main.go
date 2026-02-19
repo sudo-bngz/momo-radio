@@ -26,14 +26,14 @@ func main() {
 
 	// 3. Run Database Migrations
 	db.AutoMigrate()
-	// Optional: Seed initial data
-	// If you just added RBAC, you should create a default Admin user here!
+
+	// 4. Seeding useers
 	database.SeedAdminUser(db.DB)
 
-	// 4. Storage
+	// 5. Storage
 	store := storage.New(cfg)
 
-	// 5. Setup Metrics
+	// 6. Setup Metrics
 	go func() {
 		http.Handle("/_metrics", promhttp.Handler())
 		log.Printf("📊 Metrics exposed at http://localhost%s/_metrics", cfg.Server.MetricsPort)
@@ -42,8 +42,7 @@ func main() {
 		}
 	}()
 
-	// 6. Start Server
-	// Call New() from the aliased package
+	// 7. Start Server
 	srv := apiserver.New(cfg, db, store)
 
 	port := ":8081"
