@@ -2,12 +2,14 @@ import React from 'react';
 import { 
   Box, VStack, HStack, Text, Input, Icon, Spinner, Table, Heading, Button 
 } from '@chakra-ui/react';
-import { Search, Clock, Play, Pause, Disc } from 'lucide-react'; // Added Pause
+import { Search, Clock, Play, Pause, Disc, Plus } from 'lucide-react'; // Added Plus
+import { useNavigate } from 'react-router-dom'; // 1. Import navigation hook
 import { useLibrary } from '../hook/useLibrary';
-import { usePlayer } from '../../../context/PlayerContext'; // Import the player hook
+import { usePlayer } from '../../../context/PlayerContext';
 import type { SortOption } from '../hook/useLibrary';
 
 export const LibraryView: React.FC = () => {
+  const navigate = useNavigate(); // 2. Initialize navigation
   const { 
     tracks, 
     totalTracks, 
@@ -18,27 +20,12 @@ export const LibraryView: React.FC = () => {
     sortBy
   } = useLibrary();
 
-  // 1. Pull in the global player state
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
-
-  // 2. Main Play Button Logic (Plays the first track if nothing is playing)
-  const handleMainPlayClick = () => {
-    if (isPlaying) {
-      togglePlayPause();
-    } else if (tracks.length > 0) {
-      // If paused but we have a track loaded, toggle it. Otherwise play the first track.
-      if (currentTrack) {
-        togglePlayPause();
-      } else {
-        playTrack(tracks[0]);
-      }
-    }
   };
 
   return (
@@ -57,23 +44,21 @@ export const LibraryView: React.FC = () => {
       {/* 2. Smart Search & Filters Row */}
       <HStack justify="space-between" w="100%" gap={6}>
         <HStack gap={4} flex="1">
-          {/* Main Play Action integrated with PlayerContext */}
+          
+          {/* 3. NEW: "Add Track" Button (Replaces Main Play Button) */}
           <Button 
-            bg="blue.600" 
+            bg="gray.900" // Changed to dark for "Admin/Action" feel (or keep blue.600)
             color="white" 
             borderRadius="full" 
             w="48px" 
             h="48px" 
             p={0}
-            _hover={{ bg: "blue.700", transform: "scale(1.05)" }}
+            _hover={{ bg: "black", transform: "scale(1.05)" }}
             transition="all 0.2s"
-            onClick={handleMainPlayClick}
+            onClick={() => navigate('/ingest')} // 👈 Navigates to Ingest Feature
+            title="Add new track"
           >
-            {isPlaying ? (
-              <Pause fill="currentColor" size={20} />
-            ) : (
-              <Play fill="currentColor" size={20} style={{ marginLeft: '4px' }} />
-            )}
+            <Icon as={Plus} boxSize={6} />
           </Button>
 
           {/* Smart Search Bar */}
@@ -85,7 +70,7 @@ export const LibraryView: React.FC = () => {
               top="50%" 
               transform="translateY(-50%)" 
               color="gray.400" 
-              boxSize="20px" 
+              boxSize={5} 
               zIndex={2}
             />
             <Input 
@@ -147,23 +132,22 @@ export const LibraryView: React.FC = () => {
                   <Table.ColumnHeader>Title</Table.ColumnHeader>
                   <Table.ColumnHeader>Artist</Table.ColumnHeader>
                   <Table.ColumnHeader textAlign="right">
-                    <Icon as={Clock} boxSize="16px" />
+                    <Icon as={Clock} boxSize={4} />
                   </Table.ColumnHeader>
                 </Table.Row>
               </Table.Header>
               
               <Table.Body>
                 {tracks.map((track, index) => {
-                  // Determine if THIS specific row is the one currently loaded in the player
                   const isThisTrackPlaying = currentTrack?.id === track.id;
                   const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
 
                   return (
                     <Table.Row 
                       key={track.id} 
-                      className="group" // Enables _groupHover on children!
+                      className="group" 
                       _hover={{ bg: "gray.50" }}
-                      bg={isThisTrackPlaying ? "blue.50" : "transparent"} // Highlight row if playing
+                      bg={isThisTrackPlaying ? "blue.50" : "transparent"} 
                       transition="background 0.2s"
                     >
                       <Table.Cell color="gray.400" fontSize="xs">
@@ -171,7 +155,6 @@ export const LibraryView: React.FC = () => {
                       </Table.Cell>
                       
                       <Table.Cell px={0}>
-                        {/* Interactive Play/Pause Square */}
                         <Box 
                           w="36px" h="36px" 
                           bg={isThisTrackPlaying ? "blue.500" : "gray.100"} 
@@ -189,26 +172,31 @@ export const LibraryView: React.FC = () => {
                             }
                           }}
                         >
-                          {/* We use conditional rendering based on playback state, 
-                              and CSS hover for the default state */}
                           {isThisTrackActiveAndPlaying ? (
-                            <Pause size={18} fill="currentColor" />
-                          ) : isThisTrackPlaying ? (
-                            <Play size={18} fill="currentColor" style={{ marginLeft: '2px' }} />
+                            <Icon as={Pause} boxSize={5} fill="currentColor" />
                           ) : (
-                            <>
-                              <Box display="block" _groupHover={{ display: "none" }}>
-                                <Disc size={18} />
+                            <Box position="relative" w="18px" h="18px" display="flex" alignItems="center" justifyContent="center">
+                              <Box 
+                                position="absolute" 
+                                opacity={isThisTrackPlaying ? 0 : 1}
+                                _groupHover={{ opacity: 0 }}
+                                transition="opacity 0.2s"
+                              >
+                                <Icon as={Disc} boxSize={5} />
                               </Box>
-                              <Box display="none" _groupHover={{ display: "block" }}>
-                                <Play size={18} fill="currentColor" style={{ marginLeft: '2px' }} />
+                              <Box 
+                                position="absolute"
+                                opacity={isThisTrackPlaying ? 1 : 0}
+                                _groupHover={{ opacity: 1 }}
+                                transition="opacity 0.2s"
+                              >
+                                <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />
                               </Box>
-                            </>
+                            </Box>
                           )}
                         </Box>
                       </Table.Cell>
 
-                      {/* Text turns blue if it's the currently playing track */}
                       <Table.Cell fontWeight={isThisTrackPlaying ? "bold" : "500"} color={isThisTrackPlaying ? "blue.600" : "inherit"}>
                         {track.title}
                       </Table.Cell>

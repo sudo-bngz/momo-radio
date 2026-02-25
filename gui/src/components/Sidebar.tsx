@@ -11,7 +11,6 @@ const Sidebar = () => {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity, path: '/dashboard' },
-    { id: 'ingest', label: 'Upload Track', icon: Upload, path: '/ingest' },
     { id: 'library', label: 'Music Library', icon: Library, path: '/library' },
     { id: 'playlists', label: 'Playlists', icon: ListMusic, path: '/playlists' },
     { id: 'schedule', label: 'Timetable', icon: Calendar, path: '/schedule' },
