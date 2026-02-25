@@ -49,6 +49,7 @@ func (s *Server) setupMiddleware() {
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
 
 	s.router.Use(cors.New(corsConfig))
+	//s.router.Use(middleware.SilentLogger())
 }
 
 func (s *Server) setupRoutes() {
@@ -86,6 +87,7 @@ func (s *Server) setupRoutes() {
 
 			// --- TRACK
 			protected.GET("/tracks", middleware.RequireRole("dj", "manager"), trackHandler.GetTracks)
+			protected.GET("/tracks/:id/stream", middleware.RequireRole("dj", "manager"), trackHandler.StreamTrack)
 
 			// --- DJ & MANAGER (Content Creators) ---
 			// DJs and Managers can upload music and manage playlists.

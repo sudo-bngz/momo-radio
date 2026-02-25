@@ -1,144 +1,161 @@
 import React, { useEffect } from 'react';
-import { Box, Flex, HStack, VStack, Text, Slider } from '@chakra-ui/react';
+import { Box, Flex, HStack, VStack, Text, IconButton, Icon } from '@chakra-ui/react';
+import { Slider } from '@chakra-ui/react'; 
 import { Play, Pause, SkipBack, SkipForward, Volume2, Music, X } from 'lucide-react';
-import { usePlayer } from '../context/PlayerContext'; // Ensure this path is correct
+import { usePlayer } from '../context/PlayerContext';
+import { WaveSurferPlayer } from './WaveSurferPlayer';
 
 export const GlobalPlayer = () => {
-  // Pull global visibility state from context
   const { 
-    currentTrack, 
-    isPlaying, 
-    togglePlayPause, 
-    progress, 
-    isPlayerVisible, 
-    setPlayerVisible 
+    currentTrack, isPlaying, togglePlayPause, isPlayerVisible, setPlayerVisible,
+    volume, setVolume, audioRef 
   } = usePlayer();
 
-  // 1. Slide up automatically whenever a track starts playing
-  useEffect(() => {
-    if (isPlaying) {
-      setPlayerVisible(true);
-    }
-  }, [isPlaying, setPlayerVisible]);
+  useEffect(() => { if (isPlaying) setPlayerVisible(true); }, [isPlaying, setPlayerVisible]);
 
-  // 2. Auto-hide logic: Slides down after 30s of being paused
-  useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout>;
-    
-    if (!isPlaying && currentTrack && isPlayerVisible) {
-      timeout = setTimeout(() => {
-        setPlayerVisible(false); // Hide globally so layout padding reacts
-      }, 30000); 
-    }
-    return () => clearTimeout(timeout);
-  }, [isPlaying, currentTrack, isPlayerVisible, setPlayerVisible]);
+  const formatTime = (time: number) => {
+    if (!time || isNaN(time)) return "0:00";
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
 
-  // The bar is off-screen if manually dismissed OR if there's no track loaded
   const isOffScreen = !isPlayerVisible || !currentTrack;
+  const currentTime = audioRef.current?.currentTime || 0;
+  const duration = audioRef.current?.duration || 0;
 
   return (
     <Box 
-      position="fixed" 
-      bottom={0} 
-      left={0} 
-      right={0} 
-      h="72px" 
-      bg="white/95" 
-      backdropFilter="blur(16px)" 
-      // Soft shadow instead of border for that floating premium look
-      shadow="0 -2px 10px rgba(0,0,0,0.06)" 
-      zIndex={9999} 
-      px={8}
-      // Reactive transform based on global state
+      position="fixed" bottom={0} left={0} right={0} 
+      h="72px" // Reduced height for a more compact feel
+      bg="white" 
+      borderTop="1px solid" borderColor="gray.100"
+      zIndex={9999} px={6}
       transform={isOffScreen ? "translateY(100%)" : "translateY(0)"}
       transition="transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
+      boxShadow="0 -4px 20px rgba(0,0,0,0.03)"
     >
-      {/* Progress Bar - Sleek gray.900 (No blue border) */}
-      <Box position="absolute" top="-1px" left={0} right={0} h="2px" bg="transparent">
-        <Box h="full" bg="gray.900" w={`${progress}%`} transition="width 0.1s linear" />
-      </Box>
-
-      <Flex h="full" align="center" justify="space-between">
+      <Flex h="full" align="center">
         
-        {/* Left: Track Info */}
-        <HStack gap={4} w="30%">
-          <Flex align="center" justify="center" w={10} h={10} bg="gray.100" borderRadius="xl" color="gray.500" flexShrink={0}>
-            <Music size={18} />
+        {/* 1. TRACK INFO (Far Left - More Compact) */}
+        <HStack gap={3} minW="200px">
+          <Flex 
+            align="center" justify="center" 
+            w="40px" h="40px" // Scaled down from 52px
+            bg="gray.50" borderRadius="md" 
+            border="1px solid" borderColor="gray.100"
+            color="gray.400"
+          >
+            <Icon as={Music} boxSize={4} />
           </Flex>
-          <VStack align="start" gap={0} overflow="hidden" flex="1">
-            <Text fontWeight="bold" fontSize="sm" color="gray.900" truncate w="full">
-              {currentTrack?.title || "Select a track"}
+          <VStack align="start" gap={0} overflow="hidden">
+            <Text fontWeight="600" fontSize="xs" color="gray.900" truncate w="100%">
+              {currentTrack?.title || "refleurir"}
             </Text>
-            <Text fontSize="xs" color="gray.500" truncate w="full">
-              {currentTrack?.artist || "Library"}
+            <Text fontSize="10px" color="gray.500" truncate w="100%">
+              {currentTrack?.artist || "Ian Hawgood"}
             </Text>
           </VStack>
         </HStack>
 
-        {/* Center: Playback Controls */}
-        <HStack gap={8} justify="center" flex="1">
-          <Box 
-            as="button" bg="transparent" border="none" cursor="pointer"
-            color="gray.400" _hover={{ color: "gray.900" }} transition="color 0.2s"
-            _focus={{ outline: "none" }}
+        {/* 2. PLAYBACK CONTROLS (Grouped Left-Center) */}
+        <HStack gap={0} ml={6}>
+          <IconButton
+            aria-label="Previous"
+            variant="ghost"
+            color="gray.700"
+            bg="transparent" 
+            _hover={{ bg: "gray.50" }}
+            size="md"
           >
-            <SkipBack size={22} />
-          </Box>
+            <Icon as={SkipBack} boxSize={4} fill="currentColor" />
+          </IconButton>
           
           <Flex 
             as="button" 
-            onClick={togglePlayPause}
+            onClick={togglePlayPause} 
             align="center" justify="center" 
-            w={12} h={12} 
-            bg="gray.900" color="white" border="none" cursor="pointer"
+            w="42px" h="42px" // Scaled down from 54px
+            bg="white" 
+            color="gray.900"
             borderRadius="full" 
-            _hover={{ bg: "black", transform: "scale(1.05)" }}
+            boxShadow="0 2px 8px rgba(0,0,0,0.06)"
+            border="1px solid" borderColor="gray.100"
+            _hover={{ transform: "scale(1.05)" }} 
+            _active={{ transform: "scale(0.95)" }}
             transition="all 0.2s"
-            boxShadow="0 4px 12px rgba(0,0,0,0.1)"
-            _focus={{ outline: "none" }}
-            opacity={currentTrack ? 1 : 0.3}
-            pointerEvents={currentTrack ? "auto" : "none"}
           >
             {isPlaying ? (
-              <Pause size={20} color="white" fill="white" />
+              <Icon as={Pause} boxSize={5} fill="currentColor" />
             ) : (
-              <Play size={20} color="white" fill="white" style={{ marginLeft: '4px' }} />
+              <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />
             )}
           </Flex>
-          
-          <Box 
-            as="button" bg="transparent" border="none" cursor="pointer"
-            color="gray.400" _hover={{ color: "gray.900" }} transition="color 0.2s"
-            _focus={{ outline: "none" }}
+
+          <IconButton
+            aria-label="Next"
+            variant="ghost"
+            color="gray.700"
+            _hover={{ bg: "gray.50" }}
+            size="md"
+            bg="transparent" 
           >
-            <SkipForward size={22} />
-          </Box>
+            <Icon as={SkipForward} boxSize={4} fill="currentColor" />
+          </IconButton>
         </HStack>
 
-        {/* Right: Volume & Dismiss Button */}
-        <HStack gap={4} w="30%" justify="flex-end">
-          <Volume2 size={18} color="var(--chakra-colors-gray-500)" />
-          <Box w="100px">
-            <Slider.Root defaultValue={[70]} max={100} size="sm" colorPalette="gray">
-              <Slider.Track bg="gray.200">
-                <Slider.Range bg="gray.500" />
-              </Slider.Track>
-              <Slider.Thumb index={0} _focus={{ outline: "none", boxShadow: "none" }} />
-            </Slider.Root>
+        {/* 3. WAVEFORM (Stretching Center) */}
+        <HStack flex="1" gap={4} px={4} minW={0} align="center" h="100%">
+          <Text fontSize="10px" color="gray.400" fontVariantNumeric="tabular-nums" pt="1px">
+            {formatTime(currentTime)}
+          </Text>
+          
+          {/* Added display="flex" and alignItems="center" to force WaveSurfer vertical centering */}
+          <Box flex="1" h="100%" display="flex" alignItems="center"> 
+            <Box w="100%" h="46px"> {/* Explicit height for the waveform rendering area */}
+              {currentTrack && audioRef.current && (
+                <WaveSurferPlayer 
+                  key={currentTrack.id}
+                  audioRef={audioRef}
+                  trackId={currentTrack.id}
+                  isPlaying={isPlaying}
+                  color="#EDF2F7"
+                  progressColor="#3182CE"
+                />
+              )}
+            </Box>
           </Box>
           
-          <Box w="1px" h="24px" bg="gray.200" mx={2} />
-          
-          {/* Manual Dismiss Button - Trigger global layout shift */}
-          <Box 
-            as="button" bg="transparent" border="none" cursor="pointer"
-            color="gray.400" _hover={{ color: "gray.900" }} transition="color 0.2s"
-            onClick={() => setPlayerVisible(false)}
-            _focus={{ outline: "none" }}
-            title="Hide Player"
+          <Text fontSize="10px" color="gray.400" fontVariantNumeric="tabular-nums" pt="1px">
+            {formatTime(duration)}
+          </Text>
+        </HStack>
+
+        {/* 4. UTILITIES (Far Right) */}
+        <HStack gap={4} justify="flex-end">
+          <IconButton
+             aria-label="Volume"
+             variant="ghost"
+             size="sm"
+             color="gray.400"
+            bg="transparent" 
           >
-            <X size={18} />
-          </Box>
+            <Icon as={Volume2} boxSize={4} />
+          </IconButton>
+          
+          <Box w="1px" h="16px" bg="gray.200" />
+
+          <IconButton
+            aria-label="Close"
+            variant="ghost"
+            color="gray.400"
+            bg="transparent" 
+            _hover={{ color: "gray.900", bg: "gray.50" }}
+            onClick={() => setPlayerVisible(false)}
+            size="sm"
+          >
+            <Icon as={X} boxSize={4} />
+          </IconButton>
         </HStack>
 
       </Flex>

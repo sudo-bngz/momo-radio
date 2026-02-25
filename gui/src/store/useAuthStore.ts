@@ -19,7 +19,6 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       isAuthenticated: false,
 
-      // Logic moved into the store for a "Best Pattern" approach
       login: async (username: string, password: string) => {
         const res = await apiClient.post('/auth/login', { username, password });
         const { token, user } = res.data;

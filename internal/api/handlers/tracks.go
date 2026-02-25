@@ -220,3 +220,38 @@ func stampMP3(path, title, artist, album, genre, year, bpm, key string) error {
 
 	return tag.Save()
 }
+
+// StreamTrack streams the audio file using the storage abstraction
+func (h *TrackHandler) StreamTrack(c *gin.Context) {
+	trackID := c.Param("id")
+
+	// 1. Look up the track in the database
+	var track models.Track
+	if err := h.db.First(&track, "id = ?", trackID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Track metadata not found"})
+		return
+	}
+
+	// 2. Fetch the file object via the Storage Abstraction
+	obj, err := h.storage.DownloadFile(track.Key)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Audio file missing from storage"})
+		return
+	}
+
+	// CRITICAL: Always close the storage stream to prevent memory/connection leaks
+	defer obj.Body.Close()
+	if seeker, ok := obj.Body.(io.ReadSeeker); ok {
+		http.ServeContent(c.Writer, c.Request, track.Title, obj.LastModified, seeker)
+		return
+	}
+
+	// 4. Fallback for non-seekable streams
+	extraHeaders := map[string]string{
+		"Cache-Control": "public, max-age=31536000",
+		"Accept-Ranges": "none", // Explicitly tell the browser it can't seek
+	}
+
+	// DataFromReader streams the io.ReadCloser chunk-by-chunk directly to the client
+	c.DataFromReader(http.StatusOK, obj.ContentLength, obj.ContentType, obj.Body, extraHeaders)
+}

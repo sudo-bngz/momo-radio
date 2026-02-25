@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useAuthStore } from '../store/useAuthStore'; // We will create this next
+import { useAuthStore } from '../store/useAuthStore';
 import type { 
   AnalyzeResponse, 
   TrackMetadata, 
