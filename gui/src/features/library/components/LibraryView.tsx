@@ -185,7 +185,7 @@ export const LibraryView: React.FC = () => {
                             if (isThisTrackPlaying) {
                               togglePlayPause();
                             } else {
-                              playTrack(track);
+                              playTrack(track, tracks);
                             }
                           }}
                         >

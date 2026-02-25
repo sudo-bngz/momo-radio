@@ -2,7 +2,7 @@ import { Flex, Box } from "@chakra-ui/react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { TopNav } from "../components/TopNavbar";
-import { GlobalPlayer } from "../components/GlobalPlayer";
+import { GlobalPlayer } from "../features/player/GlobalPlayer";
 import { usePlayer } from "../context/PlayerContext";
 
 export const DashboardLayout = () => {
