@@ -19,12 +19,12 @@ const Sidebar = () => {
   return (
     <Flex 
       direction="column"
-      w={isCollapsed ? "76px" : "260px"} 
+      w={isCollapsed ? "76px" : "240px"} 
       bg="gray.900" 
       borderRight="1px solid" 
       borderColor="whiteAlpha.100" 
-      pt={8}          // <--- FIX: Keep top padding at 8
-      pb="96px"       // <--- FIX: Add large bottom padding to clear the 72px player
+      pt={8}
+      pb={7}
       color="gray.400"
       transition="width 0.3s cubic-bezier(0.4, 0, 0.2, 1)" 
       flexShrink={0}

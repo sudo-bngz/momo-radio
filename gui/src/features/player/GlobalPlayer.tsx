@@ -18,7 +18,6 @@ export const GlobalPlayer = () => {
   const currentTime = audioRef.current?.currentTime || 0;
   const duration = audioRef.current?.duration || 0;
 
-  // Simple time formatter
   const formatTime = (time: number) => {
     if (!time || isNaN(time)) return "0:00";
     const minutes = Math.floor(time / 60);
@@ -27,49 +26,65 @@ export const GlobalPlayer = () => {
   };
 
   return (
-    <Box 
-      position="fixed" bottom={0} left={0} right={0} h="75px" 
-      bg="gray.50" borderTop="1px solid" borderColor="gray.200"
-      zIndex={9999} px={6}
-      transform={isOffScreen ? "translateY(100%)" : "translateY(0)"}
-      transition="transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
-    >
-      <Flex h="full" align="center" gap={6}>
-        
-        {/* 1. Left Section */}
-        <TrackInfo />
+    <>
+      {/* 1. THE VISUAL PLAYER (Fixed Overlay) */}
+      <Box 
+        position="fixed" bottom={0} left={0} right={0} h="76px" 
+        bg="gray.50" borderTop="1px solid" borderColor="gray.200"
+        zIndex={9999} px={6}
+        // Slide Animation
+        transform={isOffScreen ? "translateY(100%)" : "translateY(0)"}
+        transition="transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
+      >
+        <Flex h="full" align="center" gap={6}>
+          {/* Left: Track Info */}
+          <TrackInfo />
 
-        {/* 2. Middle Section: Controls + Waveform */}
-        <HStack gap={3}>
-           <PlaybackControls />
-        </HStack>
+          {/* Controls */}
+          <HStack gap={3} flexShrink={0}>
+             <PlaybackControls />
+          </HStack>
 
-        <HStack flex="1" gap={4} ml={4}>
-          <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px">
-            {formatTime(currentTime)}
-          </Text>
-          
-          <Box flex="1" h="40px">
-            {currentTrack && audioRef.current && (
-              <WaveSurferPlayer 
-                key={currentTrack.id}
-                audioRef={audioRef}
-                trackId={currentTrack.id}
-                isPlaying={isPlaying}
-              />
-            )}
+          {/* Waveform */}
+          <HStack flex="1" gap={4} ml={4} minW="0">
+            <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px">
+              {formatTime(currentTime)}
+            </Text>
+            
+            <Box flex="1" h="40px">
+              {currentTrack && audioRef.current && (
+                <WaveSurferPlayer 
+                  key={currentTrack.id}
+                  audioRef={audioRef}
+                  trackId={currentTrack.id}
+                  isPlaying={isPlaying}
+                />
+              )}
+            </Box>
+            
+            <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px">
+               {formatTime(duration)}
+            </Text>
+          </HStack>
+
+          {/* Right: Volume */}
+          <Box flexShrink={0}>
+             <VolumeControl />
           </Box>
-          
-          <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px">
-             {formatTime(duration)}
-          </Text>
-        </HStack>
+        </Flex>
+      </Box>
 
-        {/* 3. Right Section */}
-        <Box flexShrink={0}>
-           <VolumeControl />
-        </Box>
-      </Flex>
-    </Box>
+      {/* 2. THE INVISIBLE SPACER (Layout Push) */}
+      {/* This box sits in the normal document flow and expands/collapses 
+          to physically push content up when the player appears. */}
+      <Box 
+        w="100%" 
+        // If player is visible, reserve 90px space. If not, 0px.
+        h={!isOffScreen ? "76px" : "0px"} 
+        // Matches the slide animation speed exactly
+        transition="height 0.4s cubic-bezier(0.4, 0, 0.2, 1)" 
+        flexShrink={0}
+      />
+    </>
   );
 };

@@ -29,7 +29,7 @@ export const LibraryView: React.FC = () => {
   };
 
   return (
-    <VStack align="stretch" h="100%" gap={8} bg="white" p={8} data-theme="light">
+    <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
       
       {/* 1. Header Section */}
       <VStack align="start" gap={1}>
