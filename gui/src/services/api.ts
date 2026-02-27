@@ -9,7 +9,7 @@ import type {
   DashboardData
 } from '../types';
 
-const API_URL = 'http://localhost:8081/api/v1';
+const API_URL = '/api/v1';
 
 // Create a dedicated Axios instance
 export const apiClient = axios.create({
@@ -22,7 +22,6 @@ apiClient.interceptors.request.use((config) => {
   
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-    console.log('API Request: Token attached');
   } else {
     console.warn('API Request: No token found in store');
   }
@@ -88,6 +87,7 @@ export const api = {
   ): Promise<void> => {
     await apiClient.put(`/playlists/${playlistId}`, data);
   },
+  
   updatePlaylistTracks: async (playlistId: number, trackIds: number[]): Promise<void> => {
     await apiClient.put(`/playlists/${playlistId}/tracks`, { track_ids: trackIds });
   },

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, useEffect } from 'r
 import { useAuthStore } from '../store/useAuthStore';
 import type { Track } from '../types';
 
-const API_BASE_URL = "http://localhost:8081/api/v1";
+const API_BASE_URL = "/api/v1";
 
 interface PlayerContextType {
   currentTrack: Track | null;

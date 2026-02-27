@@ -10,7 +10,6 @@ const fadeIn = keyframes`
 `;
 
 interface WaveSurferPlayerProps {
-  // We allow null here because refs start as null before mounting
   audioRef: React.RefObject<HTMLAudioElement | null>; 
   trackId: number | string;
   isPlaying: boolean;
@@ -34,14 +33,12 @@ export const WaveSurferPlayer = ({
     // 2. Initialize WaveSurfer with "Pro" settings
     wavesurferRef.current = WaveSurfer.create({
       container: containerRef.current,
-      media: audioRef.current, // 👈 Connects directly to your <audio> tag
+      media: audioRef.current,
       
       // Colors
       waveColor: color,
       progressColor: progressColor,
       cursorColor: 'transparent', // Hides the vertical line cursor
-      
-      // 🎨 THE LOOK: Thicker bars, rounded, taller
       barWidth: 3,
       barGap: 2,
       barRadius: 3,
