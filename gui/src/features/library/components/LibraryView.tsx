@@ -1,15 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Box, VStack, HStack, Text, Input, Icon, Spinner, Table, Heading, Button 
 } from '@chakra-ui/react';
-import { Search, Clock, Play, Pause, Disc, Plus } from 'lucide-react'; // Added Plus
-import { useNavigate } from 'react-router-dom'; // 1. Import navigation hook
+import { Search, Clock, Play, Pause, Disc, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
 import type { SortOption } from '../hook/useLibrary';
 
+// Import the new drawer component 
+// (Adjust this path if you saved it somewhere else!)
+import { TrackDetailDrawer } from './TrackDetailDrawer'; 
+
 export const LibraryView: React.FC = () => {
-  const navigate = useNavigate(); // 2. Initialize navigation
+  const navigate = useNavigate();
   const { 
     tracks, 
     totalTracks, 
@@ -21,6 +25,9 @@ export const LibraryView: React.FC = () => {
   } = useLibrary();
 
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();
+
+  // 1. STATE: Keep track of which song is currently selected for the drawer
+  const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
@@ -45,9 +52,9 @@ export const LibraryView: React.FC = () => {
       <HStack justify="space-between" w="100%" gap={6}>
         <HStack gap={4} flex="1">
           
-          {/* 3. NEW: "Add Track" Button (Replaces Main Play Button) */}
+          {/* "Add Track" Button */}
           <Button 
-            bg="gray.900" // Changed to dark for "Admin/Action" feel (or keep blue.600)
+            bg="gray.900" 
             color="white" 
             borderRadius="full" 
             w="48px" 
@@ -55,7 +62,7 @@ export const LibraryView: React.FC = () => {
             p={0}
             _hover={{ bg: "black", transform: "scale(1.05)" }}
             transition="all 0.2s"
-            onClick={() => navigate('/ingest')} // 👈 Navigates to Ingest Feature
+            onClick={() => navigate('/ingest')}
             title="Add new track"
           >
             <Icon as={Plus} boxSize={6} />
@@ -197,9 +204,17 @@ export const LibraryView: React.FC = () => {
                         </Box>
                       </Table.Cell>
 
-                      <Table.Cell fontWeight={isThisTrackPlaying ? "bold" : "500"} color={isThisTrackPlaying ? "blue.600" : "inherit"}>
+                      {/* 2. DRAWER TRIGGER: Make the title clickable to open the panel */}
+                      <Table.Cell 
+                        fontWeight={isThisTrackPlaying ? "bold" : "500"} 
+                        color={isThisTrackPlaying ? "blue.600" : "gray.900"}
+                        cursor="pointer"
+                        _hover={{ textDecoration: "underline", color: "blue.600" }}
+                        onClick={() => setSelectedTrack(track)}
+                      >
                         {track.title}
                       </Table.Cell>
+
                       <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"}>
                         {track.artist}
                       </Table.Cell>
@@ -214,6 +229,14 @@ export const LibraryView: React.FC = () => {
           </Box>
         )}
       </Box>
+
+      {/* 4. THE SLIDING DRAWER COMPONENT */}
+      <TrackDetailDrawer 
+        isOpen={!!selectedTrack} 
+        onClose={() => setSelectedTrack(null)} 
+        track={selectedTrack} 
+      />
+
     </VStack>
   );
 };
