@@ -19,9 +19,9 @@ type Schedule struct {
 	IsActive bool   `gorm:"default:true" json:"is_active"`
 
 	// --- Timing ---
-	Days      string `gorm:"type:varchar(50);not null" json:"days"`            // e.g., "Mon,Tue,Wed"
-	StartTime string `gorm:"type:varchar(5);not null;index" json:"start_time"` // e.g., "22:00"
-	EndTime   string `gorm:"type:varchar(5);not null;index" json:"end_time"`   // e.g., "02:00"
+	Days      string `gorm:"type:varchar(50);not null" json:"days"`                            // e.g., "Mon,Tue,Wed"
+	StartTime string `gorm:"type:varchar(5);not null;index;default:'00:00'" json:"start_time"` // e.g., "22:00"
+	EndTime   string `gorm:"type:varchar(5);not null;index;default:'00:00'" json:"end_time"`   // e.g., "02:00"
 
 	// --- The Target (What to play) ---
 	// Pointers are used so these can be NULL in Postgres.
