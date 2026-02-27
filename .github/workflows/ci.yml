@@ -20,10 +20,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Build Frontend UI
+        working-directory: ./gui
+        run: |
+          npm ci
+          npm run build
+
+      # 2. Setup Go
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24' # Updated to match your Dockerfile
           cache: true
 
       - name: Install System Dependencies
@@ -36,11 +50,16 @@ jobs:
       - name: Download Go Modules
         run: go mod download
 
+      # 3. Verify Builds
       - name: Verify Build (Ingester)
         run: go build -v ./cmd/ingester/
 
       - name: Verify Build (Radio Engine)
         run: go build -v ./cmd/radio/
+
+      # NEW: Verify the API build (which will now successfully embed the UI)
+      - name: Verify Build (API Server)
+        run: go build -v ./cmd/api/
 
       # Optional: Run Linter (Uncomment if you want strict code style checks)
       # - name: Run golangci-lint
