@@ -1,4 +1,3 @@
-import React from 'react';
 import { VStack, HStack, Text, Button, Box, Badge, Flex, Icon, Heading, Stack } from '@chakra-ui/react';
 import { UserPlus, MoreHorizontal, User } from 'lucide-react';
 

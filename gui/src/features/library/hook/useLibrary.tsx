@@ -33,16 +33,16 @@ export const useLibrary = () => {
     if (searchQuery) {
       const lowerQuery = searchQuery.toLowerCase();
       result = result.filter(t => 
-        t.Title?.toLowerCase().includes(lowerQuery) || 
-        t.Artist?.toLowerCase().includes(lowerQuery)
+        t.title?.toLowerCase().includes(lowerQuery) || 
+        t.artist?.toLowerCase().includes(lowerQuery)
       );
     }
 
     // Sorting Logic
     result.sort((a, b) => {
-      if (sortBy === 'alphabetical') return a.Title.localeCompare(b.Title);
-      if (sortBy === 'duration') return (b.Duration || 0) - (a.Duration || 0);
-      return b.ID - a.ID; // Newest first (assuming ID is incremental)
+      if (sortBy === 'alphabetical') return a.title.localeCompare(b.title);
+      if (sortBy === 'duration') return (b.duration || 0) - (a.duration || 0);
+      return b.id - a.id; // Newest first (assuming ID is incremental)
     });
 
     return result;

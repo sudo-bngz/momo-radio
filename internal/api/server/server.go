@@ -1,17 +1,20 @@
 package server
 
 import (
+	"io"
+	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
+	"momo-radio/gui" // Imports your embedded filesystem
+	"momo-radio/internal/api/handlers"
+	"momo-radio/internal/api/middleware"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/storage"
-
-	"momo-radio/internal/api/handlers"
-	"momo-radio/internal/api/middleware"
 )
 
 type Server struct {
@@ -72,7 +75,6 @@ func (s *Server) setupRoutes() {
 		// PUBLIC ROUTES (No Token Required)
 		// ==========================================
 		v1.POST("/auth/login", authHandler.Login)
-
 		v1.GET("/stats", statsHandler.GetStats)
 
 		// ==========================================
@@ -82,33 +84,79 @@ func (s *Server) setupRoutes() {
 		protected.Use(middleware.RequireAuth()) // Checks for valid JWT
 		{
 			// --- ADMIN ONLY ---
-			// Only Admins can register new staff/users to the station.
 			protected.POST("/auth/register", middleware.RequireRole("admin"), authHandler.Register)
 
 			// --- TRACK
 			protected.GET("/tracks", middleware.RequireRole("dj", "manager"), trackHandler.GetTracks)
 			protected.GET("/tracks/:id/stream", middleware.RequireRole("dj", "manager"), trackHandler.StreamTrack)
 
-			// --- DJ & MANAGER (Content Creators) ---
-			// DJs and Managers can upload music and manage playlists.
+			// --- DJ & MANAGER (Curators) ---
 			protected.POST("/upload/analyze", middleware.RequireRole("dj", "manager"), trackHandler.PreAnalyzeFile)
 			protected.POST("/upload/confirm", middleware.RequireRole("dj", "manager"), trackHandler.UploadTrack)
 
 			// --- PLAYLIST
 			protected.GET("/playlists", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylists)
-			protected.GET("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylist) // For fetching one to edit
+			protected.GET("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylist)
 			protected.POST("/playlists", middleware.RequireRole("dj", "manager"), playlistHandler.CreatePlaylist)
-			protected.DELETE("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.DeletePlaylist) // For deleting
+			protected.DELETE("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.DeletePlaylist)
 			protected.PUT("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylist)
 			protected.PUT("/playlists/:id/tracks", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylistTracks)
 
 			// --- MANAGER ONLY (Program Directors) ---
-			// Only Managers (and Admins) can change the station's broadcast schedule.
 			protected.GET("/schedules", middleware.RequireRole("dj"), schedulerHandler.GetSchedule)
 			protected.POST("/schedules", middleware.RequireRole("manager"), schedulerHandler.CreateScheduleSlot)
 			protected.DELETE("/schedules/:id", middleware.RequireRole("manager"), schedulerHandler.DeleteScheduleSlot)
 		}
 	}
+
+	// ==========================================
+	// EMBEDDED REACT UI (SPA Fallback)
+	// ==========================================
+
+	// Extract the "dist" folder from the embedded filesystem
+	distFS, err := fs.Sub(gui.DistFS, "dist")
+	if err != nil {
+		panic("Failed to load embedded frontend: " + err.Error())
+	}
+
+	s.router.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+
+		// 1. If it's an API route that wasn't found, return a 404 JSON response
+		if strings.HasPrefix(path, "/api") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "API endpoint not found"})
+			return
+		}
+
+		// 2. Check if the requested file exists in the embedded React dist folder
+		cleanPath := strings.TrimPrefix(path, "/")
+		if cleanPath == "" {
+			cleanPath = "index.html"
+		}
+
+		file, err := distFS.Open(cleanPath)
+		if err == nil {
+			defer file.Close()
+			stat, _ := file.Stat()
+
+			// If it's a file (like /assets/main.js), serve it directly
+			if !stat.IsDir() {
+				http.ServeContent(c.Writer, c.Request, stat.Name(), stat.ModTime(), file.(io.ReadSeeker))
+				return
+			}
+		}
+
+		// 3. If the file doesn't exist, it's a React Router path (e.g., "/library"). Serve index.html.
+		indexFile, err := distFS.Open("index.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Frontend not built properly (index.html missing)")
+			return
+		}
+		defer indexFile.Close()
+
+		stat, _ := indexFile.Stat()
+		http.ServeContent(c.Writer, c.Request, stat.Name(), stat.ModTime(), indexFile.(io.ReadSeeker))
+	})
 }
 
 // Start runs the server on the configured port

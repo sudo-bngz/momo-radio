@@ -1,5 +1,24 @@
-# Build Stage
-FROM golang:1.24-alpine AS builder
+# ==========================================
+# STAGE 1: Build the React Frontend
+# ==========================================
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app/gui
+
+# Copy package files first for better layer caching
+COPY gui/package.json gui/package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the frontend code and build it
+COPY gui/ ./
+RUN npm run build
+# This generates the /app/gui/dist folder
+
+
+# ==========================================
+# STAGE 2: Build the Go Backend
+# ==========================================
+FROM golang:1.24-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -10,22 +29,28 @@ RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
+# Copy the entire Go source code
 COPY . .
+
+COPY --from=frontend-builder /app/gui/dist ./gui/dist
 
 # Build the API binary
 # CGO_ENABLED=0 ensures a static binary for Alpine
 RUN CGO_ENABLED=0 GOOS=linux go build -o radio-api ./cmd/api
 
-# Runtime Stage
-FROM alpine:3.19
+
+# ==========================================
+# STAGE 3: Final Runtime Image
+# ==========================================
+FROM alpine:3.20
 
 WORKDIR /app
 
 # Install CA certificates for HTTPS (needed for B2/Discogs) and timezone data
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY --from=builder /app/radio-api .
+# Copy just the compiled binary from Stage 2
+COPY --from=backend-builder /app/radio-api .
 
 # Expose the configured API port
 EXPOSE 8081

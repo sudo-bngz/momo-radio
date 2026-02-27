@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { VStack, Text, Icon, HStack, Flex, Box } from '@chakra-ui/react';
 import { NavLink } from 'react-router-dom';
 import { 
-  Upload, Radio, Activity, Library, ListMusic, 
+  Radio, Activity, Library, ListMusic, 
   Calendar, Settings, PanelLeftClose, PanelLeftOpen 
 } from 'lucide-react';
 

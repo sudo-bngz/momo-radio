@@ -4,12 +4,12 @@ import {
   Box, Button, Input, VStack, HStack, Text, 
   Icon, Spinner, Heading, SimpleGrid, Badge, Field, Separator 
 } from '@chakra-ui/react';
-import { Upload, Tag, Building2, Globe, Hash, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, Tag, Building2, CheckCircle, XCircle } from 'lucide-react';
 import { useIngest } from '../hook/useIngest';
 
 export const IngestView: React.FC = () => {
   const {
-    status, file, meta, errorMsg, setErrorMsg,
+    status, file, meta,
     onDrop, handleMetaChange, handleUpload, reset
   } = useIngest();
 
