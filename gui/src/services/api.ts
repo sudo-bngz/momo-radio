@@ -70,6 +70,10 @@ export const api = {
     return response.data;
   },
 
+  updateTrack: async (id: number | string, data: Partial<Track>): Promise<void> => {
+    await apiClient.put(`/tracks/${id}`, data);
+  },
+
   // 3. PLAYLIST BUILDER
   createPlaylist: async (data: { name: string; description: string, color?: string }): Promise<Playlist> => {
     const response = await apiClient.post<Playlist>('/playlists', data);

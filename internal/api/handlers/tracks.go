@@ -120,6 +120,36 @@ func (h *TrackHandler) GetTrack(c *gin.Context) {
 	c.JSON(http.StatusOK, track)
 }
 
+func (h *TrackHandler) UpdateTrack(c *gin.Context) {
+	id := c.Param("id")
+
+	var updateData map[string]interface{}
+	if err := c.ShouldBindJSON(&updateData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	// Protect read-only fields from being modified via the API
+	delete(updateData, "id")
+	delete(updateData, "key")
+	delete(updateData, "duration")
+	delete(updateData, "file_size")
+
+	// Perform the update
+	result := h.db.Model(&models.Track{}).Where("id = ?", id).Updates(updateData)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update track metadata"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Track updated successfully"})
+}
+
 // PreAnalyzeFile reads the uploaded file in memory and extracts ID3 tags
 // It does NOT upload to S3 or save to DB yet.
 func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
