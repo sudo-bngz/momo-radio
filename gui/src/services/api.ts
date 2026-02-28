@@ -65,6 +65,11 @@ export const api = {
     return response.data;
   },
 
+  getTrack: async (id: number | string): Promise<Track> => {
+    const response = await apiClient.get<Track>(`/tracks/${id}`);
+    return response.data;
+  },
+
   // 3. PLAYLIST BUILDER
   createPlaylist: async (data: { name: string; description: string, color?: string }): Promise<Playlist> => {
     const response = await apiClient.post<Playlist>('/playlists', data);

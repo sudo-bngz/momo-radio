@@ -33,45 +33,91 @@ func NewTrackHandler(db *gorm.DB, st *storage.Client) *TrackHandler {
 	}
 }
 
-// GetTracks returns a paginated list of tracks from the database
-// Query Params: page (default 1), limit (default 50), search (optional)
+// It prevents sending 30+ columns of data over the network for 100 rows.
+type LibraryTrack struct {
+	ID       uint    `json:"id"`
+	Title    string  `json:"title"`
+	Artist   string  `json:"artist"`
+	Duration float64 `json:"duration"`
+}
+
+// GetTracks returns a paginated, lightweight list of tracks
 func (h *TrackHandler) GetTracks(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	// 1. Parse Query Parameters
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	search := c.Query("search")
+	sortBy := c.DefaultQuery("sort", "newest")
 
-	offset := (page - 1) * limit
+	if limit > 200 {
+		limit = 200 // Hard cap to protect the server
+	}
 
-	var tracks []models.Track
-	var total int64
-
-	// Replaced s.db.DB with h.db
+	// 2. Build the Query
 	query := h.db.Model(&models.Track{})
 
+	// 3. Apply Search
 	if search != "" {
-		// Basic search on artist or title
 		searchTerm := "%" + search + "%"
+		// Ensure you have a DB index on Artist and Title!
 		query = query.Where("artist ILIKE ? OR title ILIKE ?", searchTerm, searchTerm)
 	}
 
-	// Count total for pagination metadata
+	// 4. Get Total Count (Required for Infinite Scroll math in React)
+	var total int64
 	query.Count(&total)
 
-	// Fetch data
-	result := query.Order("created_at desc").Limit(limit).Offset(offset).Find(&tracks)
+	// 5. Apply Sorting
+	switch sortBy {
+	case "alphabetical":
+		query = query.Order("title ASC")
+	case "duration":
+		query = query.Order("duration DESC")
+	default: // "newest"
+		// Because ID is sequential, sorting by ID DESC is much faster
+		// than sorting by created_at DESC, and yields the same result.
+		query = query.Order("id DESC")
+	}
+
+	// 6. Fetch ONLY the required columns into our lightweight struct
+	var tracks []LibraryTrack
+	result := query.Select("id, title, artist, duration").
+		Limit(limit).
+		Offset(offset).
+		Find(&tracks)
+
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		slog.Error("Failed to fetch tracks", "error", result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 
+	// 7. Return Response
 	c.JSON(http.StatusOK, gin.H{
 		"data": tracks,
 		"meta": gin.H{
-			"page":  page,
-			"limit": limit,
-			"total": total,
+			"total":  total,
+			"limit":  limit,
+			"offset": offset,
 		},
 	})
+}
+
+// GetTrack returns the FULL metadata for a single track
+func (h *TrackHandler) GetTrack(c *gin.Context) {
+	id := c.Param("id")
+
+	var track models.Track
+	if err := h.db.First(&track, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, track)
 }
 
 // PreAnalyzeFile reads the uploaded file in memory and extracts ID3 tags

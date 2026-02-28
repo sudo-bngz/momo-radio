@@ -34,15 +34,50 @@ export type UploadStatus =
  * Single Track definition (unified version)
  */
 export interface Track {
+  // --- Base / GORM Fields ---
   id: number;
+  created_at?: string;
+  updated_at?: string;
+
+  // --- Core Identifiers ---
+  key: string; // The S3/B2 storage key
+
+  // --- Core Metadata ---
   title: string;
   artist: string;
   album?: string;
   genre?: string;
+  style?: string;
+  year?: string;
+  publisher?: string;
+  release_country?: string;
+  artist_country?: string;
+
+  // --- Technical Details ---
   duration: number; // in seconds
-  created_at?: string;
+  bitrate?: number;
+  format?: string;
+  file_size?: number;
+
+  // --- Acoustic Features ---
+  bpm?: number;
+  musical_key?: string; // JSON maps "MusicalKey" to "musical_key"
+  scale?: string;
+  danceability?: number;
+  loudness?: number;
+  energy?: number;
+
+  // --- Extended Tags ---
+  catalog_number?: string;
+  mood?: string;
+
+  // --- Radio Logic & Stats ---
+  play_count?: number;
+  last_played?: string | null; // Will be an ISO date string when populated
 }
 
+// Lightweight version for the massive virtualized table
+export type LibraryTrack = Pick<Track, 'id' | 'title' | 'artist' | 'duration'>;
 /**
  * Playlist definition including its tracks
  */

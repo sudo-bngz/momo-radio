@@ -88,6 +88,7 @@ func (s *Server) setupRoutes() {
 
 			// --- TRACK
 			protected.GET("/tracks", middleware.RequireRole("dj", "manager"), trackHandler.GetTracks)
+			protected.GET("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.GetTrack)
 			protected.GET("/tracks/:id/stream", middleware.RequireRole("dj", "manager"), trackHandler.StreamTrack)
 
 			// --- DJ & MANAGER (Curators) ---
