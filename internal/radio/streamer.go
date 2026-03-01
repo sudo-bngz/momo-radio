@@ -135,13 +135,26 @@ func (e *Engine) Run() {
 	e.startStreamUploader()
 }
 
+// Helper function to extract the Show Name based on the active schedule slot
+func getShowName(slot *models.ScheduleSlot) string {
+	if slot == nil || slot.ScheduleType == "fallback" {
+		return "General Rotation"
+	}
+	if slot.Playlist != nil {
+		return slot.Playlist.Name
+	}
+	if slot.RuleSet != nil {
+		return slot.RuleSet.Name
+	}
+	return "Momo Radio"
+}
+
 // runOrchestrator is the main producer loop.
 // It bridges the Clock (Scheduler) with the DJ (Selector).
 func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 	defer output.Close()
 
 	// 1. Initialize our Selection Strategies
-	// We use a map for quick lookups based on the "mode" string
 	selectors := map[string]dj.Selector{
 		"random":     dj.NewSelector("random", e.db.DB),
 		"starvation": dj.NewSelector("starvation", e.db.DB),
@@ -151,7 +164,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 	var lastTrack *models.Track
 	firstRun := true
 
-	log.Println("🚀 Orchestrator started: System is live.")
+	log.Println("Orchestrator started: System is live.")
 
 	for {
 		var selectedTrack *models.Track
@@ -160,7 +173,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 		// --- STEP A: HANDLE RESUME (Cold Start) ---
 		if firstRun && resumeID != 0 {
 			if dbErr := e.db.DB.First(&selectedTrack, resumeID).Error; dbErr == nil {
-				log.Printf("🔙 Resume: Found interrupted track ID %d", resumeID)
+				log.Printf("esume: Found interrupted track ID %d", resumeID)
 				lastTrack = selectedTrack
 			}
 			firstRun = false
@@ -170,12 +183,14 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 		if selectedTrack == nil {
 			// Ask the Scheduler: "What should be on air at this exact second?"
 			activeSlot := e.scheduler.GetCurrentSchedule()
+			showName := getShowName(activeSlot)
 
 			// Decide based on the Schedule Target type (Playlist vs Ruleset)
-			if activeSlot.PlaylistID != nil {
+			// Note: Safely checking if the Playlist object itself is populated
+			if activeSlot.Playlist != nil {
 				// MODE: Fixed Sequence
 				selectedTrack, err = e.pickNextFromPlaylist(*activeSlot.PlaylistID)
-				log.Printf("📋 Mode: Fixed Playlist [%s]", activeSlot.Name)
+				log.Printf("📋 Mode: Fixed Playlist [%s]", showName)
 			} else if activeSlot.RuleSet != nil {
 				// MODE: Intelligent AutoDJ
 				mode := strings.ToLower(activeSlot.RuleSet.Mode)
@@ -188,7 +203,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 					selector = selectors["random"]
 				}
 
-				log.Printf("🤖 Mode: AutoDJ (%s) | Ruleset: %s", selector.Name(), activeSlot.RuleSet.Name)
+				log.Printf("🤖 Mode: AutoDJ (%s) | Ruleset: %s", selector.Name(), showName)
 
 				// Pass the lastTrack to allow Harmonic/Starvation logic to work
 				selectedTrack, err = selector.PickTrack(activeSlot.RuleSet, lastTrack)
@@ -196,7 +211,6 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 		}
 
 		// --- STEP C: EMERGENCY FAIL-SAFE ---
-		// If the rules are too strict and no track matches, we pick anything random.
 		if err != nil || selectedTrack == nil {
 			log.Printf("⚠️ Selection Error: %v. Triggering emergency random fallback.", err)
 			selectedTrack, _ = selectors["random"].PickTrack(nil, nil)
@@ -215,8 +229,8 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 			log.Printf("▶️  NOW PLAYING: %s - %s", selectedTrack.Artist, selectedTrack.Title)
 			tracksPlayed.Inc()
 
-			// Update the now_playing.json for the frontend
-			go e.updateNowPlaying(selectedTrack, e.scheduler.GetCurrentSchedule().Name)
+			// Update the now_playing.json for the frontend using the extracted Show Name
+			go e.updateNowPlaying(selectedTrack, getShowName(e.scheduler.GetCurrentSchedule()))
 
 			// Record in DB (increments play_count and updates last_played_at)
 			go e.recordTrackPlay(selectedTrack)
@@ -240,10 +254,11 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 func (e *Engine) pickNextFromPlaylist(playlistID uint) (*models.Track, error) {
 	var track models.Track
 	// Logic: Find the track in this playlist with the oldest 'last_played_at'
+	// BUG FIX: Added NULLS FIRST to ensure unplayed tracks are always selected before repeated ones
 	err := e.db.DB.Table("tracks").
 		Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 		Where("playlist_tracks.playlist_id = ?", playlistID).
-		Order("tracks.last_played_at ASC").
+		Order("tracks.last_played_at ASC NULLS FIRST").
 		First(&track).Error
 	return &track, err
 }
@@ -271,7 +286,6 @@ func (e *Engine) recordTrackPlay(t *models.Track) {
 	err := e.db.DB.Transaction(func(tx *gorm.DB) error {
 
 		// Update Track stats
-		// We use last_played_at to match our Starvation Selector's logic
 		err := tx.Model(&models.Track{}).
 			Where("id = ?", t.ID).
 			Updates(map[string]any{

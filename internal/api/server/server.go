@@ -61,7 +61,7 @@ func (s *Server) setupRoutes() {
 	statsHandler := handlers.NewStatsHandler(s.db.DB)
 	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage)
 	playlistHandler := handlers.NewPlaylistHandler(s.db.DB)
-	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB)
+	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
 
 	// Health Check
 	s.router.GET("/health", func(c *gin.Context) {

@@ -3,6 +3,11 @@ import { api } from '../../../services/api';
 import type { Playlist } from '../../../types';
 import type { EventInput } from '@fullcalendar/core';
 
+// Helper to map your Go backend days to FullCalendar's integer days
+const dayMap: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6
+};
+
 export const useSchedule = () => {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [events, setEvents] = useState<EventInput[]>([]);
@@ -21,24 +26,42 @@ export const useSchedule = () => {
     fetchPlaylists();
   }, []);
 
-  // 2. Fetch the schedule for the current calendar view (Week/Month)
+  // 2. Fetch the schedule for the current calendar view
   const fetchSchedule = useCallback(async (startStr: string, endStr: string) => {
     setIsLoading(true);
     try {
       const slots = await api.getSchedule(startStr, endStr);
       
-      // Map Go ScheduleSlots to FullCalendar Event objects.
-      // We use the lowercase keys (playlist, name, start_time) to match 
-      // the JSON response from your Go backend exactly.
-      const formattedEvents: EventInput[] = slots.map((slot: any) => ({
-        id: slot.id.toString(),
-        title: slot.playlist?.name || 'Unknown Playlist',
-        start: slot.start_time,
-        end: slot.end_time,
-        backgroundColor: slot.playlist?.color || '#3182ce',
-        borderColor: slot.playlist?.color || '#3182ce',
-        extendedProps: { playlistId: slot.playlist_id }
-      }));
+      const formattedEvents: EventInput[] = slots.map((slot: any) => {
+        const isRecurring = slot.schedule_type === 'recurring';
+        
+        // Base event properties
+        const event: EventInput = {
+          id: slot.id.toString(),
+          title: slot.playlist?.name || 'Unknown Playlist',
+          backgroundColor: slot.playlist?.color || '#3182ce',
+          borderColor: slot.playlist?.color || '#3182ce',
+          extendedProps: { 
+            playlistId: slot.playlist_id,
+            scheduleType: slot.schedule_type 
+          }
+        };
+
+        if (isRecurring && slot.days) {
+          // --- RECURRING EVENT (Weekly Show) ---
+          // FullCalendar uses daysOfWeek (e.g., [0, 2] for Sun, Tue)
+          // and startTime/endTime (e.g., "09:00:00") for repeating blocks
+          event.daysOfWeek = slot.days.split(',').map((d: string) => dayMap[d.trim()]);
+          event.startTime = `${slot.start_time}:00`;
+          event.endTime = `${slot.end_time}:00`;
+        } else {
+          // --- ONE-TIME EVENT (Special Guest Mix) ---
+          event.start = `${slot.date}T${slot.start_time}:00`;
+          event.end = `${slot.date}T${slot.end_time}:00`;
+        }
+
+        return event;
+      });
       
       setEvents(formattedEvents);
     } catch (error) {
@@ -50,23 +73,18 @@ export const useSchedule = () => {
 
   // 3. Handle dropping a playlist onto the calendar grid
   const handleEventReceive = async (info: any) => {
-    // Extract data from the dropped "ghost" event
     const playlistId = parseInt(info.event.extendedProps.playlistId, 10);
+    // This sends UTC time to Go. Thanks to our new Go Timezone config, 
+    // Go will translate this UTC time back into your local Paris time flawlessly!
     const startTime = info.event.start.toISOString();
 
     try {
-      // Send the placement to the Go backend
       await api.createScheduleSlot(playlistId, startTime);
-      
-      // Revert removes the fake HTML node FullCalendar drew during the drag.
       info.revert(); 
-      
-      // Re-fetch the schedule to get the REAL block from the database,
-      // which will now have the accurately calculated end_time!
       fetchSchedule(info.view.activeStart.toISOString(), info.view.activeEnd.toISOString());
     } catch (error) {
       console.error("Failed to schedule playlist", error);
-      info.revert(); // Undo the drag if the API call failed
+      info.revert(); 
       alert("Could not schedule playlist. Check for overlaps or server issues.");
     }
   };
@@ -75,10 +93,7 @@ export const useSchedule = () => {
   const handleEventClick = async (info: any) => {
     if (window.confirm(`Remove '${info.event.title}' from the schedule?`)) {
       try {
-        // info.event.id maps directly to the Go ScheduleSlot ID
         await api.deleteScheduleSlot(parseInt(info.event.id, 10));
-        
-        // Instantly remove it from the UI for a snappy experience
         info.event.remove(); 
       } catch (error) {
         console.error("Failed to delete slot", error);
@@ -89,14 +104,8 @@ export const useSchedule = () => {
 
   const handleManualSchedule = async (playlistId: number, date: string, time: string) => {
     try {
-      // Combine date "YYYY-MM-DD" and time "HH:MM" into a proper ISO string
       const startDateTime = new Date(`${date}T${time}:00`).toISOString();
-      
       await api.createScheduleSlot(playlistId, startDateTime);
-      
-      // Refresh the calendar view
-      // We force a refresh by fetching the current month/week again.
-      // A quick hack is to just reload the page, or you can manage the current date state.
       window.location.reload(); 
     } catch (error) {
       console.error("Failed to schedule playlist", error);

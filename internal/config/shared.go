@@ -23,6 +23,7 @@ type Config struct {
 		TempDir         string `mapstructure:"temp_dir"`
 		PollingInterval int    `mapstructure:"polling_interval_seconds"`
 		MetricsPort     string `mapstructure:"metrics_port"`
+		Timezone        string `mapstructure:"timezone"`
 	} `mapstructure:"server"`
 	Radio struct {
 		Bitrate       string `mapstructure:"bitrate"`
@@ -72,6 +73,7 @@ func Load() *Config {
 	viper.BindEnv("server.temp_dir")
 	viper.BindEnv("server.polling_interval_seconds")
 	viper.BindEnv("server.metrics_port")
+	viper.BindEnv("server.timezone")
 
 	// Radio Config Bindings
 	viper.BindEnv("radio.bitrate")
@@ -92,6 +94,7 @@ func Load() *Config {
 	viper.SetDefault("server.polling_interval_seconds", 10)
 	viper.SetDefault("server.temp_dir", "/tmp/")
 	viper.SetDefault("server.metrics_port", ":9091")
+	viper.SetDefault("server.timezone", "UTC")
 
 	// Register Database keys
 	viper.BindEnv("database.host")

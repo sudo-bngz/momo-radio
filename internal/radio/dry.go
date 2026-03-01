@@ -43,14 +43,18 @@ func (e *Engine) runSimulation() {
 		// an 'AtTime(t time.Time)' method. For now, we use current clock logic.
 		activeSlot := e.scheduler.GetCurrentSchedule()
 
+		// Use the helper from streamer.go to dynamically get the program name
+		showName := getShowName(activeSlot)
+
 		var selectedTrack *models.Track
 		var err error
 		currentMode := "Unknown"
 
 		// B. Selection Logic (Mirrors Production Orchestrator)
-		if activeSlot.PlaylistID != nil {
+		// Safely check if Playlist object is loaded rather than the pointer ID
+		if activeSlot.Playlist != nil {
 			currentMode = "Playlist"
-			selectedTrack, err = e.pickNextFromPlaylist(*activeSlot.PlaylistID)
+			selectedTrack, err = e.pickNextFromPlaylist(activeSlot.Playlist.ID)
 		} else if activeSlot.RuleSet != nil {
 			mode := strings.ToLower(activeSlot.RuleSet.Mode)
 			if mode == "" {
@@ -70,7 +74,7 @@ func (e *Engine) runSimulation() {
 		// Handle Selection Errors
 		if err != nil || selectedTrack == nil {
 			fmt.Fprintf(w, "%s\tERROR\t---\tSelection Failed: %v\t---\t---\t%s\n",
-				simulatedTime.Format("15:04:05"), err, activeSlot.Name)
+				simulatedTime.Format("15:04:05"), err, showName)
 			break
 		}
 
@@ -82,7 +86,7 @@ func (e *Engine) runSimulation() {
 			truncate(selectedTrack.Title, 25),
 			selectedTrack.BPM,
 			selectedTrack.MusicalKey,
-			activeSlot.Name,
+			showName,
 		)
 
 		// D. Advance Simulated State

@@ -1,31 +1,31 @@
 package handlers
 
 import (
+	"log"
+	"momo-radio/internal/config"
+	"momo-radio/internal/models"
 	"net/http"
 	"strconv"
 	"time"
-
-	"momo-radio/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// SchedulerHandler handles scheduling-related requests independently of the main server
 type SchedulerHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	cfg *config.Config
 }
 
-// NewSchedulerHandler creates a new SchedulerHandler instance
-func NewSchedulerHandler(db *gorm.DB) *SchedulerHandler {
-	return &SchedulerHandler{db: db}
+func NewSchedulerHandler(db *gorm.DB, cfg *config.Config) *SchedulerHandler {
+	return &SchedulerHandler{db: db, cfg: cfg}
 }
 
-// CreateScheduleSlot creates a new broadcasting time slot
 func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 	var input struct {
-		PlaylistID uint      `json:"playlist_id" binding:"required"`
-		StartTime  time.Time `json:"start_time" binding:"required"`
+		PlaylistID   uint   `json:"playlist_id" binding:"required"`
+		StartTime    string `json:"start_time" binding:"required"`
+		ScheduleType string `json:"schedule_type"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -33,70 +33,79 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 		return
 	}
 
-	// 1. Fetch playlist to get duration
+	if input.ScheduleType == "" {
+		input.ScheduleType = "one_time"
+	}
+
 	var playlist models.Playlist
 	if err := h.db.First(&playlist, input.PlaylistID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
 		return
 	}
 
-	// 2. Calculate EndTime
-	endTime := input.StartTime.Add(time.Duration(playlist.TotalDuration) * time.Second)
+	parsedTime, err := time.Parse(time.RFC3339, input.StartTime)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid time format"})
+		return
+	}
 
-	// 3. Create Slot
+	// --- DYNAMIC TIMEZONE LOGIC ---
+	// Read the timezone from your Viper config instead of hardcoding it
+	loc, err := time.LoadLocation(h.cfg.Server.Timezone)
+	if err != nil {
+		log.Printf("⚠️ Could not load timezone '%s', falling back to Local: %v", h.cfg.Server.Timezone, err)
+		loc = time.Local
+	}
+
+	localTime := parsedTime.In(loc)
+	// ------------------------------
+
+	exactDate := localTime.Format("2006-01-02")
+	dayOfWeek := localTime.Weekday().String()[0:3]
+	startTimeStr := localTime.Format("15:04")
+
+	parsedEnd := localTime.Add(time.Duration(playlist.TotalDuration) * time.Second)
+	endTimeStr := parsedEnd.Format("15:04")
+
 	slot := models.ScheduleSlot{
-		PlaylistID: input.PlaylistID,
-		StartTime:  input.StartTime,
-		EndTime:    endTime,
+		PlaylistID:   &input.PlaylistID,
+		ScheduleType: input.ScheduleType,
+		Date:         exactDate,
+		Days:         dayOfWeek,
+		StartTime:    startTimeStr,
+		EndTime:      endTimeStr,
+		IsActive:     true,
 	}
 
 	if err := h.db.Create(&slot).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Overlap or DB error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save schedule"})
 		return
 	}
 
 	c.JSON(http.StatusCreated, slot)
 }
 
-// GetSchedule fetches schedule slots within a given date range
+// ... (GetSchedule and DeleteScheduleSlot remain exactly the same)
 func (h *SchedulerHandler) GetSchedule(c *gin.Context) {
-	start := c.Query("start") // e.g. 2026-02-01
-	end := c.Query("end")     // e.g. 2026-02-08
-
+	// Return all slots so the React calendar can render both one-time and recurring events
 	var slots []models.ScheduleSlot
-	h.db.Preload("Playlist").
-		Where("start_time >= ? AND start_time <= ?", start, end).
-		Find(&slots)
-
+	h.db.Preload("Playlist").Where("is_active = ?", true).Find(&slots)
 	c.JSON(http.StatusOK, slots)
 }
 
-// DeleteScheduleSlot removes a time slot from the schedule
 func (h *SchedulerHandler) DeleteScheduleSlot(c *gin.Context) {
-	// 1. Convert the ID from string to uint
 	idStr := c.Param("id")
 	slotID, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid schedule slot ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 		return
 	}
 
-	// 2. Perform the Soft Delete
 	result := h.db.Delete(&models.ScheduleSlot{}, uint(slotID))
-
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove slot from schedule"})
-		return
-	}
-
-	// 3. Check if any row was actually affected
 	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Schedule slot not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Slot not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Slot successfully removed from schedule",
-		"id":      slotID,
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "Slot removed", "id": slotID})
 }

@@ -29,15 +29,24 @@ type PlaylistTrack struct {
 
 // ScheduleSlot represents a playlist assigned to a specific time on the calendar
 type ScheduleSlot struct {
-	// FIX: Unroll here too for consistency
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	PlaylistID uint      `json:"playlist_id" gorm:"index"`
-	Playlist   Playlist  `json:"playlist"`
-	StartTime  time.Time `json:"start_time" gorm:"index"`
-	EndTime    time.Time `json:"end_time" gorm:"index"`
-	IsReplay   bool      `json:"is_replay" gorm:"default:false"`
+	ScheduleType string `json:"schedule_type" gorm:"not null;default:'one_time'"`
+	Date         string `json:"date"`
+	Days         string `json:"days" gorm:"not null;default:'Mon,Tue,Wed,Thu,Fri,Sat,Sun'"`
+
+	IsActive bool `json:"is_active" gorm:"default:true"`
+	IsReplay bool `json:"is_replay" gorm:"default:false"`
+
+	StartTime string `json:"start_time" gorm:"type:varchar(5);not null"`
+	EndTime   string `json:"end_time" gorm:"type:varchar(5);not null"`
+
+	PlaylistID *uint     `json:"playlist_id" gorm:"index"`
+	Playlist   *Playlist `json:"playlist"`
+
+	RuleSetID *uint    `json:"ruleset_id" gorm:"index"`
+	RuleSet   *RuleSet `json:"ruleset"`
 }
