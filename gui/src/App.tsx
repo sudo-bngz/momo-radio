@@ -13,6 +13,7 @@ import { LibraryFeature } from "./features/library";
 import { IngestFeature } from './features/ingest';
 import { ScheduleFeature } from './features/schedule';
 import { SettingsFeature } from './features/settings';
+import { ArtistView } from './features/library/components/ArtistView';
 
 export const App = () => {
   return (
@@ -32,6 +33,7 @@ export const App = () => {
                 <Route path="edit/:id" element={<PlaylistBuilder />} />
               </Route>
               <Route path="/library" element={<LibraryFeature />} />
+              <Route path="/artists/:artistName" element={<ArtistView />} />
               <Route path="/ingest" element={<IngestFeature />} />
               <Route path="/schedule" element={<ScheduleFeature />} />
               {/* Add more as needed */}

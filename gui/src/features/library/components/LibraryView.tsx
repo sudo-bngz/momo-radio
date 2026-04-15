@@ -115,7 +115,20 @@ export const LibraryView: React.FC = () => {
                         </Box>
                       </Table.Cell>
                       <Table.Cell fontWeight={isThisTrackPlaying ? "bold" : "500"} color={isThisTrackPlaying ? "blue.600" : "gray.900"} cursor="pointer" onClick={() => setSelectedTrack(track)}>{track.title}</Table.Cell>
-                      <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"}>{track.artist}</Table.Cell>
+                      
+                      {/* ⚡️ ONLY CHANGED THIS CELL ⚡️ */}
+                      <Table.Cell 
+                        color={isThisTrackPlaying ? "blue.500" : "gray.600"}
+                        cursor="pointer"
+                        _hover={{ textDecoration: "underline", color: "blue.600" }}
+                        onClick={(e) => {
+                          e.stopPropagation(); // Prevents row click events from firing if you add them later
+                          navigate(`/artists/${encodeURIComponent(track.artist)}`);
+                        }}
+                      >
+                        {track.artist}
+                      </Table.Cell>
+
                       <Table.Cell textAlign="right" color="gray.500">{formatDuration(track.duration)}</Table.Cell>
                     </Table.Row>
                   );
