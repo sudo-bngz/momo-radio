@@ -16,20 +16,38 @@ export const apiClient = axios.create({
   baseURL: API_URL,
 });
 
+/**
+ * REQUEST INTERCEPTOR
+ * Attaches the JWT token to every request if it exists in the store.
+ */
 apiClient.interceptors.request.use((config) => {
   const state = useAuthStore.getState();
   const token = state.token;
   
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-  } else {
-    console.warn('API Request: No token found in store');
   }
   
   return config;
 }, (error) => {
   return Promise.reject(error);
 });
+
+/**
+ * RESPONSE INTERCEPTOR
+ * Intercepts 401 Unauthorized errors to trigger the logout/session-expired modal.
+ */
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // If the server returns 401, the JWT is either expired or invalid
+    if (error.response && error.response.status === 401) {
+      console.warn('Session expired or unauthorized. Triggering re-login.');
+      useAuthStore.getState().setSessionExpired(true);
+    }
+    return Promise.reject(error);
+  }
+);
 
 /**
  * GLOBAL API METHODS
@@ -60,8 +78,14 @@ export const api = {
   },
 
   // 2. LIBRARY MANAGEMENT
-  getTracks: async (): Promise<{ data: Track[] }> => {
-    const response = await apiClient.get<{ data: Track[] }>('/tracks');
+  // UPDATED: Now supports server-side pagination, searching, and sorting
+  getTracks: async (params?: { 
+    limit?: number; 
+    offset?: number; 
+    search?: string; 
+    sort?: string 
+  }): Promise<{ data: Track[], meta: { total: number, limit: number, offset: number } }> => {
+    const response = await apiClient.get('/tracks', { params });
     return response.data;
   },
 

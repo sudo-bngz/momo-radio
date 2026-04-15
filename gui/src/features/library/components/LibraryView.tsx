@@ -8,15 +8,17 @@ import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
 import type { SortOption } from '../hook/useLibrary';
 
-// Import the new drawer component 
-// (Adjust this path if you saved it somewhere else!)
+// Import the drawer component
 import { TrackDetailDrawer } from './TrackDetailDrawer'; 
 
 export const LibraryView: React.FC = () => {
   const navigate = useNavigate();
+  
+  // ⚡️ Destructure the real globalTotal and the setTracks setter from your hook
   const { 
     tracks, 
-    totalTracks, 
+    setTracks,
+    globalTotal, 
     isLoading, 
     searchQuery, 
     setSearchQuery,
@@ -26,7 +28,7 @@ export const LibraryView: React.FC = () => {
 
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();
 
-  // 1. STATE: Keep track of which song is currently selected for the drawer
+  // State for the sliding metadata drawer
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
 
   const formatDuration = (s: number) => {
@@ -44,7 +46,8 @@ export const LibraryView: React.FC = () => {
           Music Library
         </Heading>
         <Text fontSize="sm" color="gray.500">
-          {totalTracks} tracks in your collection
+          {/* ⚡️ FIXED: Now correctly shows the database total from /stats */}
+          {globalTotal} tracks in your collection
         </Text>
       </VStack>
 
@@ -52,7 +55,6 @@ export const LibraryView: React.FC = () => {
       <HStack justify="space-between" w="100%" gap={6}>
         <HStack gap={4} flex="1">
           
-          {/* "Add Track" Button */}
           <Button 
             bg="gray.900" 
             color="white" 
@@ -68,7 +70,6 @@ export const LibraryView: React.FC = () => {
             <Icon as={Plus} boxSize={6} />
           </Button>
 
-          {/* Smart Search Bar */}
           <Box position="relative" flex="1" maxW="600px">
             <Icon 
               as={Search} 
@@ -98,7 +99,6 @@ export const LibraryView: React.FC = () => {
         </HStack>
 
         <HStack gap={3}>
-          {/* Sorting Dropdown */}
           <select 
             style={{ 
               height: '48px', 
@@ -124,7 +124,7 @@ export const LibraryView: React.FC = () => {
 
       {/* 3. Minimalist Table Area */}
       <Box flex="1" overflow="hidden" display="flex" flexDirection="column">
-        {isLoading ? (
+        {isLoading && tracks.length === 0 ? (
           <VStack justify="center" flex="1"><Spinner size="xl" color="blue.500" /></VStack>
         ) : (
           <Box overflowY="auto" flex="1">
@@ -204,7 +204,6 @@ export const LibraryView: React.FC = () => {
                         </Box>
                       </Table.Cell>
 
-                      {/* 2. DRAWER TRIGGER: Make the title clickable to open the panel */}
                       <Table.Cell 
                         fontWeight={isThisTrackPlaying ? "bold" : "500"} 
                         color={isThisTrackPlaying ? "blue.600" : "gray.900"}
@@ -235,6 +234,12 @@ export const LibraryView: React.FC = () => {
         isOpen={!!selectedTrack} 
         onClose={() => setSelectedTrack(null)} 
         track={selectedTrack} 
+        // ⚡️ FIXED: Added callback to ensure the table row updates instantly after a save
+        onTrackUpdated={(updatedData) => {
+          setTracks((prev: any[]) => 
+            prev.map(t => t.id === updatedData.id ? { ...t, ...updatedData } : t)
+          );
+        }}
       />
 
     </VStack>
