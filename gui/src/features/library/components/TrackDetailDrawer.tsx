@@ -17,7 +17,7 @@ interface TrackDetailDrawerProps {
 
 const TABS = ['Details', 'Album', 'Tags', 'Radio'];
 
-// ⚡️ NEW: Human-readable time formatting
+// Human-readable time formatting
 const formatTimeAgo = (dateInput: string | Date | null | undefined): string => {
   if (!dateInput) return 'Never played';
   
@@ -36,7 +36,6 @@ const formatTimeAgo = (dateInput: string | Date | null | undefined): string => {
     return days === 1 ? '1 day ago' : `${days} days ago`;
   }
   
-  // If it's older than a week, show a clean exact date instead of relative time
   return date.toLocaleDateString(undefined, { 
     year: 'numeric', 
     month: 'short', 
@@ -47,7 +46,7 @@ const formatTimeAgo = (dateInput: string | Date | null | undefined): string => {
 export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, onClose, track, onTrackUpdated }) => {
   const [activeTab, setActiveTab] = useState('Details');
   
-  const [fullTrack, setFullTrack] = useState<Track | null>(null);
+  const [fullTrack, setFullTrack] = useState<any>(null); // Temporarily using any to handle the nested backend objects
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -67,7 +66,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
       setIsLoading(true);
       setMessage(null); 
       setActiveTab('Details'); 
-      setIsEditing(false); // Always open in Read-Only mode
+      setIsEditing(false);
 
       api.getTrack(track.id)
         .then(data => {
@@ -94,7 +93,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 
   const handleCancelEdit = () => {
     setIsEditing(false);
-    // Revert any unsaved tag inputs back to the database state
     if (fullTrack) {
       setGenreInput(fullTrack.genre || '');
       setStyleInput(fullTrack.style || '');
@@ -112,15 +110,13 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
     const formElement = e.currentTarget as unknown as HTMLFormElement;
     const formData = new FormData(formElement);
     
-    // Extract everything we allow to be edited
     const updates: Partial<Track> = {
       title: formData.get('title') as string,
-      artist: formData.get('artist') as string,
-      album: formData.get('album') as string,
-      year: formData.get('year') as string,
       genre: formData.get('genre') as string,
       style: formData.get('style') as string,
       mood: formData.get('mood') as string,
+      // Note: Updating artist and album names via string here will require 
+      // specific handling on your Go backend later if you want to allow edits.
       publisher: formData.get('publisher') as string,
       catalog_number: formData.get('catalog_number') as string,
       release_country: formData.get('release_country') as string,
@@ -128,17 +124,16 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 
     try {
       await api.updateTrack(fullTrack.id, updates);
-      const newTrackData = { ...fullTrack, ...updates } as Track;
+      const newTrackData = { ...fullTrack, ...updates };
       setFullTrack(newTrackData);
       
-      setIsEditing(false); // Lock it back down after saving!
+      setIsEditing(false);
       setMessage({ text: "Saved successfully!", type: "success" });
 
       if (onTrackUpdated) {
-        onTrackUpdated(newTrackData);
+        onTrackUpdated(newTrackData as Track);
       }
       
-      // Clear success message after a few seconds
       setTimeout(() => setMessage(null), 3000);
 
     } catch (error) {
@@ -149,6 +144,11 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
   };
 
   if (!isOpen && !track) return null;
+
+  // ⚡️ SAFELY RESOLVE RELATIONAL DATA
+  // Check if it's an object (from GetTrack) or a string (from the LibraryList)
+  const artistName = fullTrack?.artist?.name || (typeof fullTrack?.artist === 'string' ? fullTrack.artist : track?.artist) || '';
+  const albumTitle = fullTrack?.album?.title || (typeof fullTrack?.album === 'string' ? fullTrack.album : track?.album) || '';
 
   // Formatters
   const displayBPM = fullTrack?.bpm ? Math.round(fullTrack.bpm) : '-';
@@ -192,14 +192,13 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                   cursor="pointer" 
                   _hover={{ textDecoration: "underline" }}
                   onClick={() => {
-                    const artist = fullTrack?.artist || track?.artist;
-                    if (artist) {
-                      onClose(); // Close the drawer
-                      navigate(`/artists/${encodeURIComponent(artist)}`); // Go to artist page
+                    if (artistName) {
+                      onClose(); 
+                      navigate(`/artists/${encodeURIComponent(artistName)}`); 
                     }
                   }}
                 >
-                  {fullTrack?.artist || track?.artist}
+                  {artistName /* ⚡️ Using resolved string */}
               </Text>
               </VStack>
             </HStack>
@@ -228,11 +227,12 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
             <Flex justify="center" align="center" h="100%"><Spinner color="blue.500" /></Flex>
           ) : (
             <>
-              {/* ⚡️ DETAILS TAB */}
+              {/* DETAILS TAB */}
               <Box display={activeTab === 'Details' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <EditableField label="Title" name="title" value={fullTrack?.title} isEditing={isEditing} />
-                  <EditableField label="Artist(s)" name="artist" value={fullTrack?.artist} isEditing={isEditing} />
+                  {/* ⚡️ Using resolved string */}
+                  <EditableField label="Artist(s)" name="artist" value={artistName} isEditing={isEditing} />
                   <EditableField label="Recording Year" name="year" value={fullTrack?.year} isEditing={isEditing} />
 
                   <Box borderTop="1px dashed" borderColor="gray.200" my={2} />
@@ -258,17 +258,18 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                 </VStack>
               </Box>
 
-              {/* ⚡️ ALBUM TAB */}
+              {/* ALBUM TAB */}
               <Box display={activeTab === 'Album' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
-                  <EditableField label="Album Name" name="album" value={fullTrack?.album} isEditing={isEditing} placeholder="Original Mix / EP Name" />
+                  {/* ⚡️ Using resolved string */}
+                  <EditableField label="Album Name" name="album" value={albumTitle} isEditing={isEditing} placeholder="Original Mix / EP Name" />
                   <EditableField label="Publisher/Label" name="publisher" value={fullTrack?.publisher} isEditing={isEditing} placeholder="e.g. Warp Records" />
                   <EditableField label="Catalog No." name="catalog_number" value={fullTrack?.catalog_number} isEditing={isEditing} placeholder="e.g. WAP62" />
                   <EditableField label="Country" name="release_country" value={fullTrack?.release_country} isEditing={isEditing} placeholder="e.g. UK, US, FR" />
                 </VStack>
               </Box>
 
-              {/* ⚡️ TAGS TAB */}
+              {/* TAGS TAB */}
               <Box display={activeTab === 'Tags' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <FormRow label="Genre(s)">
@@ -276,7 +277,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                       {isEditing && (
                         <StyledInput name="genre" value={genreInput} onChange={(e: any) => setGenreInput(e.target.value)} placeholder="Comma separated genres" />
                       )}
-                      {/* Hidden input needed to submit data if we don't edit it but click save */}
                       {!isEditing && <input type="hidden" name="genre" value={genreInput} />}
                       <TagDisplay rawString={genreInput} />
                     </Box>
@@ -304,7 +304,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                 </VStack>
               </Box>
 
-              {/* ⚡️ RADIO TAB */}
+              {/* RADIO TAB */}
               <Box display={activeTab === 'Radio' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
@@ -330,7 +330,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
           )}
         </Box>
 
-        {/* ⚡️ FOOTER - Dynamic based on isEditing */}
+        {/* FOOTER */}
         <Flex px={6} py={4} borderTop="1px solid" borderColor="gray.100" bg="gray.50" justify="space-between" align="center">
           <Box>
             {message && <Text fontSize="sm" fontWeight="500" color={message.type === 'success' ? 'green.600' : 'red.500'}>{message.text}</Text>}
@@ -338,27 +338,26 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
           
           <HStack gap={3}>
             {!isEditing ? (
-              // READ ONLY MODE BUTTONS
               <>
                 <Button variant="ghost" color="gray.600" onClick={onClose}>Close</Button>
-              <Button 
-                bg="white" 
-                color="gray.900" 
-                border="1px solid" 
-                borderColor="gray.200" 
-                _hover={{ bg: "gray.50" }} 
-                onClick={(e) => { e.preventDefault(); setIsEditing(true); }} 
-              >
-                {/* ⚡️ Put the icon inside the button, and add a little right margin (mr={2}) */}
-                <Icon as={Edit2} boxSize={4} mr={2} />
-                Edit Metadata
-              </Button>
+                <Button 
+                  bg="white" 
+                  color="gray.900" 
+                  border="1px solid" 
+                  borderColor="gray.200" 
+                  _hover={{ bg: "gray.50" }} 
+                  onClick={(e) => { e.preventDefault(); setIsEditing(true); }} 
+                >
+                  <Icon as={Edit2} boxSize={4} mr={2} />
+                  Edit Metadata
+                </Button>
               </>
             ) : (
-              // EDIT MODE BUTTONS
               <>
                 <Button variant="ghost" color="gray.600" onClick={handleCancelEdit} disabled={isSaving}>Cancel</Button>
-                <Button type="submit" bg="blue.600" color="white" _hover={{ bg: "blue.700" }} loading={isSaving}>Save Changes</Button>
+                <Button type="submit" bg="blue.600" color="white" _hover={{ bg: "blue.700" }} loading={isSaving}>
+                  Save Changes
+                </Button>
               </>
             )}
           </HStack>
@@ -377,12 +376,10 @@ const FormRow = ({ label, children }: { label: string, children: React.ReactNode
   </Grid>
 );
 
-// Small hack to align labels nicely depending on if it's text or an input box
 const isInputMode = (children: any) => {
   return typeof children === 'object' && children !== null && 'props' in children;
 };
 
-// ⚡️ Smart Editable Field Component
 const EditableField = ({ label, name, value, isEditing, placeholder = '' }: any) => {
   return (
     <FormRow label={label}>
@@ -391,7 +388,6 @@ const EditableField = ({ label, name, value, isEditing, placeholder = '' }: any)
       ) : (
         <Text fontSize="sm" fontWeight="600" color={value ? "gray.900" : "gray.400"} minH="24px" pt={0.5}>
           {value || '-'}
-          {/* Hidden input to ensure data isn't lost if they save while on another tab */}
           <input type="hidden" name={name} value={value || ''} />
         </Text>
       )}

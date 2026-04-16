@@ -33,15 +33,16 @@ func NewTrackHandler(db *gorm.DB, st *storage.Client) *TrackHandler {
 	}
 }
 
-// It prevents sending 30+ columns of data over the network for 100 rows.
+// LibraryTrack prevents sending massive payloads, now including Album data!
 type LibraryTrack struct {
 	ID       uint    `json:"id"`
 	Title    string  `json:"title"`
 	Artist   string  `json:"artist"`
+	Album    string  `json:"album"`
 	Duration float64 `json:"duration"`
 }
 
-// GetTracks returns a paginated, lightweight list of tracks
+// GetTracks returns a paginated, lightweight list of tracks using DTO mapping
 func (h *TrackHandler) GetTracks(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
@@ -52,17 +53,24 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		limit = 200
 	}
 
-	query := h.db.Model(&models.Track{}).Joins("JOIN artists ON artists.id = tracks.artist_id")
+	// 1. Build the base query and PRELOAD the relational data
+	query := h.db.Model(&models.Track{}).
+		Preload("Artist").
+		Preload("Album")
 
+	// 2. Apply Search (We use LEFT JOIN so we can filter by the artist's name)
 	if search != "" {
 		searchTerm := "%" + search + "%"
-		// ⚡️ Search across tracks.title and artists.name
-		query = query.Where("artists.name ILIKE ? OR tracks.title ILIKE ?", searchTerm, searchTerm)
+		query = query.
+			Joins("LEFT JOIN artists ON artists.id = tracks.artist_id").
+			Where("artists.name ILIKE ? OR tracks.title ILIKE ?", searchTerm, searchTerm)
 	}
 
+	// 3. Get Total Count for UI pagination
 	var total int64
 	query.Count(&total)
 
+	// 4. Apply Sorting
 	switch sortBy {
 	case "alphabetical":
 		query = query.Order("tracks.title ASC")
@@ -72,11 +80,9 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		query = query.Order("tracks.id DESC")
 	}
 
-	var tracks []LibraryTrack
-	result := query.Select("tracks.id, tracks.title, artists.name as artist, tracks.duration").
-		Limit(limit).
-		Offset(offset).
-		Find(&tracks)
+	// 5. Fetch the actual database models
+	var tracks []models.Track
+	result := query.Limit(limit).Offset(offset).Find(&tracks)
 
 	if result.Error != nil {
 		slog.Error("Failed to fetch tracks", "error", result.Error)
@@ -84,9 +90,35 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		return
 	}
 
+	var libraryTracks []LibraryTrack
+	for _, t := range tracks {
+		artistName := "Unknown Artist"
+		if t.Artist.Name != "" {
+			artistName = t.Artist.Name
+		}
+
+		libraryTracks = append(libraryTracks, LibraryTrack{
+			ID:       t.ID,
+			Title:    t.Title,
+			Artist:   artistName,
+			Album:    t.Album.Title,
+			Duration: t.Duration,
+		})
+	}
+
+	// If no tracks are found, return an empty array instead of null
+	if libraryTracks == nil {
+		libraryTracks = []LibraryTrack{}
+	}
+
+	// 7. Return Response
 	c.JSON(http.StatusOK, gin.H{
-		"data": tracks,
-		"meta": gin.H{"total": total, "limit": limit, "offset": offset},
+		"data": libraryTracks,
+		"meta": gin.H{
+			"total":  total,
+			"limit":  limit,
+			"offset": offset,
+		},
 	})
 }
 

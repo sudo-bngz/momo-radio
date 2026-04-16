@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, HStack, Text, Flex, Icon, Spinner } from '@chakra-ui/react';
 import { Avatar, Menu } from '@chakra-ui/react';
-import { keyframes } from '@emotion/react'; // 👈 IMPORT THIS
+import { keyframes } from '@emotion/react';
 import { LogOut, Settings, BookOpen, Users, Music, ChevronDown } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useDashboard } from '../features/dashboard/hook/useDashboard';
@@ -22,8 +22,21 @@ export const TopNav: React.FC = () => {
 
   const roleColor = user.role === 'admin' ? 'red' : user.role === 'manager' ? 'purple' : 'blue';
   
-  const trackText = nowPlaying?.artist 
-    ? `${nowPlaying.artist} - ${nowPlaying.title}` 
+// 1. STRICTLY extract the string and completely block raw objects
+  let safeArtistName = "Unknown Artist";
+  
+  if (nowPlaying?.artist) {
+    if (typeof nowPlaying.artist === 'string') {
+      safeArtistName = nowPlaying.artist;
+    } else if (typeof nowPlaying.artist === 'object') {
+      // If it's an object, ONLY take the name, or fall back to a safe string
+      safeArtistName = (nowPlaying.artist as any).name || "Unknown Artist";
+    }
+  }
+
+  // 2. Build the text. If we have a track title, build the string. Otherwise, AutoDJ.
+  const trackText = nowPlaying?.title 
+    ? `${safeArtistName} - ${nowPlaying.title}` 
     : "AutoDJ is active";
 
   return (

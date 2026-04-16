@@ -45,14 +45,16 @@ export const DashboardView: React.FC = () => {
             </Badge>
             
             <Box>
-              <Text fontSize="lg" color="gray.400" mb={1}>{nowPlaying.artist || "Momo Radio"}</Text>
+              {/* ⚡️ FIXED: Defensive check just in case nowPlaying also receives an object */}
+              <Text fontSize="lg" color="gray.400" mb={1}>
+                {getArtistName(nowPlaying.artist)}
+              </Text>
               <Heading size="3xl" fontWeight="semibold" letterSpacing="tight" mb={2}>
                 {nowPlaying.title || "Tuning in..."}
               </Heading>
               <HStack color="blue.300" fontSize="sm" gap={6}>
                 <HStack gap={1}>
                   <Icon as={ListMusic} boxSize="14px" />
-                  {/* Fixed mapping for the new Go Backend structure */}
                   <Text>{nowPlaying.playlist_name || "General Rotation"}</Text>
                 </HStack>
                 <HStack gap={1}>
@@ -94,9 +96,8 @@ export const DashboardView: React.FC = () => {
           Recently Ingested
         </Heading>
         <VStack align="stretch" gap={3}>
-          {recentTracks.map((track, index) => (
+          {recentTracks.map((track: any, index: number) => (
             <HStack 
-              // Added fallback key to prevent React warnings if ID is missing
               key={track.id || `recent-${index}`} 
               justify="space-between" 
               p={4} 
@@ -113,7 +114,11 @@ export const DashboardView: React.FC = () => {
                 </Box>
                 <VStack align="start" gap={0}>
                   <Text fontWeight="bold" color="gray.800">{track.title}</Text>
-                  <Text fontSize="sm" color="gray.500">{track.artist}</Text>
+                  
+                 <Text fontSize="sm" color="gray.500">
+                  {getArtistName(track.artist)}
+                </Text>
+                                  
                 </VStack>
               </HStack>
               
@@ -147,3 +152,13 @@ const StatCard = ({ icon, label, value, color }: { icon: any, label: string, val
     <Heading size="3xl" color="gray.900" letterSpacing="tight">{value}</Heading>
   </Box>
 );
+
+
+const getArtistName = (artistData: any): string => {
+  if (!artistData) return "Unknown Artist";
+  if (typeof artistData === 'string') return artistData;
+  if (typeof artistData === 'object' && 'name' in artistData) {
+    return artistData.name || "Unknown Artist";
+  }
+  return "Unknown Artist";
+};
