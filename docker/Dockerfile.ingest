@@ -5,6 +5,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /bin/ingester cmd/ingester/main.go
+RUN CGO_ENABLED=0 go build -o /bin/migrate cmd/migrate/migrate.go
 
 # --- Stage 2: Compile Essentia (Tailored for Atom C2750) ---
 FROM debian:bookworm-slim AS essentia-builder
