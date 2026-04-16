@@ -30,7 +30,7 @@ func New(cfg *config.Config) *Client {
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to database: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
 	// Connection Pool Settings
@@ -39,7 +39,7 @@ func New(cfg *config.Config) *Client {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	log.Println("✅ Database Connected")
+	log.Println("Database Connected")
 
 	return &Client{DB: db}
 }
@@ -60,5 +60,5 @@ func (c *Client) AutoMigrate() {
 	if err != nil {
 		log.Fatalf("Migration failed: %v", err)
 	}
-	log.Println("✅ Migrations Complete")
+	log.Println("Migrations Complete")
 }

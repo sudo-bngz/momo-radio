@@ -26,7 +26,7 @@ func main() {
 	repairProvider := flag.String("provider", "musicbrainz", "Metadata provider: 'musicbrainz' or 'discogs'")
 	var targetArtists []string
 	flag.Func("artists", "Comma-separated list of artists to target (e.g. -artists='Daft Punk,Justice')", func(s string) error {
-		for _, a := range strings.Split(s, ",") {
+		for a := range strings.SplitSeq(s, ",") {
 			targetArtists = append(targetArtists, strings.TrimSpace(a))
 		}
 		return nil
@@ -37,8 +37,7 @@ func main() {
 	// 2. Setup Configuration
 	cfg := config.Load()
 
-	// 3. Initialize Infrastructure
-	// storage.New now internally switches between S3/B2 and Local based on cfg.Storage.Provider
+	// 3. Initialize Storage
 	store := storage.New(cfg)
 	db := database.New(cfg)
 
@@ -47,50 +46,49 @@ func main() {
 
 	// Ensure temp directory exists
 	if err := os.MkdirAll(cfg.Server.TempDir, 0755); err != nil {
-		log.Fatalf("❌ Failed to create temp dir: %v", err)
+		log.Fatalf("Failed to create temp dir: %v", err)
 	}
 
 	// 5. Create Worker
-	// This still takes the same Client type, but it's now powered by the selected Provider
 	worker := ingest.New(cfg, store, db)
 
 	// 6. MODE SELECTION
 	if *repairMeta || *repairAudio || *repairCountry {
-		log.Println("🛠️ MAINTENANCE MODE ACTIVE")
-		log.Printf("📦 Storage Provider: %s", cfg.Storage.Provider)
+		log.Println("MAINTENANCE MODE ACTIVE")
+		log.Printf("Storage Provider: %s", cfg.Storage.Provider)
 
 		if *repairAudio {
-			log.Println(">>> Starting Audio Repair (Essentia)...")
+			log.Println("Starting Audio Repair (Essentia)...")
 			worker.RepairAudio()
 		}
 
 		if *repairMeta {
-			log.Println(">>> Starting Metadata Repair...")
+			log.Println("Starting Metadata Repair...")
 			worker.RepairMetadata()
 		}
 
 		if *repairCountry {
 			if *dryRun {
-				log.Println("🧪 MODE: DRY RUN (No DB writes)")
+				log.Println("MODE: DRY RUN (No DB writes)")
 			}
-			log.Printf(">>> Starting Country Repair (%s) for %d targets...", *repairProvider, len(targetArtists))
+			log.Printf("Starting Country Repair (%s) for %d targets...", *repairProvider, len(targetArtists))
 			worker.RepairCountry(*dryRun, targetArtists, *repairProvider)
 		}
 
-		log.Println("✅ All maintenance tasks finished. Exiting.")
+		log.Println("All maintenance tasks finished. Exiting.")
 		return
 	}
 
 	// 7. NORMAL OPERATION
-	log.Printf("📻 Starting Radio Ingestion Worker [Storage: %s]...", cfg.Storage.Provider)
+	log.Printf("Starting Radio Ingestion Worker [Storage: %s]...", cfg.Storage.Provider)
 
-	// Setup Metrics
+	// 8. Setup Metrics
 	ingest.RegisterMetrics()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Printf("📊 Metrics exposed at http://localhost%s/metrics", cfg.Server.MetricsPort)
+		log.Printf("Metrics exposed at http://localhost%s/metrics", cfg.Server.MetricsPort)
 		if err := http.ListenAndServe(cfg.Server.MetricsPort, nil); err != nil {
-			log.Printf("❌ Metrics server failed: %v", err)
+			log.Printf("Metrics server failed: %v", err)
 		}
 	}()
 

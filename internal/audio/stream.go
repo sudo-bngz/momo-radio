@@ -53,9 +53,9 @@ func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startS
 		return
 	}
 
-	log.Printf("✅ FFmpeg started (RunID: %d | Seq: %s)", runID, startNum)
+	log.Printf("FFmpeg started (RunID: %d | Seq: %s)", runID, startNum)
 
 	if err := cmd.Wait(); err != nil {
-		log.Printf("⚠️ FFmpeg exited: %v", err)
+		log.Printf("FFmpeg exited: %v", err)
 	}
 }

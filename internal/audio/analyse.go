@@ -50,11 +50,11 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 	safeWav := absPath + ".safe.wav"
 	jsonPath := absPath + ".json"
 
-	log.Printf("🧪 Pre-transcoding: %s", filepath.Base(path))
+	log.Printf("Pre-transcoding: %s", filepath.Base(path))
 
 	convCmd := exec.Command("ffmpeg", "-y", "-i", absPath, "-ar", "44100", "-ac", "1", "-f", "wav", safeWav)
 	if out, err := convCmd.CombinedOutput(); err != nil {
-		log.Printf("❌ Pre-transcode failed: %v | %s", err, string(out))
+		log.Printf("Pre-transcode failed: %v | %s", err, string(out))
 		return nil, err
 	}
 	defer os.Remove(safeWav)
@@ -64,7 +64,7 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 	cmd := exec.Command("streaming_extractor_music", safeWav, jsonPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("❌ Essentia failed: %v\nOutput: %s", err, string(out))
+		log.Printf("Essentia failed: %v\nOutput: %s", err, string(out))
 		return nil, fmt.Errorf("essentia crash")
 	}
 
@@ -77,7 +77,7 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 
 	var raw EssentiaJSON
 	if err := json.Unmarshal(data, &raw); err != nil {
-		log.Printf("❌ Failed to parse JSON: %v", err)
+		log.Printf("Failed to parse JSON: %v", err)
 		return nil, err
 	}
 

@@ -14,13 +14,17 @@ import (
 
 // RepairMetadata updates existing records that are missing new fields
 func (w *Worker) RepairMetadata() {
-	log.Println("🛠️ Starting Metadata Repair process for Legacy Tracks...")
+	log.Println("Starting Metadata Repair process for Legacy Tracks...")
 
 	var tracks []models.Track
 
-	// 1. OPTIMIZATION: Only fetch tracks that are missing the new 'Country' or 'Style' data.
-	// This prevents re-scanning thousands of tracks that are already perfect.
-	err := w.db.DB.Where("artist_country = '' OR country IS NULL OR style = '' OR style IS NULL").Find(&tracks).Error
+	// 1. Fetch tracks with linked Artist/Album data
+	// Note: We check if the linked Artist or Album is missing metadata
+	err := w.db.DB.Preload("Artist").Preload("Album").
+		Joins("JOIN artists ON artists.id = tracks.artist_id").
+		Where("artists.artist_country = '' OR tracks.genre = '' OR tracks.style = ''").
+		Find(&tracks).Error
+
 	if err != nil {
 		log.Printf("❌ Failed to fetch tracks: %v", err)
 		return
@@ -30,16 +34,14 @@ func (w *Worker) RepairMetadata() {
 	log.Printf("🧐 Found %d legacy tracks needing metadata repair.", count)
 
 	for i, track := range tracks {
-		// Progress Logger
 		if i > 0 && i%10 == 0 {
 			log.Printf("⏳ Repair Progress: %d/%d tracks...", i, count)
 		}
 
-		searchArtist := track.Artist
+		// Use related objects for searching
+		searchArtist := track.Artist.Name
 		searchTitle := track.Title
 
-		// 2. INTELLIGENT SEARCH: If DB has bad data, re-parse the original filename
-		// This helps if the original ingest failed to read tags correctly.
 		if searchArtist == "" || searchArtist == "Unknown Artist" || searchTitle == "" {
 			log.Printf("   🔍 Bad DB metadata for [%s], re-parsing filename...", track.Key)
 			cleanA, cleanT := utils.SanitizeFilename(filepath.Base(track.Key))
@@ -47,54 +49,44 @@ func (w *Worker) RepairMetadata() {
 			searchTitle = cleanT
 		}
 
-		log.Printf("🔄 Processing: [%s] - [%s]", searchArtist, searchTitle)
-
-		// 3. CALL DISCOGS (Uses the new 2-step logic: Search + Details)
 		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, w.cfg.Services.DiscogsToken, w.cfg.Services.ContactEmail)
-
 		if err != nil {
 			log.Printf("   ⚠️ Discogs lookup failed for %s: %v", track.Key, err)
-			// Sleep slightly less on failure, but still respect API limits
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
-		// 4. PREPARE UPDATES
-		updates := models.Track{
-			Genre:          enriched.Genre,
-			Style:          enriched.Style,
-			ReleaseCountry: enriched.Country,
-			ArtistCountry:  enriched.Country,
-			CatalogNumber:  enriched.CatalogNumber,
-			Publisher:      enriched.Publisher,
-			Year:           enriched.Year,
-			Album:          enriched.Album,
-		}
-
-		// Optional: If Discogs gave us a better Artist/Title, take it.
+		// 1. Update Artist
 		if enriched.Artist != "" {
-			updates.Artist = enriched.Artist
-		}
-		if enriched.Title != "" {
-			updates.Title = enriched.Title
-		}
-
-		// 5. SAVE TO DB
-		err = w.db.DB.Model(&track).Updates(updates).Error
-
-		if err != nil {
-			log.Printf("   ❌ DB Update failed for ID %d: %v", track.ID, err)
-		} else {
-			log.Printf("   ✅ Repaired: %s | Style: %s | Country: %s", updates.Title, updates.Style, updates.ArtistCountry)
+			w.db.DB.Model(&track.Artist).Updates(models.Artist{
+				Name:          enriched.Artist,
+				ArtistCountry: enriched.Country,
+			})
 		}
 
-		// 6. RATE LIMIT (Crucial!)
-		// sleep 2 seconds because 'EnrichViaDiscogs' makes 2 HTTP calls.
-		// Discogs limit is 60 req/min. 2 calls * 2s wait = safe zone.
+		// 2. Update Album (if linked)
+		if track.AlbumID != nil && enriched.Album != "" {
+			w.db.DB.Model(track.Album).Updates(models.Album{
+				Title:          enriched.Album,
+				Year:           enriched.Year,
+				Publisher:      enriched.Publisher,
+				CatalogNumber:  enriched.CatalogNumber,
+				ReleaseCountry: enriched.Country,
+			})
+		}
+
+		// 3. Update Track
+		trackUpdates := models.Track{
+			Title: enriched.Title,
+			Genre: enriched.Genre,
+			Style: enriched.Style,
+		}
+		w.db.DB.Model(&track).Updates(trackUpdates)
+
+		log.Printf("   Repaired: %s | Artist: %s", enriched.Title, enriched.Artist)
 		time.Sleep(2 * time.Second)
 	}
-
-	log.Println("✨ Metadata Repair complete! All legacy tracks updated.")
+	log.Println("✨ Metadata Repair complete!")
 }
 
 // RepairAudio finds tracks with missing BPM/Key data and re-runs Essentia analysis.
@@ -103,31 +95,27 @@ func (w *Worker) RepairAudio() {
 
 	var tracks []models.Track
 	if err := w.db.DB.Where("bpm = 0 OR bpm IS NULL").Find(&tracks).Error; err != nil {
-		log.Printf("❌ Failed to fetch tracks: %v", err)
+		log.Printf("Failed to fetch tracks: %v", err)
 		return
 	}
 
 	count := len(tracks)
-	log.Printf("🧐 Found %d tracks missing acoustic data.", count)
+	log.Printf("Found %d tracks missing acoustic data.", count)
 
 	for i, track := range tracks {
 		if i > 0 && i%5 == 0 {
 			log.Printf("⏳ Audio Progress: %d/%d...", i, count)
 		}
 
-		log.Printf("   🎼 Analyzing: [%s]", track.Key)
-
-		// 1. Download file from Production Bucket to Temp
-		// We use your existing 'DownloadFile' method which targets 'bucketProd'
 		tempPath := filepath.Join(w.cfg.Server.TempDir, "repair_audio_"+filepath.Base(track.Key))
 
+		// Assume DownloadFile is part of your storage client
 		obj, err := w.storage.DownloadFile(track.Key)
 		if err != nil {
 			log.Printf("   ❌ Download failed: %v", err)
 			continue
 		}
 
-		// Create the temp file
 		f, err := os.Create(tempPath)
 		if err != nil {
 			log.Printf("   ❌ File creation failed: %v", err)
@@ -135,32 +123,25 @@ func (w *Worker) RepairAudio() {
 			continue
 		}
 
-		// Stream the S3 body to the file
 		_, copyErr := io.Copy(f, obj.Body)
 		obj.Body.Close()
 		f.Close()
 
 		if copyErr != nil {
-			log.Printf("   ❌ File write failed: %v", copyErr)
 			os.Remove(tempPath)
 			continue
 		}
 
-		// 2. Run Essentia
-		// Acquire semaphore to prevent CPU overload
 		w.analysisSem <- struct{}{}
 		analysis, err := audio.AnalyzeDeep(tempPath)
-		<-w.analysisSem // Release semaphore
-
-		// Clean up immediately after analysis
+		<-w.analysisSem
 		os.Remove(tempPath)
 
 		if err != nil {
-			log.Printf("   ⚠️ Essentia failed: %v", err)
 			continue
 		}
 
-		// 3. Save only acoustic fields
+		// Save acoustic fields
 		updates := map[string]interface{}{
 			"bpm":          analysis.BPM,
 			"musical_key":  analysis.MusicalKey,
@@ -171,11 +152,8 @@ func (w *Worker) RepairAudio() {
 			"energy":       analysis.Energy,
 		}
 
-		if err := w.db.DB.Model(&track).Updates(updates).Error; err != nil {
-			log.Printf("   ❌ DB Update failed: %v", err)
-		} else {
-			log.Printf("   ✅ Analyzed: %.2f BPM | Key: %s %s", analysis.BPM, analysis.MusicalKey, analysis.Scale)
-		}
+		w.db.DB.Model(&track).Updates(updates)
+		log.Printf("   ✅ Analyzed: %.2f BPM", analysis.BPM)
 	}
 	log.Println("✨ Audio Repair Complete!")
 }
@@ -185,12 +163,13 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 	log.Printf("🌍 Starting targeted Country Repair (Provider: %s)...", provider)
 
 	var tracks []models.Track
-	query := w.db.DB
+	query := w.db.DB.Preload("Artist").Preload("Album")
 
 	if len(targetArtists) > 0 {
-		query = query.Where("artist IN ?", targetArtists)
+		query = query.Joins("JOIN artists ON artists.id = tracks.artist_id").Where("artists.name IN ?", targetArtists)
 	} else {
-		query = query.Where("release_country = '' OR artist_country = '' OR artist_country IS NULL OR release_country IS NULL")
+		// Only tracks where the linked artist is missing a country
+		query = query.Joins("JOIN artists ON artists.id = tracks.artist_id").Where("artists.artist_country = '' OR artists.artist_country IS NULL")
 	}
 
 	if err := query.Find(&tracks).Error; err != nil {
@@ -201,71 +180,56 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 	artistCache := make(map[string]string)
 
 	for _, track := range tracks {
-		if track.Artist == "" || track.Artist == "Unknown Artist" {
+		artistName := track.Artist.Name
+		if artistName == "" || artistName == "Unknown Artist" {
 			continue
 		}
 
-		var resultStr string // This might be a code "AU" or a name "Melbourne"
+		var resultStr string
 		var found bool
 
-		if resultStr, found = artistCache[track.Artist]; !found {
-			log.Printf("🛰️  %s Search: %s", provider, track.Artist)
+		if resultStr, found = artistCache[artistName]; !found {
+			log.Printf("🛰️  %s Search: %s", provider, artistName)
 
 			var err error
 			if provider == "discogs" {
-				resultStr, err = metadata.GetArtistCountryViaDiscogs(track.Artist, w.cfg.Services.DiscogsToken)
+				resultStr, err = metadata.GetArtistCountryViaDiscogs(artistName, w.cfg.Services.DiscogsToken)
 				time.Sleep(2 * time.Second)
 			} else {
-				resultStr, err = metadata.GetArtistCountryViaMusicBrainz(track.Artist, w.cfg.Services.ContactEmail)
+				resultStr, err = metadata.GetArtistCountryViaMusicBrainz(artistName, w.cfg.Services.ContactEmail)
 				time.Sleep(1 * time.Second)
 			}
 
 			if err != nil {
-				log.Printf("   ⚠️ %s error for %s: %v", provider, track.Artist, err)
-				artistCache[track.Artist] = ""
+				artistCache[artistName] = ""
 				continue
 			}
 
-			// --- THE GEO FALLBACK LOGIC ---
 			if len(resultStr) != 2 {
-				log.Printf("🔍 Result '%s' is not an ISO code. Consulting GeoAPI...", resultStr)
 				geoCode, err := utils.GetCountryFromArea(resultStr)
 				if err == nil {
-					log.Printf("📍 GeoAPI resolved '%s' -> %s", resultStr, geoCode)
 					resultStr = geoCode
 				}
-				// Optional: slow down for Nominatim rate limits (1 req/sec)
 				time.Sleep(1 * time.Second)
 			}
-
-			artistCache[track.Artist] = resultStr
+			artistCache[artistName] = resultStr
 		}
 
 		if resultStr == "" {
 			continue
 		}
 
-		updates := make(map[string]any)
+		if dryRun {
+			log.Printf("🧪 [DRY RUN] Would update Artist %s to %s", artistName, resultStr)
+		} else {
+			// ⚡️ Update the linked Artist record
+			w.db.DB.Model(&track.Artist).Update("ArtistCountry", resultStr)
 
-		if track.ArtistCountry != resultStr {
-			updates["artist_country"] = resultStr
-		}
-
-		if track.ReleaseCountry == "" {
-			updates["release_country"] = resultStr
-		}
-
-		if len(updates) > 0 {
-			if dryRun {
-				log.Printf("🧪 [DRY RUN] Would update %s (%s): %v", track.Artist, track.Title, updates)
-			} else {
-				err := w.db.DB.Model(&track).Updates(updates).Error
-				if err != nil {
-					log.Printf("   ❌ Update failed: %v", err)
-				} else {
-					log.Printf("   ✅ Updated %s: %v", track.Artist, updates)
-				}
+			// ⚡️ If album exists and has no country, update it too
+			if track.AlbumID != nil && track.Album.ReleaseCountry == "" {
+				w.db.DB.Model(track.Album).Update("ReleaseCountry", resultStr)
 			}
+			log.Printf("   ✅ Updated Artist %s to %s", artistName, resultStr)
 		}
 	}
 }

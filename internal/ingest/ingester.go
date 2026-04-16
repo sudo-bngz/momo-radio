@@ -80,30 +80,26 @@ func (w *Worker) processQueue() {
 	}
 
 	for _, key := range keys {
-
 		if strings.HasSuffix(key, "/") {
 			continue
 		}
 
-		// 2. Immediate cleanup of unsupported files (txt, jpg, etc.)
 		if !audio.IsSupportedFormat(key) {
 			log.Printf("🗑️ Removing junk file: %s", key)
 			_ = w.storage.DeleteIngestFile(key)
 			continue
 		}
 
-		// 3. Process the audio
 		log.Printf("Processing: %s", key)
 		if err := w.processFile(key); err != nil {
-			log.Printf("❌ FAILED %s: %v", key, err)
+			log.Printf("FAILED %s: %v", key, err)
 			jobs.WithLabelValues("failure").Inc()
 		} else {
-			log.Printf("✅ ORGANIZED %s", key)
+			log.Printf("ORGANIZED %s", key)
 			jobs.WithLabelValues("success").Inc()
 		}
 	}
 
-	// 4. Clean up empty directories
 	w.cleanupFolders(keys)
 }
 
@@ -135,11 +131,11 @@ func (w *Worker) processFile(key string) error {
 		return w.storage.DeleteIngestFile(key)
 	}
 
-	// 2. Get Local Metadata (Internal Tags)
+	// 2. Get Local Metadata
 	meta, _ := metadata.GetLocal(rawPath)
 
-	// 3. DEEP ACOUSTIC ANALYSIS (Essentia)
-	log.Printf("   🎼 Performing Deep Acoustic Analysis on original %s...", ext)
+	// 3. DEEP ACOUSTIC ANALYSIS
+	log.Printf("   🎼 Performing Deep Acoustic Analysis...")
 	w.analysisSem <- struct{}{}
 	analysis, err := audio.AnalyzeDeep(rawPath)
 	<-w.analysisSem
@@ -151,17 +147,13 @@ func (w *Worker) processFile(key string) error {
 		meta.Danceability = analysis.Danceability
 		meta.Loudness = analysis.Loudness
 		meta.Duration = analysis.Duration
-		log.Printf("   📊 Result: %.2f BPM | Key: %s %s", analysis.BPM, analysis.MusicalKey, analysis.Scale)
 	}
 
-	// Determine our "Best Knowledge" for searching
 	searchArtist := meta.Artist
 	searchTitle := meta.Title
-
 	var artistOrigin string
 
 	if searchArtist == "" || searchTitle == "" {
-		log.Printf("   🔍 ID3 tags missing. Falling back to filename parsing...")
 		cleanA, cleanT := utils.SanitizeFilename(baseName)
 		if searchArtist == "" {
 			searchArtist = cleanA
@@ -171,19 +163,15 @@ func (w *Worker) processFile(key string) error {
 		}
 	}
 
-	// 4. Querying Discogs (Enhanced Strategy)
+	// 4. Querying Discogs / iTunes
 	if w.cfg.Services.DiscogsToken != "" {
-		log.Printf("   💿 Querying Discogs: [%s] - [%s]", searchArtist, searchTitle)
-
 		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, w.cfg.Services.DiscogsToken, w.cfg.Services.ContactEmail)
-
 		if err == nil {
 			meta.Genre = enriched.Genre
 			meta.Style = enriched.Style
 			meta.Country = enriched.Country
 			meta.CatalogNumber = enriched.CatalogNumber
 			meta.Publisher = enriched.Publisher
-
 			if meta.Year == "" {
 				meta.Year = enriched.Year
 			}
@@ -197,24 +185,13 @@ func (w *Worker) processFile(key string) error {
 				meta.Title = enriched.Title
 			}
 
-			log.Printf("   ✨ Enriched: %s [%s] (%s) - Cat: %s", meta.Genre, meta.Style, meta.Country, meta.CatalogNumber)
-
-			// MANDATORY RATE LIMIT: Sleep 2s because we made 2 requests
 			time.Sleep(2 * time.Second)
-
-			log.Printf("   👤 Fetching Artist Origin for: %s", meta.Artist)
 			mbCountry, errAc := metadata.GetArtistCountryViaMusicBrainz(meta.Artist, w.cfg.Services.ContactEmail)
 			if errAc == nil && mbCountry != "" {
 				artistOrigin = utils.ResolveCountry(mbCountry)
-				log.Printf("   ✅ Artist Origin: %s", artistOrigin)
-			} else {
-				log.Printf("   ⚠️ Artist Origin not found via MusicBrainz: %v", errAc)
 			}
-		} else {
-			log.Printf("   ⚠️ Discogs failed: %v", err)
 		}
 	} else {
-		// ITUNES FALLBACK
 		itunesMeta, err := metadata.EnrichViaITunes(searchArtist + " " + searchTitle)
 		if err == nil {
 			if meta.Artist == "" {
@@ -232,33 +209,26 @@ func (w *Worker) processFile(key string) error {
 			if meta.Year == "" {
 				meta.Year = itunesMeta.Year
 			}
-			log.Printf("   ✨ iTunes Found: %s - %s", meta.Artist, meta.Title)
 		}
 	}
 
 	meta.Year = utils.SanitizeYear(meta.Year)
-
-	// Fallback cleanup
 	if meta.Artist == "" {
 		meta.Artist = "Unknown Artist"
 	}
 	if meta.Title == "" {
 		meta.Title = nameWithoutExt
 	}
-
 	if artistOrigin == "" {
 		artistOrigin = "Unknown"
 	}
 
 	// 5. Normalize & Upload
-	log.Printf("   -> Normalizing audio...")
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
-		log.Printf("❌ Normalization failed: %v", err)
 		return err
 	}
 
 	destinationKey := BuildPath(meta, key)
-	log.Printf("   -> Uploading to: %s", destinationKey)
 	fClean, err := os.Open(cleanPath)
 	if err != nil {
 		return err
@@ -269,26 +239,45 @@ func (w *Worker) processFile(key string) error {
 		return err
 	}
 
-	// 6. DB Persistence
+	// A. Handle Artist
+	var artist models.Artist
+	w.db.DB.Where(models.Artist{Name: meta.Artist}).FirstOrCreate(&artist)
+	if artist.ArtistCountry == "" && artistOrigin != "Unknown" {
+		w.db.DB.Model(&artist).Update("ArtistCountry", artistOrigin)
+	}
+
+	// B. Handle Album
+	var albumID *uint
+	if meta.Album != "" {
+		var album models.Album
+		w.db.DB.Where(models.Album{
+			Title:    meta.Album,
+			ArtistID: artist.ID,
+		}).Assign(models.Album{
+			Year:           meta.Year,
+			Publisher:      meta.Publisher,
+			CatalogNumber:  meta.CatalogNumber,
+			ReleaseCountry: utils.ResolveCountry(meta.Country),
+		}).FirstOrCreate(&album)
+		albumID = &album.ID
+	}
+
+	// C. Handle Track
 	track := models.Track{
-		Key:            destinationKey,
-		Title:          meta.Title,
-		Artist:         meta.Artist,
-		Album:          meta.Album,
-		Genre:          meta.Genre,
-		Style:          meta.Style,
-		Year:           meta.Year,
-		Publisher:      meta.Publisher,
-		CatalogNumber:  meta.CatalogNumber,
-		ReleaseCountry: utils.ResolveCountry(meta.Country),
-		ArtistCountry:  artistOrigin,
-		Format:         "mp3",
-		BPM:            meta.BPM,
-		Duration:       meta.Duration,
-		MusicalKey:     meta.MusicalKey,
-		Scale:          meta.Scale,
-		Danceability:   meta.Danceability,
-		Loudness:       meta.Loudness,
+		Key:          destinationKey,
+		Title:        meta.Title,
+		ArtistID:     artist.ID,
+		AlbumID:      albumID,
+		Genre:        meta.Genre,
+		Style:        meta.Style,
+		Format:       "mp3",
+		BPM:          meta.BPM,
+		Duration:     meta.Duration,
+		MusicalKey:   meta.MusicalKey,
+		Scale:        meta.Scale,
+		Danceability: meta.Danceability,
+		Loudness:     meta.Loudness,
+		FileSize:     int(obj.ContentLength),
 	}
 
 	w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track)

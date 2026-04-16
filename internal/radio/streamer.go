@@ -226,7 +226,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 			go e.cache.Cleanup([]string{selectedTrack.Key})
 
 			// 3. Metadata & Stats
-			log.Printf("▶️  NOW PLAYING: %s - %s", selectedTrack.Artist, selectedTrack.Title)
+			log.Printf("NOW PLAYING: %s - %s", selectedTrack.Artist, selectedTrack.Title)
 			tracksPlayed.Inc()
 
 			// Update the now_playing.json for the frontend using the extracted Show Name
@@ -264,19 +264,34 @@ func (e *Engine) pickNextFromPlaylist(playlistID uint) (*models.Track, error) {
 }
 
 func (e *Engine) updateNowPlaying(t *models.Track, showName string) {
+	albumName := ""
+	if t.Album.Title != "" {
+		albumName = t.Album.Title
+	}
+
 	trackData := CurrentTrack{
 		Title:     t.Title,
-		Artist:    t.Artist,
-		Album:     t.Album,
+		Artist:    t.Artist.Name,
+		Album:     albumName,
 		Show:      showName,
 		StartedAt: time.Now().Unix(),
 	}
 
-	data, _ := json.Marshal(trackData)
-	e.storage.UploadStreamFile("now_playing.json",
+	data, err := json.Marshal(trackData)
+	if err != nil {
+		log.Printf("Error marshaling now_playing: %v", err)
+		return
+	}
+
+	// Upload to storage so the frontend can poll it
+	err = e.storage.UploadStreamFile("now_playing.json",
 		bytes.NewReader(data),
 		"application/json",
 		"max-age=0, no-cache")
+
+	if err != nil {
+		log.Printf("Error uploading now_playing.json: %v", err)
+	}
 }
 
 func (e *Engine) recordTrackPlay(t *models.Track) {

@@ -35,9 +35,17 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     python3 waf install
 
 # --- Stage 3: Final Runtime ---
-FROM debian:bullseye-slim
+# --- Stage 3: Final Runtime ---
+FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg ca-certificates libfftw3-3 libtag1v5 libsamplerate0 libyaml-0-2 libchromaprint1 \
+    ffmpeg \
+    ca-certificates \
+    libfftw3-single3 \
+    libfftw3-double3 \
+    libtag1v5 \
+    libsamplerate0 \
+    libyaml-0-2 \
+    libchromaprint1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
