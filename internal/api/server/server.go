@@ -62,6 +62,8 @@ func (s *Server) setupRoutes() {
 	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage)
 	playlistHandler := handlers.NewPlaylistHandler(s.db.DB)
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
+	artistHandler := handlers.NewArtistHandler(s.db.DB)
+	albumHandler := handlers.NewAlbumHandler(s.db.DB)
 
 	// Health Check
 	s.router.GET("/health", func(c *gin.Context) {
@@ -91,6 +93,12 @@ func (s *Server) setupRoutes() {
 			protected.GET("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.GetTrack)
 			protected.GET("/tracks/:id/stream", middleware.RequireRole("dj", "manager"), trackHandler.StreamTrack)
 			protected.PUT("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.UpdateTrack)
+
+			// --- ARTISTS
+			protected.GET("/artists", middleware.RequireRole("dj", "manager"), artistHandler.GetArtists)
+
+			// --- ALBUMS
+			protected.GET("/albums", middleware.RequireRole("dj", "manager"), albumHandler.GetAlbums)
 
 			// --- DJ & MANAGER (Curators) ---
 			protected.POST("/upload/analyze", middleware.RequireRole("dj", "manager"), trackHandler.PreAnalyzeFile)

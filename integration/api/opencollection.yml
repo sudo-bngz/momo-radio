@@ -15,6 +15,9 @@ config:
       bypassProxy: ""
 
 request:
+  auth:
+    type: bearer
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzY2MTY1MzQsInJvbGUiOiJhZG1pbiIsInN1YiI6MX0.5b4awF6xADpwLiA4mpuu3YN5nCxW9VvbW3QDEL5ztXo
   variables:
     - name: base-url
       value: http://localhost:8081

@@ -43,45 +43,37 @@ type LibraryTrack struct {
 
 // GetTracks returns a paginated, lightweight list of tracks
 func (h *TrackHandler) GetTracks(c *gin.Context) {
-	// 1. Parse Query Parameters
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	search := c.Query("search")
 	sortBy := c.DefaultQuery("sort", "newest")
 
 	if limit > 200 {
-		limit = 200 // Hard cap to protect the server
+		limit = 200
 	}
 
-	// 2. Build the Query
-	query := h.db.Model(&models.Track{})
+	query := h.db.Model(&models.Track{}).Joins("JOIN artists ON artists.id = tracks.artist_id")
 
-	// 3. Apply Search
 	if search != "" {
 		searchTerm := "%" + search + "%"
-		// Ensure you have a DB index on Artist and Title!
-		query = query.Where("artist ILIKE ? OR title ILIKE ?", searchTerm, searchTerm)
+		// ⚡️ Search across tracks.title and artists.name
+		query = query.Where("artists.name ILIKE ? OR tracks.title ILIKE ?", searchTerm, searchTerm)
 	}
 
-	// 4. Get Total Count (Required for Infinite Scroll math in React)
 	var total int64
 	query.Count(&total)
 
-	// 5. Apply Sorting
 	switch sortBy {
 	case "alphabetical":
-		query = query.Order("title ASC")
+		query = query.Order("tracks.title ASC")
 	case "duration":
-		query = query.Order("duration DESC")
-	default: // "newest"
-		// Because ID is sequential, sorting by ID DESC is much faster
-		// than sorting by created_at DESC, and yields the same result.
-		query = query.Order("id DESC")
+		query = query.Order("tracks.duration DESC")
+	default:
+		query = query.Order("tracks.id DESC")
 	}
 
-	// 6. Fetch ONLY the required columns into our lightweight struct
 	var tracks []LibraryTrack
-	result := query.Select("id, title, artist, duration").
+	result := query.Select("tracks.id, tracks.title, artists.name as artist, tracks.duration").
 		Limit(limit).
 		Offset(offset).
 		Find(&tracks)
@@ -92,14 +84,9 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		return
 	}
 
-	// 7. Return Response
 	c.JSON(http.StatusOK, gin.H{
 		"data": tracks,
-		"meta": gin.H{
-			"total":  total,
-			"limit":  limit,
-			"offset": offset,
-		},
+		"meta": gin.H{"total": total, "limit": limit, "offset": offset},
 	})
 }
 
@@ -108,7 +95,7 @@ func (h *TrackHandler) GetTrack(c *gin.Context) {
 	id := c.Param("id")
 
 	var track models.Track
-	if err := h.db.First(&track, id).Error; err != nil {
+	if err := h.db.Preload("Artist").Preload("Album").First(&track, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
 			return

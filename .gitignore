@@ -1,4 +1,6 @@
 config.yaml
+config.yaml.prod
+config.yaml.dev
 hls_output
 temp_processing
 *patch

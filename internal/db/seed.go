@@ -16,11 +16,11 @@ func SeedAdminUser(db *gorm.DB) error {
 	// 1. Check if an admin already exists
 	db.Model(&models.Users{}).Where("role = ?", "admin").Count(&count)
 	if count > 0 {
-		log.Println("✅ Admin user already exists. Skipping RBAC seed.")
+		log.Println("Admin user already exists. Skipping RBAC seed.")
 		return nil
 	}
 
-	log.Println("🌱 Seeding default Admin user...")
+	log.Println("Seeding default Admin user...")
 
 	// 2. Define default credentials
 	// IMPORTANT: Change this password immediately via the UI once built!
@@ -30,7 +30,7 @@ func SeedAdminUser(db *gorm.DB) error {
 	// 3. Hash the password securely
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("❌ Failed to hash default admin password: %v", err)
+		log.Printf("Failed to hash default admin password: %v", err)
 		return err
 	}
 
@@ -43,16 +43,16 @@ func SeedAdminUser(db *gorm.DB) error {
 
 	// 5. Insert into the database
 	if err := db.Create(&adminUser).Error; err != nil {
-		log.Printf("❌ Failed to create admin user: %v", err)
+		log.Printf("Failed to create admin user: %v", err)
 		return err
 	}
 
 	// 6. Print giant warning to the console
 	log.Println("=====================================================")
-	log.Printf("🚨 ADMIN CREATED")
+	log.Printf("ADMIN CREATED")
 	log.Printf("   Username: %s", defaultUsername)
 	log.Printf("   Password: %s", defaultPassword)
-	log.Println("⚠️  PLEASE CHANGE THIS PASSWORD IMMEDIATELY!")
+	log.Println("/!\\ PLEASE CHANGE THIS PASSWORD IMMEDIATELY!")
 	log.Println("=====================================================")
 
 	return nil
