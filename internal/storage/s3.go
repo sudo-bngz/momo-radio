@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -77,4 +78,17 @@ func (s *S3Provider) Exists(bucket, key string) (bool, error) {
 		return false, nil // Simplify: in real world, check if error is 404
 	}
 	return true, nil
+}
+
+func (s *S3Provider) GetPublicURL(bucket string, region string, key string) string {
+	if key == "" {
+		return ""
+	}
+	// Standard B2 S3-Compatible URL format:
+	// https://<bucket-name>.s3.<region>.backblazeb2.com/<key>
+	return fmt.Sprintf("https://%s.s3.%s.backblazeb2.com/%s",
+		bucket,
+		region,
+		key,
+	)
 }

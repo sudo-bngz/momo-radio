@@ -1,16 +1,13 @@
 import React, { useState } from 'react';
 import { 
-  Box, VStack, HStack, Text, Input, Spinner, Table, Heading, Button 
+  Box, VStack, HStack, Text, Input, Spinner, Table, Heading, Button, Badge, Select, Icon, createListCollection 
 } from '@chakra-ui/react';
-import { Search, Clock, Play, Pause, Plus } from 'lucide-react';
+import { Search, Play, Pause, Plus, Music, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
 import { TrackDetailDrawer } from './TrackDetailDrawer'; 
 import type { SortOption } from '../hook/useLibrary';
-import { Select, Icon } from '@chakra-ui/react';
-import { ChevronDown } from 'lucide-react';
-import { createListCollection } from "@chakra-ui/react"
 
 const sortOptions = createListCollection({
   items: [
@@ -18,7 +15,7 @@ const sortOptions = createListCollection({
     { label: "A-Z", value: "alphabetical" },
     { label: "Duration", value: "duration" },
   ],
-})
+});
 
 export const LibraryView: React.FC = () => {
   const navigate = useNavigate();
@@ -39,7 +36,6 @@ export const LibraryView: React.FC = () => {
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
-    // If the user scrolls within 100px of the bottom, fetch more!
     if (scrollHeight - scrollTop <= clientHeight + 100) {
       if (hasMore && !isFetchingMore && !isLoading) {
         loadMore();
@@ -50,7 +46,6 @@ export const LibraryView: React.FC = () => {
   return (
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
       
-      {/* 1. Header Section */}
       <VStack align="start" gap={1}>
         <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
           Music Library
@@ -60,7 +55,6 @@ export const LibraryView: React.FC = () => {
         </Text>
       </VStack>
 
-      {/* 2. Controls */}
       <HStack justify="space-between" w="100%" gap={6}>
         <HStack gap={4} flex="1">
           <Button bg="gray.900" color="white" borderRadius="full" w="48px" h="48px" p={0} _hover={{ bg: "black" }} onClick={() => navigate('/ingest')}>
@@ -79,7 +73,7 @@ export const LibraryView: React.FC = () => {
           collection={sortOptions} 
           value={[sortBy]} 
           onValueChange={(details) => setSortBy(details.value[0] as SortOption)}
-          width="200px" // Slightly wider to fit "Newest First"
+          width="200px" 
         >
           <Select.Trigger 
             height="48px"
@@ -91,7 +85,6 @@ export const LibraryView: React.FC = () => {
             px={4}
             _hover={{ borderColor: "blue.500" }}
           >
-            {/* ⚡️ Explicitly set the color here too */}
             <Select.ValueText placeholder="Sort by" color="gray.900" fontWeight="600" />
             <Icon as={ChevronDown} color="gray.500" />
           </Select.Trigger>
@@ -112,7 +105,6 @@ export const LibraryView: React.FC = () => {
                   _hover={{ bg: "blue.50" }}
                   cursor="pointer"
                 >
-                  {/* ⚡️ Explicitly set item text color */}
                   <Select.ItemText color="gray.800" fontSize="sm" fontWeight="500">
                     {item.label}
                   </Select.ItemText>
@@ -123,7 +115,6 @@ export const LibraryView: React.FC = () => {
         </Select.Root>
       </HStack>
 
-      {/* 3. Table Area with onScroll event */}
       <Box 
         flex="1" 
         overflowY="auto" 
@@ -139,14 +130,18 @@ export const LibraryView: React.FC = () => {
           <>
             <Table.Root css={{
               "& th": { borderBottom: "1px solid var(--chakra-colors-gray-200)", py: 4, fontWeight: "500", color: "var(--chakra-colors-gray-600)" },
-              "& td": { py: 4, borderBottom: "1px solid var(--chakra-colors-gray-50)", color: "var(--chakra-colors-gray-800)" }
+              "& td": { py: 3, borderBottom: "1px solid var(--chakra-colors-gray-50)", color: "var(--chakra-colors-gray-800)" }
             }}>
               <Table.Header position="sticky" top={0} bg="white" zIndex={1}>
                 <Table.Row>
-                  <Table.ColumnHeader w="60px"></Table.ColumnHeader>
-                  <Table.ColumnHeader>Title</Table.ColumnHeader>
+                  <Table.ColumnHeader w="50px"></Table.ColumnHeader>
+                  <Table.ColumnHeader w="64px">Artwork</Table.ColumnHeader>
+                  <Table.ColumnHeader>Track Title</Table.ColumnHeader>
                   <Table.ColumnHeader>Artist</Table.ColumnHeader>
-                  <Table.ColumnHeader textAlign="right"><Icon as={Clock} boxSize={4} /></Table.ColumnHeader>
+                  <Table.ColumnHeader>Album</Table.ColumnHeader>
+                  <Table.ColumnHeader>Genre</Table.ColumnHeader>
+                  <Table.ColumnHeader>BPM</Table.ColumnHeader>
+                  <Table.ColumnHeader textAlign="right">Time</Table.ColumnHeader>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -155,34 +150,93 @@ export const LibraryView: React.FC = () => {
                   const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
                   return (
                     <Table.Row key={track.id} className="group" _hover={{ bg: "gray.50" }} bg={isThisTrackPlaying ? "blue.50" : "transparent"}>
+                      
                       <Table.Cell px={0}>
                         <Box w="36px" h="36px" bg={isThisTrackPlaying ? "blue.500" : "gray.100"} borderRadius="md" display="flex" alignItems="center" justifyContent="center" cursor="pointer" color={isThisTrackPlaying ? "white" : "gray.400"} onClick={() => isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks)}>
                           {isThisTrackActiveAndPlaying ? <Icon as={Pause} boxSize={5} fill="currentColor" /> : <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />}
                         </Box>
                       </Table.Cell>
-                      <Table.Cell fontWeight={isThisTrackPlaying ? "bold" : "500"} color={isThisTrackPlaying ? "blue.600" : "gray.900"} cursor="pointer" onClick={() => setSelectedTrack(track)}>{track.title}</Table.Cell>
+
+                      <Table.Cell px={2}>
+                        <Box w="36px" h="36px" borderRadius="md" overflow="hidden" bg="gray.50" border="1px solid" borderColor="gray.200" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                          {track.cover_url ? (
+                            <img src={track.cover_url} alt={track.title} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <Icon as={Music} color="gray.300" boxSize={4} />
+                          )}
+                        </Box>
+                      </Table.Cell>
+
+                      <Table.Cell fontWeight={isThisTrackPlaying ? "bold" : "500"} color={isThisTrackPlaying ? "blue.600" : "gray.900"} cursor="pointer" onClick={() => setSelectedTrack(track)}>
+                        {track.title}
+                      </Table.Cell>
                       
-                      {/* ⚡️ ONLY CHANGED THIS CELL ⚡️ */}
-                      <Table.Cell 
-                        color={isThisTrackPlaying ? "blue.500" : "gray.600"}
-                        cursor="pointer"
-                        _hover={{ textDecoration: "underline", color: "blue.600" }}
-                        onClick={(e) => {
-                          e.stopPropagation(); // Prevents row click events from firing if you add them later
-                          navigate(`/artists/${encodeURIComponent(track.artist)}`);
-                        }}
-                      >
+                      <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"} cursor="pointer" _hover={{ textDecoration: "underline", color: "blue.600" }} onClick={(e) => { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(track.artist)}`); }}>
                         {track.artist}
                       </Table.Cell>
 
-                      <Table.Cell textAlign="right" color="gray.500">{formatDuration(track.duration)}</Table.Cell>
+                      <Table.Cell color="gray.500">
+                        {track.album || '-'}
+                      </Table.Cell>
+                      <Table.Cell>
+                        <HStack gap={1} flexWrap="wrap">
+                          {track.style ? (
+                            track.style.split(',').map((tag, index) => {
+                              const cleanTag = tag.trim();
+                              return (
+                                <Badge 
+                                  key={index} 
+                                  size="sm" 
+                                  colorPalette={getColorForGenre(cleanTag)} 
+                                  variant="subtle" 
+                                  borderRadius="md" 
+                                  px={2}
+                                  cursor="pointer"
+                                  transition="all 0.2s" 
+                                  _hover={{ opacity: 0.8, transform: "scale(1.05)" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation(); 
+                                    setSearchQuery(cleanTag); 
+                                  }}
+                                >
+                                  {cleanTag}
+                                </Badge>
+                              );
+                            })
+                          ) : (
+                            <Text color="gray.400">-</Text>
+                          )}
+                        </HStack>
+                      </Table.Cell>
+                      <Table.Cell>
+                        {track.bpm ? (
+                          <Badge 
+                            size="sm" 
+                            bg="gray.100" 
+                            color="gray.800" 
+                            border="1px solid"
+                            borderColor="gray.200"
+                            borderRadius="md" 
+                            px={2}
+                            fontWeight="600"
+                          >
+                            {Math.round(track.bpm)}
+                          </Badge>
+                        ) : (
+                          <Text color="gray.400">-</Text>
+                        )}
+                      </Table.Cell>
+
+                      <Table.Cell textAlign="right" color="gray.500">
+                        {formatDuration(track.duration)}
+                      </Table.Cell>
+                      
                     </Table.Row>
                   );
                 })}
               </Table.Body>
             </Table.Root>
 
-            {/* ⚡️ Bottom Spinner for loading more */}
             {isFetchingMore && (
               <Box py={6} display="flex" justifyContent="center">
                 <Spinner size="md" color="blue.500" />
@@ -200,4 +254,14 @@ export const LibraryView: React.FC = () => {
       />
     </VStack>
   );
+};
+
+// Helper function to generate consistent colors based on genre string
+const getColorForGenre = (genre: string) => {
+  const colors = ['red', 'orange', 'green', 'teal', 'blue', 'cyan', 'purple', 'pink'];
+  let hash = 0;
+  for (let i = 0; i < genre.length; i++) {
+    hash = genre.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
 };

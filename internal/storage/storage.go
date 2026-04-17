@@ -120,3 +120,16 @@ func (c *Client) DeleteIngestFile(key string) error {
 func (c *Client) IsPrefixEmpty(prefix string) (bool, error) {
 	return c.backend.Exists(c.bucketIngest, prefix)
 }
+
+func (c *Client) GetPublicURL(key string) string {
+	if key == "" {
+		return ""
+	}
+
+	// This check now compiles because there's no name collision
+	if linker, ok := c.backend.(LinkableProvider); ok {
+		return linker.GetPublicURL(c.bucketProd, key)
+	}
+
+	return ""
+}

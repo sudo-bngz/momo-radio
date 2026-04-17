@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"momo-radio/internal/config"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
@@ -23,13 +24,15 @@ import (
 type TrackHandler struct {
 	db      *gorm.DB
 	storage *storage.Client
+	config  *config.Config
 }
 
 // NewTrackHandler creates a new TrackHandler instance with its required dependencies
-func NewTrackHandler(db *gorm.DB, st *storage.Client) *TrackHandler {
+func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config) *TrackHandler {
 	return &TrackHandler{
 		db:      db,
 		storage: st,
+		config:  c,
 	}
 }
 
@@ -40,6 +43,9 @@ type LibraryTrack struct {
 	Artist   string  `json:"artist"`
 	Album    string  `json:"album"`
 	Duration float64 `json:"duration"`
+	CoverURL string  `json:"cover_url"`
+	BPM      float64 `json:"bpm"`
+	Style    string  `json:"style"`
 }
 
 // GetTracks returns a paginated, lightweight list of tracks using DTO mapping
@@ -91,10 +97,19 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 	}
 
 	var libraryTracks []LibraryTrack
+
 	for _, t := range tracks {
 		artistName := "Unknown Artist"
 		if t.Artist.Name != "" {
 			artistName = t.Artist.Name
+		}
+
+		// 1. Declare the variable outside with a default value
+		var coverURL string
+
+		// 2. Assign to it (use = instead of :=)
+		if t.Album.ID != 0 && t.Album.CoverKey != "" {
+			coverURL = h.storage.GetPublicURL(t.Album.CoverKey)
 		}
 
 		libraryTracks = append(libraryTracks, LibraryTrack{
@@ -103,6 +118,9 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 			Artist:   artistName,
 			Album:    t.Album.Title,
 			Duration: t.Duration,
+			CoverURL: coverURL,
+			BPM:      t.BPM,
+			Style:    t.Style,
 		})
 	}
 

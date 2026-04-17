@@ -59,7 +59,7 @@ func (s *Server) setupRoutes() {
 	// 1. Initialize Modular Handlers
 	authHandler := handlers.NewAuthHandler(s.db.DB)
 	statsHandler := handlers.NewStatsHandler(s.db.DB)
-	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage)
+	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg)
 	playlistHandler := handlers.NewPlaylistHandler(s.db.DB)
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
 	artistHandler := handlers.NewArtistHandler(s.db.DB)
@@ -83,7 +83,7 @@ func (s *Server) setupRoutes() {
 		// PROTECTED ROUTES (JWT Token Required)
 		// ==========================================
 		protected := v1.Group("/")
-		protected.Use(middleware.RequireAuth()) // Checks for valid JWT
+		protected.Use(middleware.RequireAuth())
 		{
 			// --- ADMIN ONLY ---
 			protected.POST("/auth/register", middleware.RequireRole("admin"), authHandler.Register)

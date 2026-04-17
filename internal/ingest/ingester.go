@@ -1,6 +1,8 @@
 package ingest
 
 import (
+	"bytes" // ⚡️ Added for image processing
+	"fmt"   // ⚡️ Added for cover key generation
 	"io"
 	"log"
 	"os"
@@ -152,6 +154,7 @@ func (w *Worker) processFile(key string) error {
 	searchArtist := meta.Artist
 	searchTitle := meta.Title
 	var artistOrigin string
+	var discogsCoverURL string // ⚡️ Temp storage for Discogs image link
 
 	if searchArtist == "" || searchTitle == "" {
 		cleanA, cleanT := utils.SanitizeFilename(baseName)
@@ -172,6 +175,7 @@ func (w *Worker) processFile(key string) error {
 			meta.Country = enriched.Country
 			meta.CatalogNumber = enriched.CatalogNumber
 			meta.Publisher = enriched.Publisher
+			discogsCoverURL = enriched.CoverURL // ⚡️ Store the remote URL
 			if meta.Year == "" {
 				meta.Year = enriched.Year
 			}
@@ -223,7 +227,7 @@ func (w *Worker) processFile(key string) error {
 		artistOrigin = "Unknown"
 	}
 
-	// 5. Normalize & Upload
+	// 5. Normalize & Upload Audio
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
 		return err
 	}
@@ -247,9 +251,9 @@ func (w *Worker) processFile(key string) error {
 	}
 
 	// B. Handle Album
+	var album models.Album
 	var albumID *uint
 	if meta.Album != "" {
-		var album models.Album
 		w.db.DB.Where(models.Album{
 			Title:    meta.Album,
 			ArtistID: artist.ID,
@@ -260,6 +264,45 @@ func (w *Worker) processFile(key string) error {
 			ReleaseCountry: utils.ResolveCountry(meta.Country),
 		}).FirstOrCreate(&album)
 		albumID = &album.ID
+	}
+
+	// ⚡️ 6. COVER ART PIPELINE ⚡️
+	// Only run if an album exists and it doesn't already have a cover
+	if albumID != nil && album.CoverKey == "" {
+		var rawImage []byte
+		var errImg error
+
+		// Step 1: Check Local Embedded Art
+		if len(meta.AttachedPicture) > 0 {
+			log.Printf("	Found embedded cover art in %s", baseName)
+			rawImage = meta.AttachedPicture
+		} else if discogsCoverURL != "" {
+			// Step 2: Fallback to Discogs
+			log.Printf("	Fetching cover from Discogs...")
+			rawImage, errImg = metadata.DownloadImage(discogsCoverURL, w.cfg.Services.DiscogsToken)
+		}
+
+		if len(rawImage) > 0 && errImg == nil {
+			// Step 3: Resize & Standardize (Pure Go logic)
+			processedImg, errProc := metadata.ProcessCover(rawImage)
+			if errProc == nil {
+				coverKey := fmt.Sprintf("covers/album_%d.jpg", album.ID)
+
+				// Step 4: Upload to Public Assets Bucket
+				errUpload := w.storage.UploadAssetFile(
+					coverKey,
+					bytes.NewReader(processedImg),
+					"image/jpeg",
+					"public, max-age=31536000",
+				)
+
+				if errUpload == nil {
+					// Step 5: Update Database
+					w.db.DB.Model(&album).Update("CoverKey", coverKey)
+					log.Printf("	Cover art saved: %s", coverKey)
+				}
+			}
+		}
 	}
 
 	// C. Handle Track

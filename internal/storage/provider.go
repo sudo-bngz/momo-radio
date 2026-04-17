@@ -11,7 +11,12 @@ type StorageProvider interface {
 	Get(bucket, key string) (*FileObject, error)
 	Put(bucket, key string, body io.ReadSeeker, contentType, cacheControl string) error
 	Delete(bucket, key string) error
-	Exists(bucket, prefix string) (bool, error) // Added this for IsPrefixEmpty
+	Exists(bucket, prefix string) (bool, error)
+}
+
+type LinkableProvider interface {
+	// Make sure the arguments here match what you want to use
+	GetPublicURL(bucket, key string) string
 }
 
 // Object is the provider-agnostic representation of a file.

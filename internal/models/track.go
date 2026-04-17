@@ -29,6 +29,8 @@ type Album struct {
 	Publisher      string `json:"publisher"`
 	CatalogNumber  string `gorm:"index" json:"catalog_number"`
 	ReleaseCountry string `gorm:"size:100" json:"release_country"`
+	CoverKey       string `gorm:"size:255" json:"cover_key"`
+	CoverURL       string `gorm:"-" json:"cover_url"`
 
 	// Relationships
 	ArtistID uint    `gorm:"index;not null" json:"artist_id"`

@@ -52,6 +52,7 @@ export interface Track {
   publisher?: string;
   release_country?: string;
   artist_country?: string;
+  cover_url?: string;
 
   // --- Technical Details ---
   duration: number; // in seconds

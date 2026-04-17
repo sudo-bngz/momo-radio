@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"image"
+	"image/jpeg"
 	"os/exec"
 	"strings"
 
 	"github.com/bogem/id3v2"
 	"github.com/go-flac/go-flac"
+	"golang.org/x/image/draw"
 )
 
 // GetLocal reads tags from a file using ffprobe.
@@ -137,4 +140,26 @@ func StampFLAC(path string, tags map[string]string) error {
 	f.Meta = newMeta
 
 	return f.Save(path) //
+}
+
+func ProcessCover(input []byte) ([]byte, error) {
+	// 1. Decode the original image (supports JPEG/PNG/WebP)
+	src, _, err := image.Decode(bytes.NewReader(input))
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Create a blank 500x500 destination image
+	dst := image.NewRGBA(image.Rect(0, 0, 500, 500))
+
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
+
+	// 4. Encode to JPEG (Standard library)
+	buf := new(bytes.Buffer)
+	err = jpeg.Encode(buf, dst, &jpeg.Options{Quality: 80})
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }

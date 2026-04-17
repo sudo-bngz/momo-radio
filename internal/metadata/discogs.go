@@ -3,6 +3,7 @@ package metadata
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,12 +18,11 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	// --- STEP 1: SEARCH ---
-	// Find the specific Release ID
 	searchURL := "https://api.discogs.com/database/search"
 	u, _ := url.Parse(searchURL)
 	q := u.Query()
 	q.Set("q", fmt.Sprintf("%s %s", artist, title))
-	q.Set("type", "release") // Target specific releases, not masters
+	q.Set("type", "release")
 	q.Set("token", token)
 	u.RawQuery = q.Encode()
 
@@ -35,30 +35,21 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return Track{}, fmt.Errorf("discogs search status %d", resp.StatusCode)
-	}
-
-	// Minimal struct to extract the Resource URL for the next step
 	var searchResult struct {
 		Results []struct {
 			ResourceURL string `json:"resource_url"`
 		} `json:"results"`
 	}
-
 	if err := json.NewDecoder(resp.Body).Decode(&searchResult); err != nil {
 		return Track{}, err
 	}
 
 	if len(searchResult.Results) == 0 {
-		return Track{}, fmt.Errorf("no results found for '%s - %s'", artist, title)
+		return Track{}, fmt.Errorf("no results found")
 	}
 
 	// --- STEP 2: FETCH DETAILS ---
-	// Use the Resource URL to get the full metadata (Catalog Number, Country, etc.)
 	detailsURL := searchResult.Results[0].ResourceURL
-
-	// Append token correctly depending on existing query params
 	if strings.Contains(detailsURL, "?") {
 		detailsURL += "&token=" + token
 	} else {
@@ -74,10 +65,6 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 	}
 	defer respDetails.Body.Close()
 
-	if respDetails.StatusCode != 200 {
-		return Track{}, fmt.Errorf("discogs details status %d", respDetails.StatusCode)
-	}
-
 	// Struct for the detailed release data
 	var release struct {
 		Title   string   `json:"title"`
@@ -92,31 +79,38 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		Artists []struct {
 			Name string `json:"name"`
 		} `json:"artists"`
+		// ⚡️ ADDED ONLY THIS:
+		Images []struct {
+			ResourceURL string `json:"resource_url"`
+			Type        string `json:"type"`
+		} `json:"images"`
 	}
 
 	if err := json.NewDecoder(respDetails.Body).Decode(&release); err != nil {
 		return Track{}, err
 	}
 
+	bestCoverURL := ""
+	if len(release.Images) > 0 {
+		bestCoverURL = release.Images[0].ResourceURL
+		for _, img := range release.Images {
+			if img.Type == "primary" {
+				bestCoverURL = img.ResourceURL
+				break
+			}
+		}
+	}
+
 	var yearStr string
 	switch v := release.Year.(type) {
 	case float64:
-		yearStr = fmt.Sprintf("%.0f", v) // Convert number 1999 to "1999"
+		yearStr = fmt.Sprintf("%.0f", v)
 	case string:
 		yearStr = v
-	default:
-		yearStr = ""
 	}
 
-	// --- MAPPING LOGIC ---
-
-	// 1. Artist Cleaning: Sometimes Discogs returns "Artist (2)", we want just "Artist"
-	// Ideally, keep original input 'artist' unless it was empty/unknown.
 	finalArtist := artist
 	if len(release.Artists) > 0 {
-		// Simple heuristic: if input was vague, take the specific one
-		// Otherwise, stick to to filename parsing to avoid "[a=Name]" garbage.
-		// For now trust the release data but strip potential suffixes like " (2)"
 		name := release.Artists[0].Name
 		if idx := strings.Index(name, " ("); idx != -1 {
 			name = name[:idx]
@@ -124,7 +118,6 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		finalArtist = name
 	}
 
-	// 2. Publisher & Catalog Number
 	publisher := ""
 	catNo := ""
 	if len(release.Labels) > 0 {
@@ -132,25 +125,16 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		catNo = release.Labels[0].Catno
 	}
 
-	// 3. Country Fallback
-	country := release.Country
-	if country == "" {
-		country = "Unknown"
-	}
-
-	// 4. Join Lists
-	genreStr := release.Genres[0]
-	styleStr := strings.Join(release.Styles, ", ")
-
 	return Track{
 		Artist:        finalArtist,
 		Title:         release.Title,
 		Year:          yearStr,
-		Genre:         genreStr, // Broad: "Electronic"
-		Style:         styleStr, // Specific: "Deep House, Minimal"
+		Genre:         release.Genres[0],
+		Style:         strings.Join(release.Styles, ", "),
 		Publisher:     publisher,
-		Country:       country,
+		Country:       release.Country,
 		CatalogNumber: strings.ToUpper(catNo),
+		CoverURL:      bestCoverURL,
 	}, nil
 }
 
@@ -229,4 +213,31 @@ func GetArtistCountryViaDiscogs(artistName, token string) (string, error) {
 	}
 
 	return bestCountry, nil
+}
+
+func DownloadImage(imageUrl, token string) ([]byte, error) {
+	if imageUrl == "" {
+		return nil, fmt.Errorf("empty url")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	if !strings.Contains(imageUrl, "token=") {
+		separator := "?"
+		if strings.Contains(imageUrl, "?") {
+			separator = "&"
+		}
+		imageUrl += separator + "token=" + token
+	}
+
+	req, _ := http.NewRequest("GET", imageUrl, nil)
+	req.Header.Set("User-Agent", "MomoRadioIngester/0.2")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	return io.ReadAll(resp.Body)
 }

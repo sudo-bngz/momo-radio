@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -109,4 +110,9 @@ func (l *LocalProvider) Exists(bucket, prefix string) (bool, error) {
 	}
 
 	return false, nil // It's a file, so prefix isn't "empty"
+}
+
+func (l *LocalProvider) GetPublicURL(bucket, region, key string) string {
+	// For local, bucket/region might be ignored
+	return fmt.Sprintf("%s/%s", l.RootPath, key)
 }
