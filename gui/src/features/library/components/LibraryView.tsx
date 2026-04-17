@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Box, VStack, HStack, Text, Input, Icon, Spinner, Table, Heading, Button 
+  Box, VStack, HStack, Text, Input, Spinner, Table, Heading, Button 
 } from '@chakra-ui/react';
 import { Search, Clock, Play, Pause, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -8,6 +8,17 @@ import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
 import { TrackDetailDrawer } from './TrackDetailDrawer'; 
 import type { SortOption } from '../hook/useLibrary';
+import { Select, Icon } from '@chakra-ui/react';
+import { ChevronDown } from 'lucide-react';
+import { createListCollection } from "@chakra-ui/react"
+
+const sortOptions = createListCollection({
+  items: [
+    { label: "Newest First", value: "newest" },
+    { label: "A-Z", value: "alphabetical" },
+    { label: "Duration", value: "duration" },
+  ],
+})
 
 export const LibraryView: React.FC = () => {
   const navigate = useNavigate();
@@ -26,7 +37,6 @@ export const LibraryView: React.FC = () => {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
-  // ⚡️ INFINITE SCROLL HANDLER
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
     // If the user scrolls within 100px of the bottom, fetch more!
@@ -65,21 +75,59 @@ export const LibraryView: React.FC = () => {
             />
           </Box>
         </HStack>
-        <select 
-          style={{ height: '48px', padding: '0 16px', borderRadius: '12px', border: 'none', backgroundColor: '#F7FAFC', cursor: 'pointer' }}
-          value={sortBy} onChange={(e) => setSortBy(e.target.value as SortOption)}
+        <Select.Root 
+          collection={sortOptions} 
+          value={[sortBy]} 
+          onValueChange={(details) => setSortBy(details.value[0] as SortOption)}
+          width="200px" // Slightly wider to fit "Newest First"
         >
-          <option value="newest">Newest First</option>
-          <option value="alphabetical">A-Z</option>
-          <option value="duration">Duration</option>
-        </select>
+          <Select.Trigger 
+            height="48px"
+            bg="white" 
+            color="gray.900" 
+            border="1px solid"
+            borderColor="gray.300" 
+            borderRadius="12px"
+            px={4}
+            _hover={{ borderColor: "blue.500" }}
+          >
+            {/* ⚡️ Explicitly set the color here too */}
+            <Select.ValueText placeholder="Sort by" color="gray.900" fontWeight="600" />
+            <Icon as={ChevronDown} color="gray.500" />
+          </Select.Trigger>
+
+          <Select.Positioner zIndex={100}>
+            <Select.Content 
+              bg="white"
+              borderRadius="xl" 
+              shadow="md" 
+              border="1px solid" 
+              borderColor="gray.200"
+            >
+              {sortOptions.items.map((item) => (
+                <Select.Item 
+                  item={item} 
+                  key={item.value}
+                  p={2}
+                  _hover={{ bg: "blue.50" }}
+                  cursor="pointer"
+                >
+                  {/* ⚡️ Explicitly set item text color */}
+                  <Select.ItemText color="gray.800" fontSize="sm" fontWeight="500">
+                    {item.label}
+                  </Select.ItemText>
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Positioner>
+        </Select.Root>
       </HStack>
 
       {/* 3. Table Area with onScroll event */}
       <Box 
         flex="1" 
         overflowY="auto" 
-        onScroll={handleScroll} // ⚡️ ATTACHED HERE
+        onScroll={handleScroll}
         css={{
           '&::-webkit-scrollbar': { width: '8px' },
           '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-gray-200)', borderRadius: '4px' },
@@ -95,7 +143,6 @@ export const LibraryView: React.FC = () => {
             }}>
               <Table.Header position="sticky" top={0} bg="white" zIndex={1}>
                 <Table.Row>
-                  <Table.ColumnHeader w="60px">#</Table.ColumnHeader>
                   <Table.ColumnHeader w="60px"></Table.ColumnHeader>
                   <Table.ColumnHeader>Title</Table.ColumnHeader>
                   <Table.ColumnHeader>Artist</Table.ColumnHeader>
@@ -103,12 +150,11 @@ export const LibraryView: React.FC = () => {
                 </Table.Row>
               </Table.Header>
               <Table.Body>
-                {tracks.map((track, index) => {
+                {tracks.map((track) => {
                   const isThisTrackPlaying = currentTrack?.id === track.id;
                   const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
                   return (
                     <Table.Row key={track.id} className="group" _hover={{ bg: "gray.50" }} bg={isThisTrackPlaying ? "blue.50" : "transparent"}>
-                      <Table.Cell color="gray.400" fontSize="xs">{index + 1}</Table.Cell>
                       <Table.Cell px={0}>
                         <Box w="36px" h="36px" bg={isThisTrackPlaying ? "blue.500" : "gray.100"} borderRadius="md" display="flex" alignItems="center" justifyContent="center" cursor="pointer" color={isThisTrackPlaying ? "white" : "gray.400"} onClick={() => isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks)}>
                           {isThisTrackActiveAndPlaying ? <Icon as={Pause} boxSize={5} fill="currentColor" /> : <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />}
