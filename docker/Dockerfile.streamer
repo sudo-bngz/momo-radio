@@ -1,6 +1,6 @@
 # --- Stage 1: Build ---
 # UPDATED: Use Go 1.25 to satisfy go.mod requirement (>= 1.24)
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git
 
