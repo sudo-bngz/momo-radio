@@ -45,8 +45,22 @@ export const LibraryView: React.FC = () => {
 
   return (
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
-      
+      {/* 1. Header Section */}
       <VStack align="start" gap={1}>
+        {/* ⚡️ NEW BREADCRUMB */}
+        <HStack gap={2} fontSize="sm" color="gray.500" mb={3}>
+          <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
+            <Icon as={Music} boxSize={3} strokeWidth={3} />
+          </Box>
+          <Text cursor="pointer" _hover={{ color: "blue.500" }} onClick={() => navigate('/')}>
+            Library
+          </Text>
+          <Text color="gray.300">/</Text>
+          <Text color="gray.900" fontWeight="500">
+            All Tracks
+          </Text>
+        </HStack>
+
         <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
           Music Library
         </Heading>
