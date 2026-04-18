@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { VStack, Text, Icon, HStack, Flex, Box } from '@chakra-ui/react';
+import { VStack, Text, Icon, HStack, Flex, Box, Image } from '@chakra-ui/react'; // ⚡️ Imported Image
 import { NavLink } from 'react-router-dom';
 import { 
-  Radio, Activity, Library, ListMusic, 
+  Activity, Library, ListMusic, // ⚡️ Removed Radio import
   Calendar, Settings, PanelLeftClose, PanelLeftOpen 
 } from 'lucide-react';
 
@@ -31,12 +31,25 @@ const Sidebar = () => {
       h="100%"
       position="relative"
     >
-      {/* Brand Logo */}
-      <HStack mb={10} px={isCollapsed ? 0 : 8} justify={isCollapsed ? "center" : "flex-start"} h="32px">
-        <Icon as={Radio} boxSize={6} color="blue.500" flexShrink={0} />
+      {/* Brand Logo Section */}
+      <HStack mb={10} px={isCollapsed ? 0 : 8} justify={isCollapsed ? "center" : "flex-start"} h="32px" gap={isCollapsed ? 0 : 3}>
+        
+        {/* ⚡️ Updated: Replaced Icon with logo.png */}
+        <Flex align="center" justify="center" w="32px" h="32px" flexShrink={0}>
+          <Image 
+            src="/logo.png" // Pointing to public/logo.png
+            alt="Momo Radio Logo"
+            // Set height to fit container, width auto to maintain aspect ratio
+            h="100%" 
+            w="auto" 
+            maxW="100%"
+            objectFit="contain"
+          />
+        </Flex>
+
         {!isCollapsed && (
           <Text fontSize="lg" fontWeight="bold" color="white" letterSpacing="tight" truncate>
-            Momo Radio
+            Momo.Radio
           </Text>
         )}
       </HStack>
@@ -79,6 +92,8 @@ const Sidebar = () => {
   );
 };
 
+// --- NavItem Helper Component (Unchanged) ---
+
 interface NavItemProps {
   icon: any;
   label: string;
@@ -101,6 +116,7 @@ const NavItem = ({ icon, label, isActive = false, isCollapsed, onClick }: NavIte
     gap={4} 
     transition="all 0.2s"
     title={isCollapsed ? label : undefined}
+    position="relative" // Fixed missing position: relative for active bar
   >
     <Icon as={icon} boxSize={5} flexShrink={0} />
     {!isCollapsed && (

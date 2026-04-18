@@ -149,6 +149,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
   // Check if it's an object (from GetTrack) or a string (from the LibraryList)
   const artistName = fullTrack?.artist?.name || (typeof fullTrack?.artist === 'string' ? fullTrack.artist : track?.artist) || '';
   const albumTitle = fullTrack?.album?.title || (typeof fullTrack?.album === 'string' ? fullTrack.album : track?.album) || '';
+  const coverURL = fullTrack?.cover_url || fullTrack?.album?.cover_url || track?.cover_url;
 
   // Formatters
   const displayBPM = fullTrack?.bpm ? Math.round(fullTrack.bpm) : '-';
@@ -181,8 +182,27 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
         <Box px={6} pt={6} pb={2}>
           <Flex justify="space-between" align="start" mb={6}>
             <HStack gap={4}>
-              <Flex align="center" justify="center" w="56px" h="56px" bg="gray.900" color="white" borderRadius="md">
-                <Icon as={Music} boxSize={6} />
+              <Flex 
+                align="center" 
+                justify="center" 
+                w="56px" 
+                h="56px" 
+                bg="gray.100" 
+                borderRadius="md" 
+                overflow="hidden" 
+                border="1px solid" 
+                borderColor="gray.200"
+                flexShrink={0}
+              >
+                {coverURL ? (
+                  <img 
+                    src={coverURL} 
+                    alt="Cover" 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  />
+                ) : (
+                  <Icon as={Music} boxSize={6} color="gray.400" />
+                )}
               </Flex>
               <VStack align="start" gap={0}>
                 <Text fontSize="lg" fontWeight="bold" color="gray.900">{fullTrack?.title || track?.title}</Text>

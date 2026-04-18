@@ -1,11 +1,11 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/* 1. Import the Rajdhani font */
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+:root {
+  /* 2. Set Rajdhani as the global font */
+  font-family: 'Rajdhani', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 500;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,97 +13,58 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-
-/* src/index.css */
-/* src/index.css */
+/* 3. Layout Fixes for full-screen performance */
 :root, body, #root {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
+  background-color: #ffffff;
 }
 
-/* Force the browser to use light-mode base UI (fixes the black scrollbars) */
-html {
-  color-scheme: light;
+body {
+  overflow-x: hidden;
 }
 
-/* Custom, elegant scrollbars for Chrome/Safari/Edge */
+/* 4. Links (Back to standard subtle style) */
+a {
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--chakra-colors-blue-600);
+}
+
+/* 5. Buttons (Removing all yellow overrides) */
+button, [role="button"] {
+  font-family: inherit !important;
+}
+
+/* 6. Clean, Neutral Scrollbars */
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #f7fafc;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #cbd5e0; /* Chakra gray.300 */
+  background-color: #cbd5e0; /* gray.300 */
   border-radius: 10px;
-  border: 3px solid #ffffff; /* Creates a nice padded effect inside the white app */
+  border: 2px solid #f7fafc;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #a0aec0; /* Chakra gray.400 */
+  background-color: #a0aec0; /* gray.400 */
 }
 
-button:hover, 
-[role="button"]:hover {
-  /* This prevents the "black box" look */
-  background-color: var(--chakra-colors-blue-50) !important;
-  color: var(--chakra-colors-blue-600) !important;
+/* 7. Headings */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
