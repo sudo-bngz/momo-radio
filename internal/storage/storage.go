@@ -19,6 +19,7 @@ type Client struct {
 	bucketProd   string
 	bucketIngest string
 	bucketStream string
+	region       string
 
 	cache      map[string][]string
 	cacheTime  map[string]time.Time
@@ -50,6 +51,7 @@ func New(cfg *config.Config) *Client {
 		bucketProd:   cfg.Storage.BucketProd,
 		bucketIngest: cfg.Storage.BucketIngest,
 		bucketStream: cfg.Storage.BucketStream,
+		region:       cfg.Storage.Region,
 		cache:        make(map[string][]string),
 		cacheTime:    make(map[string]time.Time),
 	}
@@ -125,10 +127,9 @@ func (c *Client) GetPublicURL(key string) string {
 	if key == "" {
 		return ""
 	}
-
 	// This check now compiles because there's no name collision
 	if linker, ok := c.backend.(LinkableProvider); ok {
-		return linker.GetPublicURL(c.bucketProd, key)
+		return linker.GetPublicURL(c.bucketProd, c.region, key)
 	}
 
 	return ""

@@ -16,7 +16,7 @@ type StorageProvider interface {
 
 type LinkableProvider interface {
 	// Make sure the arguments here match what you want to use
-	GetPublicURL(bucket, key string) string
+	GetPublicURL(bucket, region, key string) string
 }
 
 // Object is the provider-agnostic representation of a file.
