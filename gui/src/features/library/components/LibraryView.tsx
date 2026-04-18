@@ -222,17 +222,18 @@ export const LibraryView: React.FC = () => {
                           )}
                         </HStack>
                       </Table.Cell>
+                      {/* ⚡️ MINIMALIST BPM TAG (Grayscale Heat-Map) */}
                       <Table.Cell>
                         {track.bpm ? (
                           <Badge 
                             size="sm" 
-                            bg="gray.100" 
-                            color="gray.800" 
-                            border="1px solid"
-                            borderColor="gray.200"
+                            bg={getBpmStyle(Math.round(track.bpm)).bg} 
+                            color={getBpmStyle(Math.round(track.bpm)).color} 
+                            border="none"
                             borderRadius="md" 
-                            px={2}
-                            fontWeight="600"
+                            px={2.5}
+                            py={0.5}
+                            fontWeight="700"
                           >
                             {Math.round(track.bpm)}
                           </Badge>
@@ -278,4 +279,24 @@ const getColorForGenre = (genre: string) => {
     hash = genre.charCodeAt(i) + ((hash << 5) - hash);
   }
   return colors[Math.abs(hash) % colors.length];
+};
+
+// Helper function: Grayscale intensity based on BPM
+const getBpmStyle = (bpm: number) => {
+  if (!bpm) return { bg: 'gray.50', color: 'gray.400' };
+  
+  // Downtempo / Chill (< 105 BPM) -> Very light gray
+  if (bpm < 105) return { bg: 'gray.100', color: 'gray.500' }; 
+  
+  // Warmup (105 - 119 BPM) -> Soft gray
+  if (bpm < 120) return { bg: 'gray.200', color: 'gray.700' }; 
+  
+  // House / Tech House (120 - 128 BPM) -> Medium bold gray
+  if (bpm <= 128) return { bg: 'gray.300', color: 'gray.900' }; 
+  
+  // Techno / Breaks (129 - 140 BPM) -> Dark gray (inverted text)
+  if (bpm <= 140) return { bg: 'gray.600', color: 'white' }; 
+  
+  // Fast Techno / Hardcore (> 140 BPM) -> Solid Pitch Black
+  return { bg: 'gray.900', color: 'white' }; 
 };
