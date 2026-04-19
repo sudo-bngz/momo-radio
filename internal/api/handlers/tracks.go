@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,6 +20,8 @@ import (
 	"github.com/bogem/id3v2"
 	"github.com/dhowden/tag"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -25,14 +30,16 @@ type TrackHandler struct {
 	db      *gorm.DB
 	storage *storage.Client
 	config  *config.Config
+	redis   *redis.Client
 }
 
 // NewTrackHandler creates a new TrackHandler instance with its required dependencies
-func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config) *TrackHandler {
+func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisClient *redis.Client) *TrackHandler {
 	return &TrackHandler{
 		db:      db,
 		storage: st,
 		config:  c,
+		redis:   redisClient,
 	}
 }
 
@@ -104,10 +111,8 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 			artistName = t.Artist.Name
 		}
 
-		// 1. Declare the variable outside with a default value
 		var coverURL string
 
-		// 2. Assign to it (use = instead of :=)
 		if t.Album.ID != 0 && t.Album.CoverKey != "" {
 			coverURL = h.storage.GetPublicURL(t.Album.CoverKey)
 		}
@@ -124,12 +129,10 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		})
 	}
 
-	// If no tracks are found, return an empty array instead of null
 	if libraryTracks == nil {
 		libraryTracks = []LibraryTrack{}
 	}
 
-	// 7. Return Response
 	c.JSON(http.StatusOK, gin.H{
 		"data": libraryTracks,
 		"meta": gin.H{
@@ -166,13 +169,11 @@ func (h *TrackHandler) UpdateTrack(c *gin.Context) {
 		return
 	}
 
-	// Protect read-only fields from being modified via the API
 	delete(updateData, "id")
 	delete(updateData, "key")
 	delete(updateData, "duration")
 	delete(updateData, "file_size")
 
-	// Perform the update
 	result := h.db.Model(&models.Track{}).Where("id = ?", id).Updates(updateData)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update track metadata"})
@@ -187,17 +188,13 @@ func (h *TrackHandler) UpdateTrack(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Track updated successfully"})
 }
 
-// PreAnalyzeFile reads the uploaded file in memory and extracts ID3 tags
-// It does NOT upload to S3 or save to DB yet.
 func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
-	// 1. Get File
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
 		return
 	}
 
-	// 2. Open Stream
 	file, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to open file"})
@@ -205,17 +202,15 @@ func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 3. Extract Metadata
 	metadata, err := tag.ReadFrom(file)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"filename": fileHeader.Filename,
-			"title":    fileHeader.Filename, // Default fallback
+			"title":    fileHeader.Filename,
 		})
 		return
 	}
 
-	// 4. Format Response for React Form
 	yearStr := ""
 	if metadata.Year() != 0 {
 		yearStr = strconv.Itoa(metadata.Year())
@@ -232,7 +227,7 @@ func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	})
 }
 
-// UploadTrack processes the file, tags it, and uploads it to cloud storage
+// UploadTrack processes the file, tags it, uploads to ingest bucket, creates DB row, and dispatches Asynq job.
 func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	// 1. Parse File & Form
 	fileHeader, err := c.FormFile("file")
@@ -241,13 +236,12 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		return
 	}
 
-	// Capture metadata
 	meta := map[string]string{
 		"TITLE":  c.PostForm("title"),
 		"ARTIST": c.PostForm("artist"),
 		"ALBUM":  c.PostForm("album"),
 		"GENRE":  c.PostForm("genre"),
-		"DATE":   c.PostForm("year"), // FLAC uses DATE
+		"DATE":   c.PostForm("year"),
 		"BPM":    c.PostForm("bpm"),
 		"KEY":    c.PostForm("key"),
 	}
@@ -270,7 +264,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	}
 	defer uploadedFile.Close()
 	io.Copy(tempFile, uploadedFile)
-	tempFile.Close() // Close to allow tagging
+	tempFile.Close()
 
 	// 4. STAMP METADATA
 	switch ext {
@@ -288,7 +282,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		}
 	}
 
-	// 5. Upload to S3
+	// 5. Upload to Ingest Bucket
 	finalFile, err := os.Open(tempFile.Name())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read processed file"})
@@ -299,14 +293,100 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	b2Key := "incoming/" + filepath.Base(fileHeader.Filename)
 	contentType := fileHeader.Header.Get("Content-Type")
 
-	// Replaced s.storage with h.storage
 	err = h.storage.UploadIngestFile(b2Key, finalFile, contentType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Storage upload failed"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"status": "queued", "key": b2Key})
+	// 6. Resolve Artist & Create Initial "Pending" DB Row
+	artistName := strings.TrimSpace(c.PostForm("artist"))
+	if artistName == "" {
+		artistName = "Unknown Artist"
+	}
+
+	var artist models.Artist
+	h.db.Where(models.Artist{Name: artistName}).FirstOrCreate(&artist)
+
+	albumTitle := strings.TrimSpace(c.PostForm("album"))
+	var album models.Album
+	var albumIDPtr *uint
+
+	if albumTitle != "" {
+		// FirstOrCreate ensures we don't duplicate the EP if they upload 4 tracks from it
+		h.db.Where(models.Album{Title: albumTitle, ArtistID: artist.ID}).FirstOrCreate(&album)
+
+		// Map the React form fields to your Album struct fields
+		albumUpdates := map[string]interface{}{}
+
+		if label := strings.TrimSpace(c.PostForm("label")); label != "" {
+			albumUpdates["Publisher"] = label
+		}
+		if cat := strings.TrimSpace(c.PostForm("catalog_number")); cat != "" {
+			albumUpdates["CatalogNumber"] = cat
+		}
+		if country := strings.TrimSpace(c.PostForm("country")); country != "" {
+			albumUpdates["ReleaseCountry"] = country
+		}
+		if year := strings.TrimSpace(c.PostForm("year")); year != "" {
+			albumUpdates["Year"] = year
+		}
+
+		// Apply the updates to the database if the user typed anything in
+		if len(albumUpdates) > 0 {
+			h.db.Model(&album).Updates(albumUpdates)
+		}
+
+		albumIDPtr = &album.ID
+	}
+
+	newTrack := models.Track{
+		Title:              c.PostForm("title"),
+		ArtistID:           artist.ID,
+		AlbumID:            albumIDPtr,
+		Key:                b2Key,
+		ProcessingStatus:   "pending",
+		ProcessingProgress: 0,
+	}
+
+	if err := h.db.Create(&newTrack).Error; err != nil {
+		slog.Error("Failed to create track DB record", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database insert failed"})
+		return
+	}
+
+	// 7. Enqueue the Asynq Job
+	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
+		Addr:     redisAddr,
+		Password: h.config.Redis.Password,
+		DB:       h.config.Redis.DB,
+	})
+	defer asynqClient.Close()
+
+	payloadData := map[string]interface{}{
+		"track_id": newTrack.ID,
+		"file_key": b2Key,
+	}
+	payloadBytes, _ := json.Marshal(payloadData)
+	task := asynq.NewTask("track:process", payloadBytes)
+
+	_, err = asynqClient.Enqueue(task)
+	if err != nil {
+		slog.Error("Failed to enqueue job", "error", err)
+		// Mark as failed in DB so it doesn't get stuck forever
+		h.db.Model(&newTrack).Update("processing_status", "failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue processing job"})
+		return
+	}
+
+	// 8. ⚡️ Return success and Track ID so React can subscribe to SSE!
+	c.JSON(http.StatusCreated, gin.H{
+		"status":   "queued",
+		"message":  "Upload successful, processing started.",
+		"track_id": newTrack.ID,
+		"key":      b2Key,
+	})
 }
 
 // --- Helper Functions ---
@@ -338,33 +418,97 @@ func stampMP3(path, title, artist, album, genre, year, bpm, key string) error {
 func (h *TrackHandler) StreamTrack(c *gin.Context) {
 	trackID := c.Param("id")
 
-	// 1. Look up the track in the database
 	var track models.Track
 	if err := h.db.First(&track, "id = ?", trackID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Track metadata not found"})
 		return
 	}
 
-	// 2. Fetch the file object via the Storage Abstraction
 	obj, err := h.storage.DownloadFile(track.Key)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Audio file missing from storage"})
 		return
 	}
 
-	// CRITICAL: Always close the storage stream to prevent memory/connection leaks
 	defer obj.Body.Close()
 	if seeker, ok := obj.Body.(io.ReadSeeker); ok {
 		http.ServeContent(c.Writer, c.Request, track.Title, obj.LastModified, seeker)
 		return
 	}
 
-	// 4. Fallback for non-seekable streams
 	extraHeaders := map[string]string{
 		"Cache-Control": "public, max-age=31536000",
-		"Accept-Ranges": "none", // Explicitly tell the browser it can't seek
+		"Accept-Ranges": "none",
 	}
 
-	// DataFromReader streams the io.ReadCloser chunk-by-chunk directly to the client
 	c.DataFromReader(http.StatusOK, obj.ContentLength, obj.ContentType, obj.Body, extraHeaders)
+}
+
+// TrackStatusStream is the SSE endpoint.
+func (h *TrackHandler) TrackStatusStream(c *gin.Context) {
+	trackID := c.Param("id")
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+
+	channelName := "track_status:" + trackID
+	pubsub := h.redis.Subscribe(context.Background(), channelName)
+	defer pubsub.Close()
+
+	ch := pubsub.Channel()
+	clientGone := c.Request.Context().Done()
+
+	for {
+		select {
+		case <-clientGone:
+			return
+
+		case msg := <-ch:
+			c.SSEvent("status", msg.Payload)
+			c.Writer.Flush()
+
+			if msg.Payload == "completed" || msg.Payload == "failed" {
+				return
+			}
+		}
+	}
+}
+
+// GetQueue returns the recent ingestion queue for the UI
+func (h *TrackHandler) GetQueue(c *gin.Context) {
+	var tracks []models.Track
+
+	// This captures pending, processing, failed, and newly completed tracks.
+	err := h.db.Order("created_at DESC").Limit(100).Find(&tracks).Error
+
+	if err != nil {
+		slog.Error("Failed to fetch queue", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch queue"})
+		return
+	}
+
+	var queue []map[string]any
+	for _, t := range tracks {
+		// Map DB's processing_status to the UI's expected status types
+		uiStatus := "processing"
+		switch t.ProcessingStatus {
+		case "pending":
+			uiStatus = "queued"
+		case "completed":
+			uiStatus = "success"
+		case "failed":
+			uiStatus = "error"
+		}
+
+		queue = append(queue, map[string]any{
+			"id":       t.ID,
+			"title":    t.Title,
+			"status":   uiStatus,
+			"progress": t.ProcessingProgress,
+			"step":     "Acoustic Analysis...",
+		})
+	}
+
+	c.JSON(http.StatusOK, queue)
 }

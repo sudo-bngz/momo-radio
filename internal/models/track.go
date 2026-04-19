@@ -38,7 +38,6 @@ type Album struct {
 	Tracks   []Track `json:"tracks,omitempty"`
 }
 
-// 3. Track represents a music file stored in B2
 type Track struct {
 	gorm.Model `json:"-"`
 	ID         uint `gorm:"primarykey" json:"id"`
@@ -47,11 +46,13 @@ type Track struct {
 	Key   string `gorm:"uniqueIndex;not null" json:"key"`
 	Title string `gorm:"index" json:"title"`
 
-	// ⚡️ RELATIONAL LINKS (Replaces flat strings)
+	ProcessingStatus   string `gorm:"default:'pending';index" json:"processing_status"`
+	ProcessingProgress int    `gorm:"default:0" json:"processing_progress"`
+
 	ArtistID uint   `gorm:"index;not null" json:"artist_id"`
 	Artist   Artist `json:"artist,omitempty"`
 
-	AlbumID *uint `gorm:"index" json:"album_id"` // Pointer (*) so tracks can be Singles without an album
+	AlbumID *uint `gorm:"index" json:"album_id"`
 	Album   Album `json:"album,omitempty"`
 
 	// Curation Tags

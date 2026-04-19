@@ -1,16 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/storage"
 
-	// Use an alias to prevent naming collisions with the 'server' variable
 	apiserver "momo-radio/internal/api/server"
 )
 
@@ -24,16 +25,24 @@ func main() {
 	// 2. Initialize Infrastructure
 	db := database.New(cfg)
 
-	// 3. Run Database Migrations
+	// 3. Initialize Redis Client
+	redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+
+	// 4. Run Database Migrations
 	db.AutoMigrate()
 
-	// 4. Seeding useers
+	// 5. Seeding users
 	database.SeedAdminUser(db.DB)
 
-	// 5. Storage
+	// 6. Storage
 	store := storage.New(cfg)
 
-	// 6. Setup Metrics
+	// 7. Setup Metrics
 	go func() {
 		http.Handle("/_metrics", promhttp.Handler())
 		log.Printf("Metrics exposed at http://localhost%s/_metrics", cfg.Server.MetricsPort)
@@ -42,8 +51,8 @@ func main() {
 		}
 	}()
 
-	// 7. Start Server
-	srv := apiserver.New(cfg, db, store)
+	// 8. Start Server
+	srv := apiserver.New(cfg, db, store, redisClient)
 
 	port := ":8081"
 	log.Printf("API Server starting on %s", port)

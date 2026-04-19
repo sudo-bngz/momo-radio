@@ -1,8 +1,10 @@
 package ingest
 
 import (
-	"bytes" // ⚡️ Added for image processing
-	"fmt"   // ⚡️ Added for cover key generation
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -11,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
 
 	"momo-radio/internal/audio"
 	"momo-radio/internal/config"
@@ -22,6 +26,7 @@ import (
 	"momo-radio/internal/utils"
 )
 
+// --- METRICS ---
 var (
 	jobs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -43,71 +48,81 @@ func RegisterMetrics() {
 	prometheus.MustRegister(jobs, duration)
 }
 
+// --- ASYNQ DEFINITIONS ---
+const TypeTrackProcess = "track:process"
+
+type TrackProcessPayload struct {
+	TrackID uint   `json:"track_id"`
+	FileKey string `json:"file_key"` // The path in the ingest bucket
+}
+
+// --- WORKER ---
 type Worker struct {
 	cfg         *config.Config
 	storage     *storage.Client
 	db          *database.Client
+	redis       *redis.Client
 	analysisSem chan struct{}
 }
 
-func New(cfg *config.Config, store *storage.Client, db *database.Client) *Worker {
-	return &Worker{cfg: cfg, storage: store, db: db, analysisSem: make(chan struct{}, 2)}
+func New(cfg *config.Config, store *storage.Client, db *database.Client, redisClient *redis.Client) *Worker {
+	return &Worker{
+		cfg:         cfg,
+		storage:     store,
+		db:          db,
+		redis:       redisClient,
+		analysisSem: make(chan struct{}, 2), // Limit concurrent heavy CPU tasks
+	}
 }
 
-func (w *Worker) Run() {
-	ticker := time.NewTicker(time.Duration(w.cfg.Server.PollingInterval) * time.Second)
-	defer ticker.Stop()
+// StartServer begins listening to the Redis queue for jobs
+func (w *Worker) StartServer() error {
+	redisAddr := fmt.Sprintf("%s:%s", w.cfg.Redis.Host, w.cfg.Redis.Port)
 
-	log.Printf("Watcher started on '%s' [Provider: %s]...",
-		w.cfg.Storage.BucketIngest,
-		w.cfg.Storage.Provider,
+	srv := asynq.NewServer(
+		asynq.RedisClientOpt{
+			Addr:     redisAddr,
+			Password: w.cfg.Redis.Password,
+			DB:       w.cfg.Redis.DB,
+		},
+		asynq.Config{
+			Concurrency: 4,
+			Queues:      map[string]int{"default": 10},
+		},
 	)
 
-	w.processQueue()
+	mux := asynq.NewServeMux()
+	mux.HandleFunc(TypeTrackProcess, w.HandleProcessTask)
 
-	for range ticker.C {
-		w.processQueue()
-	}
+	log.Println("Asynq Ingest Worker listening for track jobs...")
+	return srv.Run(mux)
 }
 
-func (w *Worker) processQueue() {
-	keys, err := w.storage.ListIngestFiles()
-	if err != nil {
-		log.Printf("Error listing bucket: %v", err)
-		return
-	}
-
-	if len(keys) > 0 {
-		log.Printf("Found %d items in ingest queue.", len(keys))
-	}
-
-	for _, key := range keys {
-		if strings.HasSuffix(key, "/") {
-			continue
-		}
-
-		if !audio.IsSupportedFormat(key) {
-			log.Printf("🗑️ Removing junk file: %s", key)
-			_ = w.storage.DeleteIngestFile(key)
-			continue
-		}
-
-		log.Printf("Processing: %s", key)
-		if err := w.processFile(key); err != nil {
-			log.Printf("FAILED %s: %v", key, err)
-			jobs.WithLabelValues("failure").Inc()
-		} else {
-			log.Printf("ORGANIZED %s", key)
-			jobs.WithLabelValues("success").Inc()
-		}
-	}
-
-	w.cleanupFolders(keys)
-}
-
-func (w *Worker) processFile(key string) error {
+// HandleProcessTask executes the heavy processing pipeline
+func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	timer := prometheus.NewTimer(duration)
 	defer timer.ObserveDuration()
+
+	var payload TrackProcessPayload
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to parse payload: %v", err)
+	}
+
+	key := payload.FileKey
+	trackIDStr := fmt.Sprintf("%d", payload.TrackID)
+	log.Printf("⚙️ Starting Job for Track ID %d: %s", payload.TrackID, key)
+
+	// Updates DB and shouts to Frontend via Redis SSE
+	updateStatus := func(status string, progress int) {
+		w.db.DB.Model(&models.Track{}).Where("id = ?", payload.TrackID).Updates(map[string]interface{}{
+			"processing_status":   status,
+			"processing_progress": progress,
+		})
+		w.redis.Publish(ctx, "track_status:"+trackIDStr, status)
+	}
+
+	// 1. Setup Files & Downloading
+	updateStatus("downloading", 10)
 
 	baseName := filepath.Base(key)
 	ext := filepath.Ext(baseName)
@@ -119,9 +134,10 @@ func (w *Worker) processFile(key string) error {
 	defer os.Remove(rawPath)
 	defer os.Remove(cleanPath)
 
-	// 1. Download & Validate
 	obj, err := w.storage.DownloadIngestFile(key)
 	if err != nil {
+		updateStatus("failed", 0)
+		jobs.WithLabelValues("failure").Inc()
 		return err
 	}
 	fRaw, _ := os.Create(rawPath)
@@ -130,14 +146,17 @@ func (w *Worker) processFile(key string) error {
 	fRaw.Close()
 
 	if err := audio.Validate(rawPath); err != nil {
-		return w.storage.DeleteIngestFile(key)
+		w.storage.DeleteIngestFile(key)
+		updateStatus("failed", 0)
+		jobs.WithLabelValues("failure").Inc()
+		return fmt.Errorf("invalid audio file format")
 	}
 
-	// 2. Get Local Metadata
+	// 2. Local Metadata & Deep Acoustic Analysis
+	updateStatus("analyzing", 30)
 	meta, _ := metadata.GetLocal(rawPath)
 
-	// 3. DEEP ACOUSTIC ANALYSIS
-	log.Printf("   🎼 Performing Deep Acoustic Analysis...")
+	log.Printf("   🎼 Performing Deep Acoustic Analysis for %s...", baseName)
 	w.analysisSem <- struct{}{}
 	analysis, err := audio.AnalyzeDeep(rawPath)
 	<-w.analysisSem
@@ -151,10 +170,13 @@ func (w *Worker) processFile(key string) error {
 		meta.Duration = analysis.Duration
 	}
 
+	// 3. Metadata Enrichment (Discogs/iTunes)
+	updateStatus("enriching", 60)
+
 	searchArtist := meta.Artist
 	searchTitle := meta.Title
 	var artistOrigin string
-	var discogsCoverURL string // ⚡️ Temp storage for Discogs image link
+	var discogsCoverURL string
 
 	if searchArtist == "" || searchTitle == "" {
 		cleanA, cleanT := utils.SanitizeFilename(baseName)
@@ -166,7 +188,6 @@ func (w *Worker) processFile(key string) error {
 		}
 	}
 
-	// 4. Querying Discogs / iTunes
 	if w.cfg.Services.DiscogsToken != "" {
 		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, w.cfg.Services.DiscogsToken, w.cfg.Services.ContactEmail)
 		if err == nil {
@@ -175,7 +196,7 @@ func (w *Worker) processFile(key string) error {
 			meta.Country = enriched.Country
 			meta.CatalogNumber = enriched.CatalogNumber
 			meta.Publisher = enriched.Publisher
-			discogsCoverURL = enriched.CoverURL // ⚡️ Store the remote URL
+			discogsCoverURL = enriched.CoverURL
 			if meta.Year == "" {
 				meta.Year = enriched.Year
 			}
@@ -189,7 +210,7 @@ func (w *Worker) processFile(key string) error {
 				meta.Title = enriched.Title
 			}
 
-			time.Sleep(2 * time.Second)
+			time.Sleep(2 * time.Second) // Respect rate limits
 			mbCountry, errAc := metadata.GetArtistCountryViaMusicBrainz(meta.Artist, w.cfg.Services.ContactEmail)
 			if errAc == nil && mbCountry != "" {
 				artistOrigin = utils.ResolveCountry(mbCountry)
@@ -227,30 +248,37 @@ func (w *Worker) processFile(key string) error {
 		artistOrigin = "Unknown"
 	}
 
-	// 5. Normalize & Upload Audio
+	// 4. Normalize Audio
+	updateStatus("normalizing", 80)
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
+		updateStatus("failed", 0)
+		jobs.WithLabelValues("failure").Inc()
 		return err
 	}
 
+	// 5. Upload Final Audio
+	updateStatus("uploading", 90)
 	destinationKey := BuildPath(meta, key)
 	fClean, err := os.Open(cleanPath)
 	if err != nil {
+		updateStatus("failed", 0)
 		return err
 	}
 	defer fClean.Close()
 
 	if err := w.storage.UploadAssetFile(destinationKey, fClean, "audio/mpeg", "public, max-age=31536000"); err != nil {
+		updateStatus("failed", 0)
+		jobs.WithLabelValues("failure").Inc()
 		return err
 	}
 
-	// A. Handle Artist
+	// 6. Database Relations
 	var artist models.Artist
 	w.db.DB.Where(models.Artist{Name: meta.Artist}).FirstOrCreate(&artist)
 	if artist.ArtistCountry == "" && artistOrigin != "Unknown" {
 		w.db.DB.Model(&artist).Update("ArtistCountry", artistOrigin)
 	}
 
-	// B. Handle Album
 	var album models.Album
 	var albumID *uint
 	if meta.Album != "" {
@@ -266,73 +294,69 @@ func (w *Worker) processFile(key string) error {
 		albumID = &album.ID
 	}
 
-	// ⚡️ 6. COVER ART PIPELINE ⚡️
-	// Only run if an album exists and it doesn't already have a cover
+	// 7. Cover Art Pipeline
 	if albumID != nil && album.CoverKey == "" {
 		var rawImage []byte
 		var errImg error
 
-		// Step 1: Check Local Embedded Art
 		if len(meta.AttachedPicture) > 0 {
-			log.Printf("	Found embedded cover art in %s", baseName)
 			rawImage = meta.AttachedPicture
 		} else if discogsCoverURL != "" {
-			// Step 2: Fallback to Discogs
-			log.Printf("	Fetching cover from Discogs...")
 			rawImage, errImg = metadata.DownloadImage(discogsCoverURL, w.cfg.Services.DiscogsToken)
 		}
 
 		if len(rawImage) > 0 && errImg == nil {
-			// Step 3: Resize & Standardize (Pure Go logic)
 			processedImg, errProc := metadata.ProcessCover(rawImage)
 			if errProc == nil {
 				coverKey := fmt.Sprintf("covers/album_%d.jpg", album.ID)
-
-				// Step 4: Upload to Public Assets Bucket
-				errUpload := w.storage.UploadAssetFile(
-					coverKey,
-					bytes.NewReader(processedImg),
-					"image/jpeg",
-					"public, max-age=31536000",
-				)
-
+				errUpload := w.storage.UploadAssetFile(coverKey, bytes.NewReader(processedImg), "image/jpeg", "public, max-age=31536000")
 				if errUpload == nil {
-					// Step 5: Update Database
 					w.db.DB.Model(&album).Update("CoverKey", coverKey)
-					log.Printf("	Cover art saved: %s", coverKey)
 				}
 			}
 		}
 	}
 
-	// C. Handle Track
-	track := models.Track{
-		Key:          destinationKey,
-		Title:        meta.Title,
-		ArtistID:     artist.ID,
-		AlbumID:      albumID,
-		Genre:        meta.Genre,
-		Style:        meta.Style,
-		Format:       "mp3",
-		BPM:          meta.BPM,
-		Duration:     meta.Duration,
-		MusicalKey:   meta.MusicalKey,
-		Scale:        meta.Scale,
-		Danceability: meta.Danceability,
-		Loudness:     meta.Loudness,
-		FileSize:     int(obj.ContentLength),
-	}
+	// 8. Finalize Track record
+	// Note: We use .Updates() because the API already created the row when the user uploaded it!
+	w.db.DB.Model(&models.Track{}).Where("id = ?", payload.TrackID).Updates(map[string]interface{}{
+		"key":                 destinationKey,
+		"title":               meta.Title,
+		"artist_id":           artist.ID,
+		"album_id":            albumID,
+		"genre":               meta.Genre,
+		"style":               meta.Style,
+		"format":              "mp3",
+		"bpm":                 meta.BPM,
+		"duration":            meta.Duration,
+		"musical_key":         meta.MusicalKey,
+		"scale":               meta.Scale,
+		"danceability":        meta.Danceability,
+		"loudness":            meta.Loudness,
+		"file_size":           int(obj.ContentLength),
+		"processing_status":   "completed",
+		"processing_progress": 100,
+	})
 
-	w.db.DB.Where(models.Track{Key: destinationKey}).Assign(track).FirstOrCreate(&track)
+	// 9. Cleanup
+	w.storage.DeleteIngestFile(key)
+	w.cleanupFolders([]string{key}) // Clean up the parent folder if it's now empty
 
-	return w.storage.DeleteIngestFile(key)
+	// Signal the frontend to close the stream
+	w.redis.Publish(ctx, "track_status:"+trackIDStr, "completed")
+	jobs.WithLabelValues("success").Inc()
+	log.Printf("Job Completed: Track ID %d", payload.TrackID)
+
+	return nil
 }
 
+// cleanupFolders removes empty directories in the ingest bucket
 func (w *Worker) cleanupFolders(allKeys []string) {
 	var dirs []string
 	for _, k := range allKeys {
-		if strings.HasSuffix(k, "/") {
-			dirs = append(dirs, k)
+		dir := filepath.Dir(k)
+		if dir != "." && dir != "/" {
+			dirs = append(dirs, dir+"/")
 		}
 	}
 

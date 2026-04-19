@@ -8,8 +8,9 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 
-	"momo-radio/gui" // Imports your embedded filesystem
+	"momo-radio/gui"
 	"momo-radio/internal/api/handlers"
 	"momo-radio/internal/api/middleware"
 	"momo-radio/internal/config"
@@ -21,10 +22,12 @@ type Server struct {
 	cfg     *config.Config
 	db      *database.Client
 	storage *storage.Client
+	redis   *redis.Client
 	router  *gin.Engine
 }
 
-func New(cfg *config.Config, db *database.Client, storage *storage.Client) *Server {
+// ⚡️ ADDED: redisClient to the constructor parameters
+func New(cfg *config.Config, db *database.Client, storage *storage.Client, redisClient *redis.Client) *Server {
 	if cfg.Radio.LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode) // Set to Release for production
 	}
@@ -33,6 +36,7 @@ func New(cfg *config.Config, db *database.Client, storage *storage.Client) *Serv
 		cfg:     cfg,
 		db:      db,
 		storage: storage,
+		redis:   redisClient,
 		router:  gin.Default(),
 	}
 
@@ -59,7 +63,7 @@ func (s *Server) setupRoutes() {
 	// 1. Initialize Modular Handlers
 	authHandler := handlers.NewAuthHandler(s.db.DB)
 	statsHandler := handlers.NewStatsHandler(s.db.DB)
-	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg)
+	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis)
 	playlistHandler := handlers.NewPlaylistHandler(s.db.DB)
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
 	artistHandler := handlers.NewArtistHandler(s.db.DB)
@@ -92,7 +96,9 @@ func (s *Server) setupRoutes() {
 			protected.GET("/tracks", middleware.RequireRole("dj", "manager"), trackHandler.GetTracks)
 			protected.GET("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.GetTrack)
 			protected.GET("/tracks/:id/stream", middleware.RequireRole("dj", "manager"), trackHandler.StreamTrack)
+			protected.GET("/tracks/:id/status-stream", middleware.RequireRole("dj", "manager"), trackHandler.TrackStatusStream)
 			protected.PUT("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.UpdateTrack)
+			protected.GET("/tracks/queue", middleware.RequireRole("dj", "manager"), trackHandler.GetQueue)
 
 			// --- ARTISTS
 			protected.GET("/artists", middleware.RequireRole("dj", "manager"), artistHandler.GetArtists)
@@ -156,7 +162,7 @@ func (s *Server) setupRoutes() {
 			}
 		}
 
-		// 3. If the file doesn't exist, it's a React Router path (e.g., "/library"). Serve index.html.
+		// 3. If the file doesn't exist, it's a React Router path. Serve index.html.
 		indexFile, err := distFS.Open("index.html")
 		if err != nil {
 			c.String(http.StatusInternalServerError, "Frontend not built properly (index.html missing)")

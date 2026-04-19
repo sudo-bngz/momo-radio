@@ -48,6 +48,12 @@ type Config struct {
 		Password string `mapstructure:"password"`
 		Name     string `mapstructure:"name"`
 	} `mapstructure:"database"`
+	Redis struct {
+		Host     string `mapstructure:"host"`
+		Port     string `mapstructure:"port"`
+		Password string `mapstructure:"password"`
+		DB       int    `mapstructure:"db"`
+	} `mapstructure:"redis"`
 	Services struct {
 		DiscogsToken string `mapstructure:"discogs_token"`
 		ContactEmail string `mapstructure:"contact_email"`
@@ -90,12 +96,6 @@ func Load() *Config {
 	viper.BindEnv("radio.prefetch_count")
 	viper.BindEnv("radio.provider")
 
-	// Defaults
-	viper.SetDefault("server.polling_interval_seconds", 10)
-	viper.SetDefault("server.temp_dir", "/tmp/")
-	viper.SetDefault("server.metrics_port", ":9091")
-	viper.SetDefault("server.timezone", "UTC")
-
 	// Register Database keys
 	viper.BindEnv("database.host")
 	viper.BindEnv("database.port")
@@ -103,9 +103,27 @@ func Load() *Config {
 	viper.BindEnv("database.password")
 	viper.BindEnv("database.name")
 
+	// Register Redis keys
+	viper.BindEnv("redis.host")
+	viper.BindEnv("redis.port")
+	viper.BindEnv("redis.password")
+	viper.BindEnv("redis.db")
+
 	// Services
 	viper.BindEnv("services.discogs_token")
 	viper.BindEnv("services.contact_email")
+
+	// Defaults
+	viper.SetDefault("server.polling_interval_seconds", 10)
+	viper.SetDefault("server.temp_dir", "/tmp/")
+	viper.SetDefault("server.metrics_port", ":9091")
+	viper.SetDefault("server.timezone", "UTC")
+
+	// Redis Defaults
+	viper.SetDefault("redis.host", "localhost")
+	viper.SetDefault("redis.port", "6379")
+	viper.SetDefault("redis.password", "")
+	viper.SetDefault("redis.db", 0)
 
 	// Radio Defaults (Optimized for Live HLS)
 	viper.SetDefault("radio.bitrate", "128k")

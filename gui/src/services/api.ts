@@ -64,7 +64,8 @@ export const api = {
     return response.data;
   },
 
-  uploadTrack: async (file: File, metadata: TrackMetadata): Promise<void> => {
+  // ⚡️ UPDATED: Now returns the data so useIngest can grab the track_id for the SSE stream!
+  uploadTrack: async (file: File, metadata: TrackMetadata): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
     
@@ -72,13 +73,19 @@ export const api = {
       formData.append(key, (metadata as any)[key]);
     });
 
-    await apiClient.post('/upload/confirm', formData, {
+    const response = await apiClient.post('/upload/confirm', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
+    return response.data;
+  },
+
+  // ⚡️ NEW: Fetch the live processing queue
+  getQueue: async (): Promise<any[]> => {
+    const response = await apiClient.get('/tracks/queue');
+    return response.data;
   },
 
   // 2. LIBRARY MANAGEMENT
-  // UPDATED: Now supports server-side pagination, searching, and sorting
   getTracks: async (params?: { 
     limit?: number; 
     offset?: number; 
@@ -153,5 +160,5 @@ export const api = {
   getDashboardStats: async (): Promise<DashboardData> => {
     const response = await apiClient.get<DashboardData>('/stats');
     return response.data;
-  }
+  },
 };

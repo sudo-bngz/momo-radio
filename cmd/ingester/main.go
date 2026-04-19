@@ -2,12 +2,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
@@ -24,9 +26,11 @@ func main() {
 	repairCountry := flag.Bool("repair-country", false, "Run Discogs enrichment on existing tracks")
 	dryRun := flag.Bool("dry-run", false, "Do not save changes to DB (use with repair flags)")
 	repairProvider := flag.String("provider", "musicbrainz", "Metadata provider: 'musicbrainz' or 'discogs'")
+
 	var targetArtists []string
 	flag.Func("artists", "Comma-separated list of artists to target (e.g. -artists='Daft Punk,Justice')", func(s string) error {
-		for a := range strings.SplitSeq(s, ",") {
+		// Compatible with Go 1.24+ strings.SplitSeq, or fallback to strings.Split
+		for _, a := range strings.Split(s, ",") {
 			targetArtists = append(targetArtists, strings.TrimSpace(a))
 		}
 		return nil
@@ -37,11 +41,19 @@ func main() {
 	// 2. Setup Configuration
 	cfg := config.Load()
 
-	// 3. Initialize Storage
+	// 3. Initialize Infrastructure (Storage, DB, Redis)
 	store := storage.New(cfg)
 	db := database.New(cfg)
 
-	// 4. Run Database Migrations
+	// 4. Initialize Redis Client
+	redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+
+	// 5. Run Database Migrations
 	db.AutoMigrate()
 
 	// Ensure temp directory exists
@@ -49,10 +61,10 @@ func main() {
 		log.Fatalf("Failed to create temp dir: %v", err)
 	}
 
-	// 5. Create Worker
-	worker := ingest.New(cfg, store, db)
+	// 6. Create the Asynq Worker
+	worker := ingest.New(cfg, store, db, redisClient)
 
-	// 6. MODE SELECTION
+	// 7. MODE SELECTION (CLI Maintenance)
 	if *repairMeta || *repairAudio || *repairCountry {
 		log.Println("MAINTENANCE MODE ACTIVE")
 		log.Printf("Storage Provider: %s", cfg.Storage.Provider)
@@ -79,10 +91,10 @@ func main() {
 		return
 	}
 
-	// 7. NORMAL OPERATION
+	// 8. NORMAL OPERATION
 	log.Printf("Starting Radio Ingestion Worker [Storage: %s]...", cfg.Storage.Provider)
 
-	// 8. Setup Metrics
+	// 9. Setup Metrics
 	ingest.RegisterMetrics()
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
@@ -92,6 +104,8 @@ func main() {
 		}
 	}()
 
-	// Start Watcher Loop
-	worker.Run()
+	// 9. Start Asynq Server (Blocks forever)
+	if err := worker.StartServer(); err != nil {
+		log.Fatalf("Failed to start Asynq worker: %v", err)
+	}
 }

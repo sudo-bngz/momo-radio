@@ -22,13 +22,7 @@ export interface AnalyzeResponse {
   key: string;
 }
 
-export type UploadStatus = 
-  | 'idle' 
-  | 'analyzing' 
-  | 'review' 
-  | 'uploading' 
-  | 'success' 
-  | 'error';
+export type UploadStatus = 'idle' | 'analyzing' | 'review' | 'uploading' | 'processing' | 'success' | 'error';
 
 /**
  * Single Track definition (unified version)
@@ -121,7 +115,7 @@ export interface NowPlayingInfo {
 export interface User {
   id: number;
   username: string;
-  email?: string; // Optional depending on your Go model
+  email?: string; 
   role: 'admin' | 'manager' | 'viewer'; // Enforce specific roles
   created_at?: string;
 }
