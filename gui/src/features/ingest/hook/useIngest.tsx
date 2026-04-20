@@ -7,15 +7,9 @@ import { useAuthStore } from '../../../store/useAuthStore';
 export type UploadStatus = 'idle' | 'analyzing' | 'review' | 'uploading' | 'processing' | 'success' | 'error';
 
 const INITIAL_META: TrackMetadata = {
-  title: '',
-  artist: '',
-  album: '',
-  genre: '',
-  year: '',
-  label: '',          
-  catalog_number: '', 
-  country: '',        
-  style: ''           
+  title: '', artist: '', album: '', genre: '', year: '', 
+  label: '', catalog_number: '', country: '', style: '', 
+  cover_base64: '' 
 };
 
 // Define the return type to explicitly fix TypeScript errors in the View
@@ -68,7 +62,8 @@ export const useIngest = (): UseIngestReturn => {
           label: '', 
           catalog_number: '', 
           country: '', 
-          style: '' 
+          style: '',
+          cover_base64: data.cover_base64 || '',
         });
         
         setStatus('review');

@@ -74,8 +74,8 @@ export const IngestView: React.FC = () => {
             <input {...getInputProps()} />
             {status === 'analyzing' ? (
               <VStack gap={4} animation="fade-in 0.3s ease-out">
-                <Spinner size="xl" color="blue.500" />
-                <Text color="gray.600" fontWeight="medium">Reading ID3 Tags locally...</Text>
+                <Spinner size="xl" color="blue.500" borderWidth="2px" />
+                <Text color="gray.600" fontWeight="medium">Reading ID3 Tags & Artwork locally...</Text>
               </VStack>
             ) : (
               <VStack gap={4}>
@@ -107,26 +107,49 @@ export const IngestView: React.FC = () => {
                 </Button>
               </HStack>
 
-              {/* Main Info */}
-              <Box>
-                <Heading size="md" mb={6} display="flex" alignItems="center" gap={2} color="gray.800">
-                  <Icon as={Tag} boxSize="18px" color="blue.500" /> Main Information
-                </Heading>
-                <SimpleGrid columns={2} gap={8}>
-                  <Field.Root gridColumn="span 2">
-                    <Field.Label fontWeight="bold" color="gray.700">Track Title</Field.Label>
-                    <Input size="lg" value={meta.title} onChange={(e) => handleMetaChange('title', e.target.value)} color="gray.800" />
-                  </Field.Root>
-                  <Field.Root>
-                    <Field.Label fontWeight="bold" color="gray.700">Artist</Field.Label>
-                    <Input value={meta.artist} onChange={(e) => handleMetaChange('artist', e.target.value)} color="gray.800" />
-                  </Field.Root>
-                  <Field.Root>
-                    <Field.Label fontWeight="bold" color="gray.700">Album</Field.Label>
-                    <Input value={meta.album} onChange={(e) => handleMetaChange('album', e.target.value)} color="gray.800" />
-                  </Field.Root>
-                </SimpleGrid>
-              </Box>
+              {/* ⚡️ NEW: Split Layout for Artwork + Main Info */}
+              <HStack align="start" gap={8} w="100%">
+                
+                {/* Artwork Preview Box */}
+                <Box 
+                  w="200px" h="200px" 
+                  borderRadius="2xl" overflow="hidden" 
+                  bg="gray.100" flexShrink={0} 
+                  border="1px solid" borderColor="gray.200" 
+                  display="flex" alignItems="center" justifyContent="center"
+                  boxShadow="sm"
+                >
+                  {meta.cover_base64 ? (
+                    <img src={meta.cover_base64} alt="Embedded Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <VStack color="gray.400" gap={2}>
+                      <Icon as={Music} boxSize={10} />
+                      <Text fontSize="xs" fontWeight="500">No Artwork</Text>
+                    </VStack>
+                  )}
+                </Box>
+
+                {/* Main Information Form */}
+                <Box flex="1">
+                  <Heading size="md" mb={6} display="flex" alignItems="center" gap={2} color="gray.800">
+                    <Icon as={Tag} boxSize="18px" color="blue.500" /> Main Information
+                  </Heading>
+                  <SimpleGrid columns={2} gap={6}>
+                    <Field.Root gridColumn="span 2">
+                      <Field.Label fontWeight="bold" color="gray.700">Track Title</Field.Label>
+                      <Input size="lg" value={meta.title} onChange={(e) => handleMetaChange('title', e.target.value)} color="gray.800" />
+                    </Field.Root>
+                    <Field.Root>
+                      <Field.Label fontWeight="bold" color="gray.700">Artist</Field.Label>
+                      <Input value={meta.artist} onChange={(e) => handleMetaChange('artist', e.target.value)} color="gray.800" />
+                    </Field.Root>
+                    <Field.Root>
+                      <Field.Label fontWeight="bold" color="gray.700">Album</Field.Label>
+                      <Input value={meta.album} onChange={(e) => handleMetaChange('album', e.target.value)} color="gray.800" />
+                    </Field.Root>
+                  </SimpleGrid>
+                </Box>
+              </HStack>
 
               <Separator borderColor="gray.100" />
 

@@ -8,6 +8,7 @@ export interface TrackMetadata {
   catalog_number: string;
   country: string;
   style: string;
+  cover_base64: string;
 }
 
 export interface AnalyzeResponse {
@@ -20,6 +21,7 @@ export interface AnalyzeResponse {
   year: string;
   bpm: string;
   key: string;
+  cover_base64: string;
 }
 
 export type UploadStatus = 'idle' | 'analyzing' | 'review' | 'uploading' | 'processing' | 'success' | 'error';

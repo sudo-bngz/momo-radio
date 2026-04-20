@@ -16,6 +16,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 
 	"momo-radio/internal/audio"
 	"momo-radio/internal/config"
@@ -282,15 +283,38 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	var album models.Album
 	var albumID *uint
 	if meta.Album != "" {
-		w.db.DB.Where(models.Album{
-			Title:    meta.Album,
-			ArtistID: artist.ID,
-		}).Assign(models.Album{
-			Year:           meta.Year,
-			Publisher:      meta.Publisher,
-			CatalogNumber:  meta.CatalogNumber,
-			ReleaseCountry: utils.ResolveCountry(meta.Country),
-		}).FirstOrCreate(&album)
+		err := w.db.DB.Where(models.Album{Title: meta.Album, ArtistID: artist.ID}).First(&album).Error
+
+		if err == gorm.ErrRecordNotFound || err != nil {
+			album = models.Album{
+				Title:          meta.Album,
+				ArtistID:       artist.ID,
+				Year:           meta.Year,
+				Publisher:      meta.Publisher,
+				CatalogNumber:  meta.CatalogNumber,
+				ReleaseCountry: utils.ResolveCountry(meta.Country),
+			}
+			w.db.DB.Create(&album)
+		} else {
+			albumUpdates := map[string]any{}
+
+			if album.Year == "" && meta.Year != "" {
+				albumUpdates["year"] = meta.Year
+			}
+			if album.Publisher == "" && meta.Publisher != "" {
+				albumUpdates["publisher"] = meta.Publisher
+			}
+			if album.CatalogNumber == "" && meta.CatalogNumber != "" {
+				albumUpdates["catalog_number"] = meta.CatalogNumber
+			}
+			if album.ReleaseCountry == "" && meta.Country != "" {
+				albumUpdates["release_country"] = utils.ResolveCountry(meta.Country)
+			}
+
+			if len(albumUpdates) > 0 {
+				w.db.DB.Model(&album).Updates(albumUpdates)
+			}
+		}
 		albumID = &album.ID
 	}
 
@@ -299,9 +323,11 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		var rawImage []byte
 		var errImg error
 
+		// Local attached picture wins first!
 		if len(meta.AttachedPicture) > 0 {
 			rawImage = meta.AttachedPicture
 		} else if discogsCoverURL != "" {
+			// Cloud fetch as fallback
 			rawImage, errImg = metadata.DownloadImage(discogsCoverURL, w.cfg.Services.DiscogsToken)
 		}
 
