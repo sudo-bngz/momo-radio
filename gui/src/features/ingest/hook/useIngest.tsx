@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import type { FileRejection } from 'react-dropzone';
 import { api } from '../../../services/api';
 import type { TrackMetadata } from '../../../types';
+import { useAuthStore } from '../../../store/useAuthStore';
 
 export type UploadStatus = 'idle' | 'analyzing' | 'review' | 'uploading' | 'processing' | 'success' | 'error';
 
@@ -114,8 +115,13 @@ export const useIngest = (): UseIngestReturn => {
         setStatus('processing');
         setProcessStep('Awaiting worker assignment...');
 
-        // Assuming your Vite proxy forwards /api to your Go backend
-        const eventSource = new EventSource(`/api/tracks/${response.track_id}/status-stream`);
+        // 2. Grab the token
+        const token = useAuthStore.getState().token;
+
+        // 3. Append the token to the URL query string
+        const eventSource = new EventSource(
+          `/api/v1/tracks/${response.track_id}/status-stream?token=${token}`
+        );
 
         eventSource.addEventListener('status', (e) => {
           const msg = e.data;
@@ -165,8 +171,8 @@ export const useIngest = (): UseIngestReturn => {
     file,
     meta,
     errorMsg,
-    uploadProgress, // ⚡️ Now exposed to UI
-    processStep,    // ⚡️ Now exposed to UI
+    uploadProgress,
+    processStep,
     setErrorMsg,
     onDrop,
     handleMetaChange,

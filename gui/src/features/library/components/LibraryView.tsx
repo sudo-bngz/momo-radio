@@ -29,6 +29,7 @@ export const LibraryView: React.FC = () => {
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
 
   const formatDuration = (s: number) => {
+    if (!s) return '-';
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${sec.toString().padStart(2, '0')}`;
@@ -47,7 +48,6 @@ export const LibraryView: React.FC = () => {
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
       {/* 1. Header Section */}
       <VStack align="start" gap={1}>
-        {/* ⚡️ NEW BREADCRUMB */}
         <HStack gap={2} fontSize="sm" color="gray.500" mb={3}>
           <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
             <Icon as={Music} boxSize={3} strokeWidth={3} />
@@ -69,6 +69,7 @@ export const LibraryView: React.FC = () => {
         </Text>
       </VStack>
 
+      {/* 2. Controls Section */}
       <HStack justify="space-between" w="100%" gap={6}>
         <HStack gap={4} flex="1">
           <Button bg="gray.900" color="white" borderRadius="full" w="48px" h="48px" p={0} _hover={{ bg: "black" }} onClick={() => navigate('/ingest')}>
@@ -104,21 +105,9 @@ export const LibraryView: React.FC = () => {
           </Select.Trigger>
 
           <Select.Positioner zIndex={100}>
-            <Select.Content 
-              bg="white"
-              borderRadius="xl" 
-              shadow="md" 
-              border="1px solid" 
-              borderColor="gray.200"
-            >
+            <Select.Content bg="white" borderRadius="xl" shadow="md" border="1px solid" borderColor="gray.200">
               {sortOptions.items.map((item) => (
-                <Select.Item 
-                  item={item} 
-                  key={item.value}
-                  p={2}
-                  _hover={{ bg: "blue.50" }}
-                  cursor="pointer"
-                >
+                <Select.Item item={item} key={item.value} p={2} _hover={{ bg: "blue.50" }} cursor="pointer">
                   <Select.ItemText color="gray.800" fontSize="sm" fontWeight="500">
                     {item.label}
                   </Select.ItemText>
@@ -129,10 +118,9 @@ export const LibraryView: React.FC = () => {
         </Select.Root>
       </HStack>
 
+      {/* 3. Table Section */}
       <Box 
-        flex="1" 
-        overflowY="auto" 
-        onScroll={handleScroll}
+        flex="1" overflowY="auto" onScroll={handleScroll}
         css={{
           '&::-webkit-scrollbar': { width: '8px' },
           '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-gray-200)', borderRadius: '4px' },
@@ -158,17 +146,53 @@ export const LibraryView: React.FC = () => {
                   <Table.ColumnHeader textAlign="right">Time</Table.ColumnHeader>
                 </Table.Row>
               </Table.Header>
-              <Table.Body>
+             <Table.Body>
                 {tracks.map((track) => {
                   const isThisTrackPlaying = currentTrack?.id === track.id;
                   const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
+                  const hasAudioData = track.duration && track.duration > 0;
+                  
+                  // 2. Is the DB explicitly screaming that it's processing?
+                  const hasPendingFlag = ['pending', 'processing'].includes(track.status || '') || ['pending', 'processing'].includes(track.processing_status || '');
+
+                  // 3. The rule: If it has audio data, it's playable (ignores stuck DB flags). 
+                  // If it's missing audio data, it is forced into the pending/disabled state!
+                  const isPending = !hasAudioData || (hasPendingFlag && !hasAudioData);
+
                   return (
-                    <Table.Row key={track.id} className="group" _hover={{ bg: "gray.50" }} bg={isThisTrackPlaying ? "blue.50" : "transparent"}>
+                    <Table.Row 
+                      key={track.id} 
+                      className="group" 
+                      bg={isPending ? "gray.50" : (isThisTrackPlaying ? "blue.50" : "transparent")}
+                      opacity={isPending ? 0.6 : 1}
+                      cursor={isPending ? "not-allowed" : "pointer"}
+                      _hover={isPending ? {} : { bg: "gray.50" }}
+                      onDoubleClick={() => {
+                         if (!isPending) playTrack(track, tracks);
+                      }}
+                    >
                       
                       <Table.Cell px={0}>
-                        <Box w="36px" h="36px" bg={isThisTrackPlaying ? "blue.500" : "gray.100"} borderRadius="md" display="flex" alignItems="center" justifyContent="center" cursor="pointer" color={isThisTrackPlaying ? "white" : "gray.400"} onClick={() => isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks)}>
-                          {isThisTrackActiveAndPlaying ? <Icon as={Pause} boxSize={5} fill="currentColor" /> : <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />}
-                        </Box>
+                        {isPending ? (
+                           <Box w="36px" h="36px" display="flex" alignItems="center" justifyContent="center">
+                             <Spinner size="sm" color="blue.500" borderWidth="2px" />
+                           </Box>
+                        ) : (
+                          <Box 
+                            w="36px" h="36px" 
+                            bg={isThisTrackPlaying ? "blue.500" : "gray.100"} 
+                            borderRadius="md" display="flex" alignItems="center" justifyContent="center" 
+                            color={isThisTrackPlaying ? "white" : "gray.400"} 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isPending) {
+                                isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks);
+                              }
+                            }}
+                          >
+                            {isThisTrackActiveAndPlaying ? <Icon as={Pause} boxSize={5} fill="currentColor" /> : <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />}
+                          </Box>
+                        )}
                       </Table.Cell>
 
                       <Table.Cell px={2}>
@@ -181,17 +205,23 @@ export const LibraryView: React.FC = () => {
                         </Box>
                       </Table.Cell>
 
-                      <Table.Cell fontWeight={isThisTrackPlaying ? "bold" : "500"} color={isThisTrackPlaying ? "blue.600" : "gray.900"} cursor="pointer" onClick={() => setSelectedTrack(track)}>
-                        {track.title}
+                      <Table.Cell 
+                        fontWeight={isThisTrackPlaying ? "bold" : "500"} 
+                        color={isPending ? "blue.500" : (isThisTrackPlaying ? "blue.600" : "gray.900")} 
+                        fontStyle={isPending ? "italic" : "normal"}
+                        onClick={() => !isPending && setSelectedTrack(track)}
+                      >
+                        {track.title} {isPending && "(Analyzing...)"}
                       </Table.Cell>
                       
-                      <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"} cursor="pointer" _hover={{ textDecoration: "underline", color: "blue.600" }} onClick={(e) => { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(track.artist)}`); }}>
+                      <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"} _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }} onClick={(e) => { if(!isPending) { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(track.artist)}`); } }}>
                         {track.artist}
                       </Table.Cell>
 
                       <Table.Cell color="gray.500">
                         {track.album || '-'}
                       </Table.Cell>
+                      
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
                           {track.style ? (
@@ -199,18 +229,10 @@ export const LibraryView: React.FC = () => {
                               const cleanTag = tag.trim();
                               return (
                                 <Badge 
-                                  key={index} 
-                                  size="sm" 
-                                  colorPalette={getColorForGenre(cleanTag)} 
-                                  variant="subtle" 
-                                  borderRadius="md" 
-                                  px={2}
-                                  cursor="pointer"
-                                  transition="all 0.2s" 
-                                  _hover={{ opacity: 0.8, transform: "scale(1.05)" }}
+                                  key={index} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"}
+                                  transition="all 0.2s" _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
                                   onClick={(e) => {
-                                    e.stopPropagation(); 
-                                    setSearchQuery(cleanTag); 
+                                    if(!isPending){ e.stopPropagation(); setSearchQuery(cleanTag); }
                                   }}
                                 >
                                   {cleanTag}
@@ -218,28 +240,26 @@ export const LibraryView: React.FC = () => {
                               );
                             })
                           ) : (
-                            <Text color="gray.400">-</Text>
+                            <Badge size="sm" bg="gray.100" color="gray.400" variant="subtle" borderRadius="md" px={2}>
+                              -
+                            </Badge>
                           )}
                         </HStack>
                       </Table.Cell>
-                      {/* ⚡️ MINIMALIST BPM TAG (Grayscale Heat-Map) */}
+                      
                       <Table.Cell>
-                        {track.bpm ? (
-                          <Badge 
-                            size="sm" 
-                            bg={getBpmStyle(Math.round(track.bpm)).bg} 
-                            color={getBpmStyle(Math.round(track.bpm)).color} 
-                            border="none"
-                            borderRadius="md" 
-                            px={2.5}
-                            py={0.5}
-                            fontWeight="700"
-                          >
-                            {Math.round(track.bpm)}
-                          </Badge>
-                        ) : (
-                          <Text color="gray.400">-</Text>
-                        )}
+                        <Badge 
+                          size="sm" 
+                          bg={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).bg} 
+                          color={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).color} 
+                          border="none" 
+                          borderRadius="md" 
+                          px={2.5} 
+                          py={0.5} 
+                          fontWeight="700"
+                        >
+                          {track.bpm ? Math.round(track.bpm) : '-'}
+                        </Badge>
                       </Table.Cell>
 
                       <Table.Cell textAlign="right" color="gray.500">
@@ -271,7 +291,7 @@ export const LibraryView: React.FC = () => {
   );
 };
 
-// Helper function to generate consistent colors based on genre string
+// --- Helpers ---
 const getColorForGenre = (genre: string) => {
   const colors = ['red', 'orange', 'green', 'teal', 'blue', 'cyan', 'purple', 'pink'];
   let hash = 0;
@@ -281,22 +301,11 @@ const getColorForGenre = (genre: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-// Helper function: Grayscale intensity based on BPM
 const getBpmStyle = (bpm: number) => {
-  if (!bpm) return { bg: 'gray.50', color: 'gray.400' };
-  
-  // Downtempo / Chill (< 105 BPM) -> Very light gray
+  if (!bpm) return { bg: 'gray.100', color: 'gray.400' }; 
   if (bpm < 105) return { bg: 'gray.100', color: 'gray.500' }; 
-  
-  // Warmup (105 - 119 BPM) -> Soft gray
   if (bpm < 120) return { bg: 'gray.200', color: 'gray.700' }; 
-  
-  // House / Tech House (120 - 128 BPM) -> Medium bold gray
   if (bpm <= 128) return { bg: 'gray.300', color: 'gray.900' }; 
-  
-  // Techno / Breaks (129 - 140 BPM) -> Dark gray (inverted text)
   if (bpm <= 140) return { bg: 'gray.600', color: 'white' }; 
-  
-  // Fast Techno / Hardcore (> 140 BPM) -> Solid Pitch Black
   return { bg: 'gray.900', color: 'white' }; 
 };

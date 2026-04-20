@@ -69,6 +69,10 @@ export interface Track {
   // --- Radio Logic & Stats ---
   play_count?: number;
   last_played?: string | null; // Will be an ISO date string when populated
+
+  status?: string;
+  processing_status?: string;
+  processing_progress?: number;
 }
 
 // Lightweight version for the massive virtualized table

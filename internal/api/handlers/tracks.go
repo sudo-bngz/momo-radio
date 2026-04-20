@@ -53,6 +53,7 @@ type LibraryTrack struct {
 	CoverURL string  `json:"cover_url"`
 	BPM      float64 `json:"bpm"`
 	Style    string  `json:"style"`
+	Status   string  `json:"status"`
 }
 
 // GetTracks returns a paginated, lightweight list of tracks using DTO mapping
@@ -126,6 +127,7 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 			CoverURL: coverURL,
 			BPM:      t.BPM,
 			Style:    t.Style,
+			Status:   t.ProcessingStatus,
 		})
 	}
 
