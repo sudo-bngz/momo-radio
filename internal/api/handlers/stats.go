@@ -54,7 +54,7 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 
 	// We get the most recent state record
 	if err := h.db.Order("updated_at DESC").First(&streamState).Error; err == nil {
-		h.db.First(&currentTrack, streamState.TrackID)
+		h.db.Preload("Artist").Preload("Album").First(&currentTrack, streamState.TrackID)
 	}
 
 	// 4. Fetch Recent Tracks (History)

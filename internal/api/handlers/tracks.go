@@ -356,7 +356,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 
 				coverKey := fmt.Sprintf("covers/album_%d.%s", album.ID, picExt)
 
-				// ⚡️ FIXED: Upload directly to the public ASSETS bucket!
+				// Upload directly to the public ASSETS bucket!
 				uploadErr := h.storage.UploadAssetFile(
 					coverKey,
 					bytes.NewReader(pic.Data),
@@ -422,7 +422,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		return
 	}
 
-	// 10. ⚡️ Return success and Track ID to React for the SSE Stream
+	// 10. Return success and Track ID to React for the SSE Stream
 	c.JSON(http.StatusCreated, gin.H{
 		"status":   "queued",
 		"message":  "Upload successful, processing started.",

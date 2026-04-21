@@ -37,8 +37,8 @@ export const useDashboard = () => {
   /**
    * Helper to calculate time remaining for the current track
    */
-  const getTimeRemaining = (nowPlaying: NowPlayingInfo | null): string => {
-    if (!nowPlaying) return "--:--";
+const getTimeRemaining = (nowPlaying: NowPlayingInfo | null): string => {
+    if (!nowPlaying || !nowPlaying.ends_at) return "--:--";
     
     const end = new Date(nowPlaying.ends_at).getTime();
     const now = new Date().getTime();
@@ -69,7 +69,9 @@ export const useDashboard = () => {
       title: "Silence",
       artist: "Station Offline",
       playlist_name: "No Schedule",
-      timeRemaining: "--:--"
+      timeRemaining: "--:--",
+      starts_at: "",
+      ends_at: ""
     }
   };
 };

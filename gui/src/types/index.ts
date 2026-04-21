@@ -114,8 +114,9 @@ export interface NowPlayingInfo {
   title: string;
   artist: string;
   playlist_name: string;
-  starts_at: string; 
-  ends_at: string;   
+  timeRemaining?: string;
+  starts_at: string;
+  ends_at?: string;
 }
 
 export interface User {

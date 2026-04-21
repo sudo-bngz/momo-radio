@@ -1,6 +1,6 @@
 import { Flex, Box } from "@chakra-ui/react";
 import { Outlet } from "react-router-dom";
-import Sidebar from "../components/Sidebar";
+import Sidebar from "../components/hydra/Sidebar";
 import { TopNav } from "../components/TopNavbar";
 import { GlobalPlayer } from "../features/player/GlobalPlayer";
 
