@@ -47,15 +47,17 @@ func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisCli
 
 // LibraryTrack prevents sending massive payloads, now including Album data!
 type LibraryTrack struct {
-	ID       uint    `json:"id"`
-	Title    string  `json:"title"`
-	Artist   string  `json:"artist"`
-	Album    string  `json:"album"`
-	Duration float64 `json:"duration"`
-	CoverURL string  `json:"cover_url"`
-	BPM      float64 `json:"bpm"`
-	Style    string  `json:"style"`
-	Status   string  `json:"status"`
+	ID         uint    `json:"id"`
+	Title      string  `json:"title"`
+	Artist     string  `json:"artist"`
+	Album      string  `json:"album"`
+	Duration   float64 `json:"duration"`
+	CoverURL   string  `json:"cover_url"`
+	BPM        float64 `json:"bpm"`
+	MusicalKey string  `json:"musical_key"`
+	Scale      string  `json:"scale"`
+	Style      string  `json:"style"`
+	Status     string  `json:"status"`
 }
 
 // GetTracks returns a paginated, lightweight list of tracks using DTO mapping
@@ -121,15 +123,17 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		}
 
 		libraryTracks = append(libraryTracks, LibraryTrack{
-			ID:       t.ID,
-			Title:    t.Title,
-			Artist:   artistName,
-			Album:    t.Album.Title,
-			Duration: t.Duration,
-			CoverURL: coverURL,
-			BPM:      t.BPM,
-			Style:    t.Style,
-			Status:   t.ProcessingStatus,
+			ID:         t.ID,
+			Title:      t.Title,
+			Artist:     artistName,
+			Album:      t.Album.Title,
+			Duration:   t.Duration,
+			CoverURL:   coverURL,
+			BPM:        t.BPM,
+			MusicalKey: t.MusicalKey,
+			Scale:      t.Scale,
+			Style:      t.Style,
+			Status:     t.ProcessingStatus,
 		})
 	}
 

@@ -15,10 +15,8 @@ export const usePlaylistBuilder = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [playlistDescription, setPlaylistDescription] = useState('');
 
-  // 1. Fetch available tracks for the library
   useEffect(() => {
     let isMounted = true; 
-    
     const fetchLibrary = async () => {
       try {
         const response = await api.getTracks(); 
@@ -30,18 +28,15 @@ export const usePlaylistBuilder = () => {
         if (isMounted) setLibraryTracks([]); 
       }
     };
-
     fetchLibrary();
     return () => { isMounted = false; };
   }, []);
 
-  // 2. Fetch the specific playlist when in Edit Mode
   useEffect(() => {
     if (playlistId) {
       const loadPlaylist = async () => {
         try {
           const res = await api.getPlaylist(playlistId);
-          // Set the name and the tracks from the database!
           setPlaylistName(res.name || 'Untitled Playlist');
           setPlaylistDescription(res.description || '');
           setPlaylistTracks(res.tracks ?? []); 
@@ -52,7 +47,6 @@ export const usePlaylistBuilder = () => {
       };
       loadPlaylist();
     } else {
-      // If we are creating a new one, reset the form
       setPlaylistName('New Playlist');
       setPlaylistDescription('');
       setPlaylistTracks([]);
@@ -60,8 +54,8 @@ export const usePlaylistBuilder = () => {
   }, [playlistId]); 
 
   const addTrackToPlaylist = (track: Track) => {
-    const trackId = track?.id;
-    if (!playlistTracks.find(t => t.id === trackId)) {
+    if (!track || !track.id) return;
+    if (!playlistTracks.find(t => String(t.id) === String(track.id))) {
       setPlaylistTracks([...playlistTracks, track]);
     }
   };
@@ -70,19 +64,13 @@ export const usePlaylistBuilder = () => {
     setPlaylistTracks(playlistTracks.filter(t => t.id !== trackId));
   };
 
-  // ⚡️ FIXED: The Drag Handler
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    
     if (over && active.id !== over.id) {
       setPlaylistTracks((items) => {
-        // Force both sides to a String so strict equality works!
         const oldIndex = items.findIndex((i) => String(i.id) === String(active.id));
         const newIndex = items.findIndex((i) => String(i.id) === String(over.id));
-        
-        // Safety check just in case
         if (oldIndex === -1 || newIndex === -1) return items;
-        
         return arrayMove(items, oldIndex, newIndex);
       });
     }
@@ -90,11 +78,9 @@ export const usePlaylistBuilder = () => {
 
   const savePlaylist = async (): Promise<boolean> => {
     if (playlistTracks.length === 0) return false;
-
     setIsSaving(true);
     try {
       const trackIds = playlistTracks.map(t => t.id);
-
       if (playlistId) {
         await api.updatePlaylist(playlistId, { 
           name: playlistName,
@@ -102,21 +88,17 @@ export const usePlaylistBuilder = () => {
         });
         await api.updatePlaylistTracks(playlistId, trackIds);
       } else {
-        // CREATE MODE
         const newPlaylistRes = await api.createPlaylist({ 
           name: playlistName, 
           description: playlistDescription,
           color: '#3182ce' 
         });
-        
-        const newId = newPlaylistRes?.id || newPlaylistRes?.id;
+        const newId = newPlaylistRes?.id;
         if (newId) {
           await api.updatePlaylistTracks(newId, trackIds);
         }
       }
-
       return true; 
-      
     } catch (error) {
       console.error("Failed to save playlist", error);
       return false; 
@@ -126,17 +108,8 @@ export const usePlaylistBuilder = () => {
   };
 
   return {
-    playlistId,
-    playlistDescription,
-    libraryTracks,
-    playlistTracks,
-    playlistName,
-    isSaving,
-    setPlaylistName,
-    addTrackToPlaylist,
-    setPlaylistDescription,
-    removeTrackFromPlaylist,
-    handleDragEnd,
-    savePlaylist
+    playlistId, playlistDescription, libraryTracks, playlistTracks, playlistName,
+    isSaving, setPlaylistName, addTrackToPlaylist, setPlaylistDescription,
+    removeTrackFromPlaylist, handleDragEnd, savePlaylist
   };
 };

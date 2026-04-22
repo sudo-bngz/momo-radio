@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"momo-radio/internal/models"
+	"momo-radio/internal/storage"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -12,12 +13,13 @@ import (
 
 // PlaylistHandler handles playlist-related requests independently of the main server
 type PlaylistHandler struct {
-	db *gorm.DB
+	db      *gorm.DB
+	storage *storage.Client
 }
 
 // NewPlaylistHandler creates a new PlaylistHandler instance
-func NewPlaylistHandler(db *gorm.DB) *PlaylistHandler {
-	return &PlaylistHandler{db: db}
+func NewPlaylistHandler(db *gorm.DB, st *storage.Client) *PlaylistHandler {
+	return &PlaylistHandler{db: db, storage: st}
 }
 
 // CreatePlaylist creates a new empty playlist container
@@ -66,7 +68,18 @@ func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
 	h.db.Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 		Where("playlist_tracks.playlist_id = ?", id).
 		Order("playlist_tracks.sort_order ASC").
+		Preload("Artist").
+		Preload("Album").
 		Find(&orderedTracks)
+
+	for i := range orderedTracks {
+		if orderedTracks[i].Album.CoverKey != "" {
+			url := h.storage.GetPublicURL(orderedTracks[i].Album.CoverKey)
+			if err == nil {
+				orderedTracks[i].Album.CoverURL = url
+			}
+		}
+	}
 
 	// 3. Attach the correctly ordered tracks to the playlist payload
 	playlist.Tracks = orderedTracks

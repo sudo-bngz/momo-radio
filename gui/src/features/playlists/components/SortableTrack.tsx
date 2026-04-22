@@ -1,32 +1,27 @@
 import React from 'react';
-import { Box, Text, Button, Icon, Grid } from '@chakra-ui/react';
+import { Box, Text, Button, Icon, Grid, Flex, Image, VStack, HStack } from '@chakra-ui/react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Trash2 } from 'lucide-react';
+import { GripVertical, Trash2, Music } from 'lucide-react';
 import type { Track } from '../../../types';
+// Import the shared robust extractors from the parent
+import { getTrackData, getKeyInfo } from './PlaylistBuilder';
 
-const getArtistName = (artistData: any): string => {
-  if (!artistData) return "Unknown Artist";
-  if (typeof artistData === 'string') return artistData;
-  if (typeof artistData === 'object' && 'name' in artistData) return artistData.name || "Unknown Artist";
-  return "Unknown Artist";
+const getBpmGrayscale = (bpm: number) => {
+  if (!bpm) return "gray.400";
+  const weight = Math.min(Math.max(Math.floor(((bpm - 70) / 90) * 400) + 400, 400), 800);
+  return `gray.${weight}`;
 };
 
 interface SortableTrackProps {
-  track: Track;
+  track: Track | any;
   index: number;
   onRemove: (id: number) => void;
 }
 
-export const SortableTrack: React.FC<SortableTrackProps> = ({ track, index, onRemove }) => {
-  // ⚡️ 1. Force strict string ID to prevent mismatch crashes
-  const safeId = String(track.id);
-
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
-    id: safeId 
-  });
-
-  // ⚡️ 2. Clean physics styles
+export const SortableTrack: React.FC<SortableTrackProps> = ({ track, onRemove }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: String(track.id) });
+  
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
@@ -34,53 +29,57 @@ export const SortableTrack: React.FC<SortableTrackProps> = ({ track, index, onRe
     position: isDragging ? ("relative" as const) : ("static" as const),
   };
 
-  const totalSeconds = Math.round(track.duration || 0);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  const timeString = `${m}:${s.toString().padStart(2, '0')}`;
-  const artistName = getArtistName(track.artist);
+  const data = getTrackData(track);
+  const harmonic = getKeyInfo(track.scale, track.musical_key || track.musicalkey);
+  
+  const safeDuration = track.duration || 0;
+  const timeString = `${Math.floor(safeDuration / 60)}:${Math.floor(safeDuration % 60).toString().padStart(2, '0')}`;
 
   return (
-    // ⚡️ 3. THE FIX: A native div isolates dnd-kit's physics from Chakra's CSS engine
     <div ref={setNodeRef} style={style}>
-      <Box 
-        bg="white" borderBottomWidth="1px" borderColor="gray.100"
-        _hover={{ bg: "gray.50" }} transition="all 0.2s"
-        className="group"
-        borderRadius={isDragging ? "xl" : "none"}
-        boxShadow={isDragging ? "0 20px 25px -5px rgba(0, 0, 0, 0.1)" : "none"}
-        opacity={isDragging ? 0.9 : 1}
-      >
-        <Grid templateColumns="40px 1fr 1fr 80px 50px" gap={4} px={6} py={3} alignItems="center">
+      <Box bg="white" borderBottom="1px solid" borderColor="gray.50" px={4} py={3} className="group" borderRadius={isDragging ? "xl" : "none"} boxShadow={isDragging ? "2xl" : "none"}>
+        <Grid templateColumns="40px 48px 1fr 100px 100px 60px 40px" gap={4} alignItems="center">
           
-          {/* DRAG HANDLE */}
-          <Box 
-            {...attributes} {...listeners} 
-            style={{ cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
-            display="flex" justifyContent="center" alignItems="center"
-            position="relative" w="24px" h="24px"
-          >
-            <Text fontSize="sm" color="gray.400" fontWeight="medium" position="absolute" opacity={1} _groupHover={{ opacity: 0 }} transition="opacity 0.2s">
-              {index}
-            </Text>
-            <Icon as={GripVertical} color="gray.500" position="absolute" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s" />
-          </Box>
-          
-          <Text fontWeight="bold" fontSize="sm" color="gray.900" truncate>{track.title}</Text>
-          <Text fontSize="sm" color="gray.500" truncate>{artistName}</Text>
-          <Text fontSize="sm" fontWeight="mono" color="gray.500" textAlign="right">{timeString}</Text>
-
-          <Box display="flex" justifyContent="flex-end" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s">
-            <Button 
-              size="xs" bg="white" border="1px solid" borderColor="gray.200" borderRadius="full" w={8} h={8} p={0}
-              color="red.500" _hover={{ bg: "red.500", color: "white", borderColor: "red.500" }} 
-              onPointerDown={(e) => e.stopPropagation()} 
-              onClick={() => onRemove(track.id)}
-            >
-              <Trash2 size={14} />
-            </Button>
+          <Box {...attributes} {...listeners} cursor="grab">
+            <Icon as={GripVertical} color="gray.200" _groupHover={{ color: "gray.400" }} />
           </Box>
 
+          {data.hasCover ? (
+            <Image src={data.cover} w="40px" h="40px" borderRadius="md" objectFit="cover" />
+          ) : (
+            <Flex w="40px" h="40px" bg="gray.50" align="center" justify="center" borderRadius="md"><Music size={16} color="#E2E8F0"/></Flex>
+          )}
+          
+          <VStack align="start" gap={0} overflow="hidden">
+          <Text fontWeight="bold" fontSize="sm" truncate w="full" color="gray.900">{data.title}</Text>
+            <HStack gap={2} w="full" overflow="hidden" mt={0.5}>
+              <Text fontSize="xs" color="gray.400" truncate>{data.artist}</Text>
+              
+              {data.style && (
+                <Box px={1.5} py={0.5} borderRadius="sm" bg="gray.100" color="gray.500" fontSize="9px" fontWeight="600" textTransform="capitalize" whiteSpace="nowrap" flexShrink={0}>
+                  {data.style}
+                </Box>
+              )}
+            </HStack>
+          </VStack>
+
+          <Text fontSize="xs" fontWeight="medium" color={getBpmGrayscale(data.bpm)} textAlign="center">
+            {data.bpm || '--'} BPM
+          </Text>
+
+          <Flex alignItems="center" justifyContent="center">
+            <Flex alignItems="center" justifyContent="center">
+            <Box px={2} py={0.5} borderRadius="sm" bg={harmonic.color} color="white" fontSize="10px" fontWeight="700" textAlign="center" textTransform="none">
+              {harmonic.label}
+            </Box>
+          </Flex>
+          </Flex>
+          
+          <Text fontSize="sm" fontWeight="mono" color="gray.400" textAlign="right">{timeString}</Text>
+
+          <Button size="xs" variant="ghost" color="red.300" _hover={{ color: "red.500", bg: "red.50" }} onClick={() => onRemove(track.id)} opacity={0} _groupHover={{ opacity: 1 }}>
+            <Trash2 size={14} />
+          </Button>
         </Grid>
       </Box>
     </div>

@@ -64,7 +64,7 @@ func (s *Server) setupRoutes() {
 	authHandler := handlers.NewAuthHandler(s.db.DB)
 	statsHandler := handlers.NewStatsHandler(s.db.DB)
 	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis)
-	playlistHandler := handlers.NewPlaylistHandler(s.db.DB)
+	playlistHandler := handlers.NewPlaylistHandler(s.db.DB, s.storage)
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
 	artistHandler := handlers.NewArtistHandler(s.db.DB)
 	albumHandler := handlers.NewAlbumHandler(s.db.DB)
