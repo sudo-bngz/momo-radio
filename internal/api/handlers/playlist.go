@@ -55,11 +55,21 @@ func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
 	}
 
 	var playlist models.Playlist
-	// Preload("Tracks") is essential so the Playlist Studio shows the current songs
-	if err := h.db.Preload("Tracks").First(&playlist, id).Error; err != nil {
+	// 1. Fetch the playlist container first
+	if err := h.db.First(&playlist, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
 		return
 	}
+
+	// 2. Fetch the tracks manually using an explicit JOIN so we can safely order them
+	var orderedTracks []models.Track
+	h.db.Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
+		Where("playlist_tracks.playlist_id = ?", id).
+		Order("playlist_tracks.sort_order ASC").
+		Find(&orderedTracks)
+
+	// 3. Attach the correctly ordered tracks to the playlist payload
+	playlist.Tracks = orderedTracks
 
 	c.JSON(http.StatusOK, playlist)
 }
@@ -67,8 +77,6 @@ func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
 // GetPlaylists fetches all playlists
 func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	var playlists []models.Playlist
-
-	// Replaced s.db.DB with h.db
 	result := h.db.Preload("Tracks").Order("name asc").Find(&playlists)
 
 	if result.Error != nil {

@@ -35,7 +35,7 @@ export const usePlaylistBuilder = () => {
     return () => { isMounted = false; };
   }, []);
 
-  // 2. MISSING PIECE ADDED: Fetch the specific playlist when in Edit Mode
+  // 2. Fetch the specific playlist when in Edit Mode
   useEffect(() => {
     if (playlistId) {
       const loadPlaylist = async () => {
@@ -57,7 +57,7 @@ export const usePlaylistBuilder = () => {
       setPlaylistDescription('');
       setPlaylistTracks([]);
     }
-  }, [playlistId]); // This runs anytime the URL ID changes
+  }, [playlistId]); 
 
   const addTrackToPlaylist = (track: Track) => {
     const trackId = track?.id;
@@ -70,12 +70,19 @@ export const usePlaylistBuilder = () => {
     setPlaylistTracks(playlistTracks.filter(t => t.id !== trackId));
   };
 
+  // ⚡️ FIXED: The Drag Handler
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    
     if (over && active.id !== over.id) {
       setPlaylistTracks((items) => {
-        const oldIndex = items.findIndex((i) => i.id === active.id);
-        const newIndex = items.findIndex((i) => i.id === over.id);
+        // Force both sides to a String so strict equality works!
+        const oldIndex = items.findIndex((i) => String(i.id) === String(active.id));
+        const newIndex = items.findIndex((i) => String(i.id) === String(over.id));
+        
+        // Safety check just in case
+        if (oldIndex === -1 || newIndex === -1) return items;
+        
         return arrayMove(items, oldIndex, newIndex);
       });
     }
