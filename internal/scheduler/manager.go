@@ -11,60 +11,81 @@ import (
 )
 
 type Manager struct {
-	db *gorm.DB
+	db       *gorm.DB
+	timezone string
 }
 
-func NewManager(db *gorm.DB) *Manager {
-	return &Manager{db: db}
+// ⚡️ Require timezone on initialization
+func NewManager(db *gorm.DB, tz string) *Manager {
+	if tz == "" {
+		tz = "UTC"
+	}
+	return &Manager{db: db, timezone: tz}
+}
+
+func extractHHMM(t string) string {
+	parts := strings.Split(t, "T")
+	timePart := parts[len(parts)-1]
+	if len(timePart) >= 5 {
+		return timePart[:5]
+	}
+	return t
 }
 
 func (m *Manager) GetCurrentSchedule() *models.ScheduleSlot {
-	now := time.Now()
+	loc, err := time.LoadLocation(m.timezone)
+	var now time.Time
 
-	// 1. Get current time context
-	todayDate := now.Format("2006-01-02")   // e.g., "2026-03-01"
-	todayDay := now.Weekday().String()[0:3] // e.g., "Sun"
-	currentTime := now.Format("15:04")      // e.g., "14:30"
+	if err != nil {
+		log.Printf("⚠️ Timezone error loading '%s': %v. Falling back to server default.", m.timezone, err)
+		now = time.Now()
+	} else {
+		now = time.Now().In(loc)
+	}
+
+	todayDate := now.Format("2006-01-02")
+	todayDay := strings.ToLower(now.Weekday().String()[0:3])
+	currentTime := now.Format("15:04")
 
 	var schedules []models.ScheduleSlot
 
-	err := m.db.Preload("Playlist").Preload("RuleSet").Where("is_active = ?", true).Find(&schedules).Error
+	err = m.db.Preload("Playlist").Preload("RuleSet").Where("is_active = ?", true).Find(&schedules).Error
 	if err != nil {
-		log.Printf("⚠️ Error fetching schedules: %v", err)
+		log.Printf("Error fetching schedules: %v", err)
 		return m.fallbackSchedule()
 	}
 
 	var bestRecurringMatch *models.ScheduleSlot
 
-	// 2. Find the matching slot
 	for i := range schedules {
 		slot := &schedules[i]
 
-		// Check if the current time falls within the slot's HH:MM window
-		if !m.isTimeMatch(slot.StartTime, slot.EndTime, currentTime) {
+		start := extractHHMM(slot.StartTime)
+		end := extractHHMM(slot.EndTime)
+
+		if !m.isTimeMatch(start, end, currentTime) {
 			continue
 		}
 
-		// --- PRIORITY 1: ONE-TIME EVENT ---
-		if slot.ScheduleType == "one_time" && slot.Date == todayDate {
-			// A special guest mix or one-time event overrides everything else!
+		dbDate := strings.Split(slot.Date, "T")[0]
+
+		if slot.ScheduleType == "one_time" && dbDate == todayDate {
+			log.Printf("Scheduler: Playing One-Time Event (ID: %d)", slot.ID)
 			return slot
 		}
 
-		// --- PRIORITY 2: WEEKLY RECURRING EVENT ---
-		if slot.ScheduleType == "recurring" && strings.Contains(slot.Days, todayDay) {
-			// Save it as a match, but keep looping just in case there is a
-			// 'one_time' event overlapping it that should take priority.
+		dbDays := strings.ToLower(slot.Days)
+		if slot.ScheduleType == "recurring" && strings.Contains(dbDays, todayDay) {
 			bestRecurringMatch = slot
 		}
 	}
 
-	// 3. If no one-time event was found, return the recurring one (if any)
 	if bestRecurringMatch != nil {
+		log.Printf("Scheduler: Playing Recurring Event (ID: %d)", bestRecurringMatch.ID)
 		return bestRecurringMatch
 	}
 
-	// 4. No Match Found? Return Default AutoDJ.
+	log.Printf("Scheduler: No events match current time (%s %s %s). Triggering fallback AutoDJ.", m.timezone, todayDay, currentTime)
 	return m.fallbackSchedule()
 }
 

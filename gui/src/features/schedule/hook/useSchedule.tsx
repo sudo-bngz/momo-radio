@@ -74,9 +74,9 @@ export const useSchedule = () => {
   // 3. Handle dropping a playlist onto the calendar grid
   const handleEventReceive = async (info: any) => {
     const playlistId = parseInt(info.event.extendedProps.playlistId, 10);
-    // This sends UTC time to Go. Thanks to our new Go Timezone config, 
-    // Go will translate this UTC time back into your local Paris time flawlessly!
-    const startTime = info.event.start.toISOString();
+    const d = info.event.start;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const startTime = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
 
     try {
       await api.createScheduleSlot(playlistId, startTime);
@@ -104,7 +104,7 @@ export const useSchedule = () => {
 
   const handleManualSchedule = async (playlistId: number, date: string, time: string) => {
     try {
-      const startDateTime = new Date(`${date}T${time}:00`).toISOString();
+      const startDateTime = `${date}T${time}:00`;
       await api.createScheduleSlot(playlistId, startDateTime);
       window.location.reload(); 
     } catch (error) {

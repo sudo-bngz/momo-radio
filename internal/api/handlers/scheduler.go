@@ -43,22 +43,39 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 		return
 	}
 
-	parsedTime, err := time.Parse(time.RFC3339, input.StartTime)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid time format"})
-		return
-	}
-
-	// --- DYNAMIC TIMEZONE LOGIC ---
-	// Read the timezone from your Viper config instead of hardcoding it
 	loc, err := time.LoadLocation(h.cfg.Server.Timezone)
 	if err != nil {
-		log.Printf("⚠️ Could not load timezone '%s', falling back to Local: %v", h.cfg.Server.Timezone, err)
+		log.Printf("Could not load timezone '%s', falling back to Local: %v", h.cfg.Server.Timezone, err)
 		loc = time.Local
 	}
 
-	localTime := parsedTime.In(loc)
-	// ------------------------------
+	var localTime time.Time
+
+	// Scenario A: Frontend sends strict UTC/Offset string (e.g., "2026-04-23T13:45:00Z")
+	if len(input.StartTime) > 19 && (input.StartTime[len(input.StartTime)-1] == 'Z' || input.StartTime[len(input.StartTime)-6] == '+') {
+		parsedTime, err := time.Parse(time.RFC3339, input.StartTime)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid RFC3339 time format"})
+			return
+		}
+		localTime = parsedTime.In(loc)
+
+		// Scenario B: Frontend sends exact local wall-clock (e.g., "2026-04-23T15:45")
+		// This entirely prevents Javascript offset bugs!
+	} else {
+		layout := "2006-01-02T15:04"
+		if len(input.StartTime) == 19 {
+			layout = "2006-01-02T15:04:05" // If seconds are included
+		}
+
+		parsedTime, err := time.ParseInLocation(layout, input.StartTime[:len(layout)], loc)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid local time format"})
+			return
+		}
+		localTime = parsedTime
+	}
+	// ----------------------------------------
 
 	exactDate := localTime.Format("2006-01-02")
 	dayOfWeek := localTime.Weekday().String()[0:3]
@@ -85,7 +102,6 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 	c.JSON(http.StatusCreated, slot)
 }
 
-// ... (GetSchedule and DeleteScheduleSlot remain exactly the same)
 func (h *SchedulerHandler) GetSchedule(c *gin.Context) {
 	// Return all slots so the React calendar can render both one-time and recurring events
 	var slots []models.ScheduleSlot

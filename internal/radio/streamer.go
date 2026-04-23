@@ -94,7 +94,7 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine
 		runID:     time.Now().Unix(),
 		cache:     NewCacheManager(adapter, cfg.Server.TempDir),
 		state:     NewStateManager(db.DB),
-		scheduler: scheduler.NewManager(db.DB),
+		scheduler: scheduler.NewManager(db.DB, cfg.Server.Timezone),
 	}
 }
 
@@ -104,7 +104,7 @@ func (e *Engine) Run() {
 		return
 	}
 
-	log.Printf("🆔 Engine Run ID: %d", e.runID)
+	log.Printf("Engine Run ID: %d", e.runID)
 
 	// 1. Prepare output dir
 	os.RemoveAll(e.cfg.Radio.SegmentDir)
@@ -116,7 +116,7 @@ func (e *Engine) Run() {
 	var resumeTrackID uint
 
 	if err == nil && time.Since(state.UpdatedAt) < 10*time.Minute {
-		log.Printf("🔄 RECOVERED STATE: Resuming HLS sequence at %d", state.Sequence)
+		log.Printf("RECOVERED STATE: Resuming HLS sequence at %d", state.Sequence)
 		startSequence = state.Sequence + 2
 		resumeTrackID = state.TrackID
 	}
@@ -173,7 +173,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 		// --- STEP A: HANDLE RESUME (Cold Start) ---
 		if firstRun && resumeID != 0 {
 			if dbErr := e.db.DB.First(&selectedTrack, resumeID).Error; dbErr == nil {
-				log.Printf("esume: Found interrupted track ID %d", resumeID)
+				log.Printf("Resume: Found interrupted track ID %d", resumeID)
 				lastTrack = selectedTrack
 			}
 			firstRun = false
@@ -185,17 +185,16 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 			activeSlot := e.scheduler.GetCurrentSchedule()
 			showName := getShowName(activeSlot)
 
-			// Decide based on the Schedule Target type (Playlist vs Ruleset)
-			// Note: Safely checking if the Playlist object itself is populated
-			if activeSlot.Playlist != nil {
-				// MODE: Fixed Sequence
+			if activeSlot.PlaylistID != nil {
 				selectedTrack, err = e.pickNextFromPlaylist(*activeSlot.PlaylistID)
-				log.Printf("📋 Mode: Fixed Playlist [%s]", showName)
-			} else if activeSlot.RuleSet != nil {
+				log.Printf("Mode: Fixed Playlist [%s]", showName)
+
+			} else if activeSlot.RuleSetID != nil {
 				// MODE: Intelligent AutoDJ
-				mode := strings.ToLower(activeSlot.RuleSet.Mode)
-				if mode == "" {
-					mode = "random" // Default fallback
+				// (Safeguard in case RuleSet isn't preloaded)
+				mode := "random"
+				if activeSlot.RuleSet != nil && activeSlot.RuleSet.Mode != "" {
+					mode = strings.ToLower(activeSlot.RuleSet.Mode)
 				}
 
 				selector, exists := selectors[mode]
@@ -203,16 +202,14 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 					selector = selectors["random"]
 				}
 
-				log.Printf("🤖 Mode: AutoDJ (%s) | Ruleset: %s", selector.Name(), showName)
-
-				// Pass the lastTrack to allow Harmonic/Starvation logic to work
+				log.Printf("Mode: AutoDJ (%s) | Ruleset: %s", selector.Name(), showName)
 				selectedTrack, err = selector.PickTrack(activeSlot.RuleSet, lastTrack)
 			}
 		}
 
 		// --- STEP C: EMERGENCY FAIL-SAFE ---
 		if err != nil || selectedTrack == nil {
-			log.Printf("⚠️ Selection Error: %v. Triggering emergency random fallback.", err)
+			log.Printf("Selection Error: %v. Triggering emergency random fallback.", err)
 			selectedTrack, _ = selectors["random"].PickTrack(nil, nil)
 		}
 
@@ -226,7 +223,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 			go e.cache.Cleanup([]string{selectedTrack.Key})
 
 			// 3. Metadata & Stats
-			log.Printf("NOW PLAYING: %s - %s", selectedTrack.Artist, selectedTrack.Title)
+			log.Printf("NOW PLAYING: %s - %s", selectedTrack.Artist.Name, selectedTrack.Title)
 			tracksPlayed.Inc()
 
 			// Update the now_playing.json for the frontend using the extracted Show Name
@@ -240,7 +237,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 
 			// 5. Stream Audio: This blocks until the file is fully copied to FFmpeg
 			if err := e.streamFileToPipe(selectedTrack.Key, output); err != nil {
-				log.Printf("❌ Pipe Stream Error: %v (Skipping track)", err)
+				log.Printf("Pipe Stream Error: %v (Skipping track)", err)
 				continue
 			}
 		}
@@ -253,13 +250,15 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 // pickNextFromPlaylist finds the next track in a fixed playlist sequence
 func (e *Engine) pickNextFromPlaylist(playlistID uint) (*models.Track, error) {
 	var track models.Track
-	// Logic: Find the track in this playlist with the oldest 'last_played_at'
-	// BUG FIX: Added NULLS FIRST to ensure unplayed tracks are always selected before repeated ones
-	err := e.db.DB.Table("tracks").
+
+	err := e.db.DB.Model(&models.Track{}).
 		Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 		Where("playlist_tracks.playlist_id = ?", playlistID).
-		Order("tracks.last_played_at ASC NULLS FIRST").
+		Preload("Artist").
+		Preload("Album").
+		Order("tracks.last_played_at ASC NULLS FIRST, playlist_tracks.id ASC").
 		First(&track).Error
+
 	return &track, err
 }
 
@@ -324,7 +323,7 @@ func (e *Engine) recordTrackPlay(t *models.Track) {
 	})
 
 	if err != nil {
-		log.Printf("⚠️  Failed to record play for track %d: %v", t.ID, err)
+		log.Printf("Failed to record play for track %d: %v", t.ID, err)
 	}
 }
 
@@ -353,12 +352,12 @@ func (e *Engine) startStreamUploader() {
 	dir := e.cfg.Radio.SegmentDir
 	seqRegex := regexp.MustCompile(`_(\d+)\.ts$`)
 
-	log.Printf("📡 Uploader started. Monitoring: %s", dir)
+	log.Printf("Uploader started. Monitoring: %s", dir)
 
 	for range ticker.C {
 		files, err := os.ReadDir(dir)
 		if err != nil {
-			log.Printf("❌ [Uploader] ReadDir error: %v", err)
+			log.Printf("[Uploader] ReadDir error: %v", err)
 			continue
 		}
 
@@ -379,7 +378,7 @@ func (e *Engine) startStreamUploader() {
 			if filename == "stream.m3u8" {
 				if info.ModTime().After(lastM3u8Time) {
 					if err := e.uploadPlaylist(fullPath, filename); err == nil {
-						log.Printf("📝 [Uploader] Master playlist updated")
+						log.Printf("[Uploader] Master playlist updated")
 						lastM3u8Time = info.ModTime()
 					}
 				}
@@ -397,9 +396,9 @@ func (e *Engine) startStreamUploader() {
 				}
 
 				if err := e.uploadSegment(fullPath, filename); err != nil {
-					log.Printf("❌ [Uploader] Segment %s upload failed: %v", filename, err)
+					log.Printf("[Uploader] Segment %s upload failed: %v", filename, err)
 				} else {
-					log.Printf("⚡ [Uploader] Segment uploaded: %s", filename)
+					log.Printf("[Uploader] Segment uploaded: %s", filename)
 					uploadedSegments[filename] = true
 					os.Remove(fullPath) // Delete local file after upload
 				}
@@ -456,7 +455,7 @@ func (e *Engine) cleanupUploadedMap(m map[string]bool, dir string) {
 		}
 	}
 	if count > 0 {
-		log.Printf("🧹 [Uploader] Cleaned %d entries from tracking map", count)
+		log.Printf("[Uploader] Cleaned %d entries from tracking map", count)
 	}
 }
 
@@ -474,6 +473,6 @@ func (e *Engine) startRedirectServer() {
 	})
 	http.Handle("/_metrics", promhttp.Handler())
 
-	log.Printf("🌍 Helper Server listening at %s", port)
+	log.Printf("Helper Server listening at %s", port)
 	http.ListenAndServe(port, nil)
 }

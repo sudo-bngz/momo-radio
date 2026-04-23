@@ -23,7 +23,7 @@ RUN go build -o /bin/radio cmd/radio/main.go
 FROM alpine:3.19
 
 # CRITICAL: Install FFmpeg for HLS Transcoding
-RUN apk add --no-cache ffmpeg ca-certificates bash
+RUN apk add --no-cache ffmpeg ca-certificates tzdata bash
 
 WORKDIR /app
 
