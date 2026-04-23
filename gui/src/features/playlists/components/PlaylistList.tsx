@@ -1,11 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, Flex, Heading, Text, Button, Icon, HStack, VStack, Spinner, SimpleGrid, Badge, Input
+  Box, Flex, Heading, Text, Button, Icon, HStack, VStack, Spinner, SimpleGrid, Badge, Input, Image, Grid
 } from '@chakra-ui/react';
-import { Plus, Edit2, Trash2, ListMusic, AlertTriangle, Clock, Play, Disc3, Tag, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, ListMusic, AlertTriangle, Clock, Play, Disc3, Tag, Search, Music } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api'; 
 import type { Playlist } from '../../../types';
+
+// --- MOSAIC HELPER COMPONENT ---
+const PlaylistMosaic = ({ tracks = [] }: { tracks: any[] }) => {
+  const rawCovers = (tracks || [])
+    .map(t => t.cover_url || t?.album?.cover_url || t?.artwork_url || t?.artwork || t?.image_url || "")
+    .filter(url => typeof url === 'string' && url.trim() !== "");
+
+  if (rawCovers.length === 0) {
+    return (
+      <Flex w="full" h="full" bg="gray.50" align="center" justify="center">
+        <Music size={40} color="#CBD5E1" />
+      </Flex>
+    );
+  }
+
+  if (rawCovers.length < 4) {
+    return (
+      <Image src={rawCovers[0]} w="full" h="full" objectFit="cover" />
+    );
+  }
+
+  const covers = rawCovers.slice(0, 4);
+  return (
+    <Grid templateColumns="repeat(2, 1fr)" templateRows="repeat(2, 1fr)" w="full" h="full">
+      {covers.map((src, i) => (
+        <Box 
+          key={i} w="full" h="full" 
+          minH="0" minW="0" overflow="hidden" /* ⚡️ FIXED: Prevents grid blowout */
+          borderRight={i % 2 === 0 ? "2px solid" : "none"} 
+          borderBottom={i < 2 ? "2px solid" : "none"} 
+          borderColor="white"
+        >
+          <Image src={src} w="full" h="full" objectFit="cover" />
+        </Box>
+      ))}
+    </Grid>
+  );
+};
 
 export const PlaylistList: React.FC = () => { 
   const navigate = useNavigate();
@@ -53,7 +91,6 @@ export const PlaylistList: React.FC = () => {
     console.log(`▶️ Now playing playlist: ${playlist.name}`);
   };
 
-  // Filter playlists based on search query
   const filteredPlaylists = playlists.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -92,9 +129,7 @@ export const PlaylistList: React.FC = () => {
       {/* --- MAIN UI CONTAINER --- */}
       <Box w="full" minH="100vh" bg="white" pt={0} pb={10} animation="fade-in 0.4s ease-out">
         
-        {/* =========================================
-            1. STANDARDIZED HEADER & BREADCRUMB
-            ========================================= */}
+        {/* HEADER & BREADCRUMB */}
         <VStack align="start" gap={1} mb={8}>
           <HStack gap={2} fontSize="sm" color="gray.500" mb={3}>
             <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
@@ -117,9 +152,7 @@ export const PlaylistList: React.FC = () => {
           </Text>
         </VStack>
 
-        {/* =========================================
-            2. STANDARDIZED ACTION TOOLBAR
-            ========================================= */}
+        {/* ACTION TOOLBAR */}
         <HStack justify="space-between" w="100%" gap={6} mb={10} flexWrap="wrap">
           <HStack gap={4} flex="1" maxW="600px">
             <Button 
@@ -142,9 +175,7 @@ export const PlaylistList: React.FC = () => {
           </HStack>
         </HStack>
 
-        {/* =========================================
-            3. CONTENT GRID (Light Mode)
-            ========================================= */}
+        {/* CONTENT GRID */}
         {isLoading ? (
           <Flex justify="center" align="center" h="40vh"><Spinner size="xl" color="blue.500" borderWidth="3px" /></Flex>
         ) : filteredPlaylists.length === 0 ? (
@@ -167,7 +198,6 @@ export const PlaylistList: React.FC = () => {
             {filteredPlaylists.map((playlist) => {
               const totalMinutes = Math.floor((playlist.total_duration || 0) / 60);
               const trackCount = playlist.tracks?.length || 0;
-              const themeColor = playlist.color || "blue.500";
 
               return (
                 <Flex 
@@ -183,37 +213,34 @@ export const PlaylistList: React.FC = () => {
                   className="group"
                   _hover={{ shadow: "xl", transform: "translateY(-4px)", borderColor: "gray.200" }}
                 >
-                  {/* --- CARD HEADER --- */}
-                  <Box 
-                    position="relative" 
-                    h="140px" 
-                    bgGradient={`to-br`}
-                    gradientFrom={`${themeColor.split('.')[0]}.400`}
-                    gradientTo={`${themeColor.split('.')[0]}.700`}
-                    p={4}
-                    display="flex"
-                    alignItems="flex-end"
-                    justifyContent="flex-end"
-                    overflow="hidden"
-                  >
-                    <Icon as={Disc3} position="absolute" left="-10%" top="-20%" boxSize="150px" color="whiteAlpha.300" transform="rotate(15deg)" />
+                  {/* --- NEW MOSAIC HEADER --- */}
+                  <Box position="relative" h="160px" w="full" bg="gray.50" flexShrink={0} overflow="hidden">
+                    <PlaylistMosaic tracks={playlist.tracks || []} />
                     
-                    <HStack position="absolute" top={3} right={3} gap={1} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s">
-                      <Button size="xs" variant="solid" bg="whiteAlpha.800" color="gray.800" backdropFilter="blur(10px)" _hover={{ bg: "white" }} onClick={() => navigate(`/playlists/edit/${playlist.id}`)}>
+                    {/* Subtle gradient overlay to make hover buttons pop */}
+                    <Box 
+                      position="absolute" inset={0} bg="blackAlpha.400" 
+                      opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s" 
+                    />
+
+                    {/* Hover Actions */}
+                    <HStack position="absolute" top={3} right={3} gap={2} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s">
+                      <Button size="xs" variant="solid" bg="whiteAlpha.900" color="gray.800" backdropFilter="blur(10px)" _hover={{ bg: "white" }} onClick={() => navigate(`/playlists/edit/${playlist.id}`)}>
                         <Edit2 size={14} />
                       </Button>
-                      <Button size="xs" variant="solid" bg="whiteAlpha.800" color="red.600" backdropFilter="blur(10px)" _hover={{ bg: "white" }} onClick={() => setPlaylistToDelete(playlist)}>
+                      <Button size="xs" variant="solid" bg="whiteAlpha.900" color="red.600" backdropFilter="blur(10px)" _hover={{ bg: "white" }} onClick={() => setPlaylistToDelete(playlist)}>
                         <Trash2 size={14} />
                       </Button>
                     </HStack>
 
                     <Button 
-                      size="lg" w="56px" h="56px" borderRadius="full" bg="white" color="gray.900" shadow="xl"
+                      position="absolute" bottom={4} right={4}
+                      size="lg" w="48px" h="48px" borderRadius="full" bg="white" color="gray.900" shadow="xl"
                       transform="translateY(20px)" opacity={0} _groupHover={{ transform: "translateY(0)", opacity: 1 }}
                       transition="all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)" _hover={{ scale: 1.1 }}
                       onClick={(e) => handlePlay(e, playlist)}
                     >
-                      <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />
+                      <Play size={20} fill="currentColor" style={{ marginLeft: '4px' }} />
                     </Button>
                   </Box>
 
@@ -230,7 +257,7 @@ export const PlaylistList: React.FC = () => {
 
                     <Flex direction="column" justify="flex-end" flex="1" gap={4}>
                       <HStack flexWrap="wrap" gap={2}>
-                        <Badge size="sm" variant="subtle" colorPalette={themeColor.split('.')[0]} borderRadius="md" px={2} py={0.5}>
+                        <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="md" px={2} py={0.5} bg="gray.100" color="gray.600">
                           <HStack gap={1}><Tag size={10} /> <Text>Curated</Text></HStack>
                         </Badge>
                       </HStack>

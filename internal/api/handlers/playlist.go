@@ -90,11 +90,33 @@ func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
 // GetPlaylists fetches all playlists
 func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	var playlists []models.Playlist
-	result := h.db.Preload("Tracks").Order("name asc").Find(&playlists)
+
+	// 1. ⚡️ FIXED: Deep Preload to grab the nested Album and Artist for the Mosaic
+	result := h.db.
+		Preload("Tracks").
+		Preload("Tracks.Artist").
+		Preload("Tracks.Album").
+		Order("name asc").
+		Find(&playlists)
 
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch playlists"})
 		return
+	}
+
+	for i := range playlists {
+		for j := range playlists[i].Tracks {
+			// Check if this specific track has a cover key
+			if playlists[i].Tracks[j].Album.CoverKey != "" {
+
+				// Fetch the public URL from your storage provider
+				url := h.storage.GetPublicURL(playlists[i].Tracks[j].Album.CoverKey)
+
+				if url != "" {
+					playlists[i].Tracks[j].Album.CoverURL = url
+				}
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
