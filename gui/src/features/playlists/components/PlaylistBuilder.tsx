@@ -86,26 +86,29 @@ export const getKeyInfo = (scale: string | undefined, musicalKey: string | undef
 export const PlaylistBuilder: React.FC = () => {
   const navigate = useNavigate();
   const {
+    // ⚡️ Pulled all the new pagination and search states from the hook
     libraryTracks, playlistTracks, playlistName, playlistDescription, isSaving,
+    searchQuery, setSearchQuery, loadMore, hasMore, isLoadingLibrary,
     setPlaylistName, addTrackToPlaylist, setPlaylistDescription, removeTrackFromPlaylist,
     handleDragEnd, savePlaylist, playlistId
   } = usePlaylistBuilder();
 
-  const [searchQuery, setSearchQuery] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const totalSeconds = (playlistTracks || []).reduce((acc, t) => acc + Math.round(t?.duration || 0), 0);
   const totalMinutes = Math.floor(totalSeconds / 60);
-  
-  const filteredLibrary = (libraryTracks || []).filter(t => {
-    const search = searchQuery.toLowerCase();
-    const data = getTrackData(t);
-    return data.title.toLowerCase().includes(search) || data.artist.toLowerCase().includes(search);
-  });
 
   const handleSaveClick = async () => {
     if (await savePlaylist()) setShowSuccessModal(true);
+  };
+
+  // ⚡️ INFINITE SCROLL LISTENER: Fires loadMore() when user scrolls near the bottom
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const bottom = e.currentTarget.scrollHeight - e.currentTarget.scrollTop <= e.currentTarget.clientHeight + 100;
+    if (bottom && hasMore && !isLoadingLibrary) {
+      loadMore();
+    }
   };
 
   return (
@@ -144,16 +147,23 @@ export const PlaylistBuilder: React.FC = () => {
         </VStack>
 
         <Flex gap={6} flex="1" minH="0">
+          
+          {/* --- LEFT SIDE: LIBRARY SEARCH & LIST --- */}
           <VStack w="400px" align="stretch" bg="white" borderRadius="2xl" border="1px solid" borderColor="gray.100" overflow="hidden">
             <Box p={4} borderBottom="1px solid" borderColor="gray.50">
               <HStack bg="gray.50" px={4} py={2} borderRadius="xl">
                 <Search size={16} color="#A0AEC0" />
-                <Input border="none" bg="transparent" placeholder="Search library..." size="sm" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} _focus={{ outline: 'none' }} />
+                <Input 
+                  border="none" bg="transparent" placeholder="Search entire library..." size="sm" 
+                  value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
+                  _focus={{ outline: 'none' }} 
+                />
               </HStack>
             </Box>
             
-            <Box overflowY="auto" flex="1" p={2}>
-              {filteredLibrary.map((track) => {
+            {/* ⚡️ ATTACHED onScroll HERE */}
+            <Box overflowY="auto" flex="1" p={2} onScroll={handleScroll}>
+              {libraryTracks.map((track) => {
                 const data = getTrackData(track);
                 const harmonic = getKeyInfo(data.scale, data.musicalKey);
 
@@ -179,7 +189,6 @@ export const PlaylistBuilder: React.FC = () => {
                           {harmonic.label}
                         </Box>
 
-                        {/* ⚡️ PALE STYLE TAG */}
                         {data.style && (
                           <Box px={1.5} py={0.5} borderRadius="sm" bg="gray.100" color="gray.600" fontWeight="600" textTransform="capitalize">
                             {data.style}
@@ -191,9 +200,15 @@ export const PlaylistBuilder: React.FC = () => {
                   </HStack>
                 );
               })}
+
+              {/* ⚡️ LOADING INDICATOR FOR INFINITE SCROLL */}
+              {isLoadingLibrary && (
+                <Text textAlign="center" fontSize="xs" color="gray.400" py={4}>Loading more tracks...</Text>
+              )}
             </Box>
           </VStack>
 
+          {/* --- RIGHT SIDE: PLAYLIST BUILDER --- */}
           <VStack flex="1" align="stretch" bg="gray.50" borderRadius="2xl" border="1px solid" borderColor="gray.100" overflow="hidden">
             <Box flex="1" overflowY="auto" p={4}>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
