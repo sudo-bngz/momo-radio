@@ -24,7 +24,7 @@ type CacheManager struct {
 func NewCacheManager(storage StorageProvider, tmpDir string) *CacheManager {
 	cacheDir := filepath.Join(tmpDir, "track_cache")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		log.Printf("⚠️ Failed to create cache dir: %v", err)
+		log.Printf("Failed to create cache dir: %v", err)
 	}
 
 	return &CacheManager{
@@ -64,7 +64,7 @@ func (c *CacheManager) GetLocalPath(key string) (string, error) {
 		c.mu.Unlock()
 	}()
 
-	log.Printf("📥 Cache Miss: Downloading %s", key)
+	log.Printf("Cache Miss: Downloading %s", key)
 	if err := c.download(key, localPath); err != nil {
 		return "", err
 	}
@@ -77,7 +77,7 @@ func (c *CacheManager) Prefetch(keys []string) {
 		go func(k string) {
 			_, err := c.GetLocalPath(k)
 			if err != nil {
-				log.Printf("❌ Prefetch failed for %s: %v", k, err)
+				log.Printf("Prefetch failed for %s: %v", k, err)
 			}
 		}(key)
 	}

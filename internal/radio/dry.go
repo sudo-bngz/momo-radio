@@ -42,7 +42,7 @@ func (e *Engine) runSimulation() {
 
 		if activeSlot.Playlist != nil {
 			currentMode = "Playlist"
-			selectedTrack, err = e.pickNextFromPlaylist(activeSlot.Playlist.ID)
+			selectedTrack, err = e.pickNextFromPlaylist(activeSlot.Playlist.ID, lastTrack)
 		} else if activeSlot.RuleSet != nil {
 			mode := strings.ToLower(activeSlot.RuleSet.Mode)
 			if mode == "" {

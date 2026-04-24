@@ -186,7 +186,7 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 			showName := getShowName(activeSlot)
 
 			if activeSlot.PlaylistID != nil {
-				selectedTrack, err = e.pickNextFromPlaylist(*activeSlot.PlaylistID)
+				selectedTrack, err = e.pickNextFromPlaylist(*activeSlot.PlaylistID, lastTrack)
 				log.Printf("Mode: Fixed Playlist [%s]", showName)
 
 			} else if activeSlot.RuleSetID != nil {
@@ -247,17 +247,38 @@ func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
 	}
 }
 
-// pickNextFromPlaylist finds the next track in a fixed playlist sequence
-func (e *Engine) pickNextFromPlaylist(playlistID uint) (*models.Track, error) {
+// pickNextFromPlaylist finds the strict next track in a fixed playlist sequence
+func (e *Engine) pickNextFromPlaylist(playlistID uint, lastTrack *models.Track) (*models.Track, error) {
 	var track models.Track
+	currentSortOrder := -1 // Default to -1 so the first query looks for sort_order > -1 (which is 0)
 
+	// 1. If we played a track previously, find its exact position in THIS playlist
+	if lastTrack != nil {
+		e.db.DB.Table("playlist_tracks").
+			Select("sort_order").
+			Where("playlist_id = ? AND track_id = ?", playlistID, lastTrack.ID).
+			Scan(&currentSortOrder)
+	}
+
+	// 2. Try to get the strictly NEXT track in the curated order
 	err := e.db.DB.Model(&models.Track{}).
 		Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
-		Where("playlist_tracks.playlist_id = ?", playlistID).
+		Where("playlist_tracks.playlist_id = ? AND playlist_tracks.sort_order > ?", playlistID, currentSortOrder).
 		Preload("Artist").
 		Preload("Album").
-		Order("tracks.last_played_at ASC NULLS FIRST, playlist_tracks.id ASC").
+		Order("playlist_tracks.sort_order ASC").
 		First(&track).Error
+
+	// 3. If it hit the end of the playlist (or it's the very first track), loop back to the start!
+	if err != nil {
+		err = e.db.DB.Model(&models.Track{}).
+			Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
+			Where("playlist_tracks.playlist_id = ?", playlistID).
+			Preload("Artist").
+			Preload("Album").
+			Order("playlist_tracks.sort_order ASC").
+			First(&track).Error
+	}
 
 	return &track, err
 }
