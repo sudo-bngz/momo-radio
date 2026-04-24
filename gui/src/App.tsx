@@ -4,6 +4,9 @@ import { DashboardLayout } from "./layouts/DashboardLayout";
 import { LoginView } from "./views/LoginView";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
+// ⚡️ IMPORT THE TOASTER COMPONENT
+import { Toaster } from "./components/ui/toaster";
+
 // Feature Imports
 import { DashboardFeature } from "./features/dashboard";
 import { PlaylistsFeature } from "./features/playlists";
@@ -45,6 +48,7 @@ export const App = () => {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>
+      <Toaster />
     </ChakraProvider>
   );
 };

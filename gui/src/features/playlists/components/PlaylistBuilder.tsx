@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
-  Box, VStack, HStack, Text, Button, Input, Icon, Flex, Badge, Heading, Image
+  Box, VStack, HStack, Text, Button, Input, Icon, Flex, Badge, Image
 } from '@chakra-ui/react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Save, Music, Plus, Search, Clock, ListMusic, CheckCircle } from 'lucide-react';
+import { Save, Music, Plus, Search, Clock, ListMusic } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { usePlaylistBuilder } from '../hook/usePlaylistBuilder';
 import { SortableTrack } from './SortableTrack';
+import { toaster } from '../../../components/ui/toaster'; 
 
 export const getTrackData = (track: any) => {
   const title = track?.title || track?.name || "Untitled Track";
@@ -25,7 +26,6 @@ export const getTrackData = (track: any) => {
   const scale = track?.scale || track?.Scale || "";
   const musicalKey = track?.musical_key || track?.musicalkey || track?.MusicalKey || "";
   
-  // ⚡️ SMART STYLE EXTRACTION: Grab the first genre/style before a comma
   const rawStyle = track?.style || track?.genre || "";
   const primaryStyle = typeof rawStyle === 'string' ? rawStyle.split(',')[0].trim() : "";
   
@@ -38,18 +38,16 @@ const getBpmGrayscale = (bpm: number) => {
   return `gray.${weight}`;
 };
 
-// --- SMART MUSICAL NOTATION PARSER (PREMIUM MATTE PALETTE) ---
 export const getKeyInfo = (scale: string | undefined, musicalKey: string | undefined) => {
   const s = String(scale || "").trim().toUpperCase();
   const mk = String(musicalKey || "").trim().toUpperCase();
   const rawText = `${s} ${mk}`.trim();
   
-  let color = "#94A3B8"; // Elegant Slate Gray fallback instead of harsh silver
+  let color = "#94A3B8"; 
   let label = "--";
 
   if (!rawText) return { color, label };
 
-  // 1. Camelot Support with Muted/Premium Colors
   const camelotMatch = rawText.match(/\b([1-9]|1[0-2])[AB]\b/);
   if (camelotMatch) {
     const camelotMap: Record<string, string> = {
@@ -63,7 +61,6 @@ export const getKeyInfo = (scale: string | undefined, musicalKey: string | undef
     return { color: camelotMap[camelotMatch[0]] || color, label: camelotMatch[0] };
   }
 
-  // 2. Standard Musical Notation with Muted/Premium Colors
   const noteMatch = rawText.match(/(?:^|\s|-)([A-G][#B]?)(?:\s|$|M|MIN)/);
   if (noteMatch) {
     let root = noteMatch[1];
@@ -86,24 +83,38 @@ export const getKeyInfo = (scale: string | undefined, musicalKey: string | undef
 export const PlaylistBuilder: React.FC = () => {
   const navigate = useNavigate();
   const {
-    // ⚡️ Pulled all the new pagination and search states from the hook
     libraryTracks, playlistTracks, playlistName, playlistDescription, isSaving,
     searchQuery, setSearchQuery, loadMore, hasMore, isLoadingLibrary,
     setPlaylistName, addTrackToPlaylist, setPlaylistDescription, removeTrackFromPlaylist,
     handleDragEnd, savePlaylist, playlistId
   } = usePlaylistBuilder();
 
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const totalSeconds = (playlistTracks || []).reduce((acc, t) => acc + Math.round(t?.duration || 0), 0);
   const totalMinutes = Math.floor(totalSeconds / 60);
 
+  // ⚡️ MANUAL SAVE TOAST
   const handleSaveClick = async () => {
-    if (await savePlaylist()) setShowSuccessModal(true);
+    const success = await savePlaylist();
+    if (success) {
+      toaster.create({
+        title: "Playlist Saved",
+        description: "Your changes are now live.",
+        type: "success",
+        duration: 3000,
+      });
+    } else {
+      toaster.create({
+        title: "Error",
+        description: "Failed to save playlist.",
+        type: "error",
+        duration: 3000,
+      });
+    }
   };
 
-  // ⚡️ INFINITE SCROLL LISTENER: Fires loadMore() when user scrolls near the bottom
+  // ⚡️ INFINITE SCROLL LISTENER
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const bottom = e.currentTarget.scrollHeight - e.currentTarget.scrollTop <= e.currentTarget.clientHeight + 100;
     if (bottom && hasMore && !isLoadingLibrary) {
@@ -112,117 +123,116 @@ export const PlaylistBuilder: React.FC = () => {
   };
 
   return (
-    <>
-      {showSuccessModal && (
-        <Flex position="fixed" top="0" left="0" w="100vw" h="100vh" bg="blackAlpha.700" zIndex={9999} alignItems="center" justifyContent="center" backdropFilter="blur(8px)">
-          <VStack bg="white" p={8} borderRadius="3xl" shadow="2xl" gap={5} maxW="sm" textAlign="center">
-            <Icon as={CheckCircle} boxSize={16} color="green.500" />
-            <Heading size="md">Playlist Saved</Heading>
-            <Button w="full" h="48px" bg="gray.900" color="white" borderRadius="full" onClick={() => navigate('/playlists')}>Back to Playlists</Button>
+    <Box w="full" h="100vh" display="flex" flexDirection="column" bg="white" pt={0} pb={10} animation="fade-in 0.4s ease-out">
+      <VStack align="start" gap={1} mb={8} flexShrink={0}>
+        <HStack gap={2} fontSize="sm" color="gray.500" mb={3}>
+          <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
+            <Icon as={ListMusic} boxSize={3} />
+          </Box>
+          <Text onClick={() => navigate('/playlists')} cursor="pointer" _hover={{ color: "blue.500" }}>Playlists</Text>
+          <Text color="gray.300">/</Text>
+          <Text color="gray.900" fontWeight="500">{playlistId ? 'Edit playlist' : 'New Playlist'}</Text>
+        </HStack>
+
+        <HStack w="full" justify="space-between" align="start">
+          <VStack align="start" flex="1" gap={0}>
+            <Input value={playlistName} onChange={(e) => setPlaylistName(e.target.value)} fontSize="4xl" fontWeight="normal" placeholder="Rotation Name" border="none" bg="transparent" p={0} h="auto" _focus={{ outline: 'none' }} />
+            <Input value={playlistDescription} onChange={(e) => setPlaylistDescription(e.target.value)} fontSize="sm" color="gray.500" border="none" bg="transparent" p={0} h="auto" _focus={{ outline: 'none' }} />
           </VStack>
-        </Flex>
-      )}
-
-      <Box w="full" h="100vh" display="flex" flexDirection="column" bg="white" pt={0} pb={10} animation="fade-in 0.4s ease-out">
-        <VStack align="start" gap={1} mb={8} flexShrink={0}>
-          <HStack gap={2} fontSize="sm" color="gray.500" mb={3}>
-            <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
-              <Icon as={ListMusic} boxSize={3} />
-            </Box>
-            <Text onClick={() => navigate('/playlists')} cursor="pointer">Playlists</Text>
-            <Text color="gray.300">/</Text>
-            <Text color="gray.900" fontWeight="500">{playlistId ? 'Edit playlist' : 'New Playlist'}</Text>
+          <HStack gap={4}>
+            <Badge variant="subtle" px={4} py={2} borderRadius="full"><HStack gap={1.5}><Clock size={14}/> <Text>{totalMinutes} mins</Text></HStack></Badge>
+            <Button bg="gray.900" color="white" h="48px" px={6} borderRadius="full" onClick={handleSaveClick} loading={isSaving} _hover={{ bg: "black" }}>
+              <Save size={18} style={{marginRight: '8px'}} /> Save Changes
+            </Button>
           </HStack>
+        </HStack>
+      </VStack>
 
-          <HStack w="full" justify="space-between" align="start">
-            <VStack align="start" flex="1" gap={0}>
-              <Input value={playlistName} onChange={(e) => setPlaylistName(e.target.value)} fontSize="4xl" fontWeight="normal" placeholder="Rotation Name" border="none" bg="transparent" p={0} h="auto" _focus={{ outline: 'none' }} />
-              <Input value={playlistDescription} onChange={(e) => setPlaylistDescription(e.target.value)} fontSize="sm" color="gray.500" border="none" bg="transparent" p={0} h="auto" _focus={{ outline: 'none' }} />
-            </VStack>
-            <HStack gap={4}>
-              <Badge variant="subtle" px={4} py={2} borderRadius="full"><HStack gap={1.5}><Clock size={14}/> <Text>{totalMinutes} mins</Text></HStack></Badge>
-              <Button bg="gray.900" color="white" h="48px" px={6} borderRadius="full" onClick={handleSaveClick} loading={isSaving}><Save size={18} style={{marginRight: '8px'}} /> Save Changes</Button>
+      <Flex gap={6} flex="1" minH="0">
+        
+        {/* --- LEFT SIDE: LIBRARY SEARCH & LIST --- */}
+        <VStack w="400px" align="stretch" bg="white" borderRadius="2xl" border="1px solid" borderColor="gray.100" overflow="hidden">
+          <Box p={4} borderBottom="1px solid" borderColor="gray.50">
+            <HStack bg="gray.50" px={4} py={2} borderRadius="xl">
+              <Search size={16} color="#A0AEC0" />
+              <Input 
+                border="none" bg="transparent" placeholder="Search entire library..." size="sm" 
+                value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
+                _focus={{ outline: 'none' }} 
+              />
             </HStack>
-          </HStack>
+          </Box>
+          
+          <Box overflowY="auto" flex="1" p={2} onScroll={handleScroll}>
+            {libraryTracks.map((track) => {
+              const data = getTrackData(track);
+              const harmonic = getKeyInfo(data.scale, data.musicalKey);
+
+              return (
+                <HStack key={track.id || Math.random()} p={2.5} mb={1} borderRadius="xl" _hover={{ bg: "gray.50" }} className="group">
+                  {data.hasCover ? (
+                    <Image src={data.cover} w={10} h={10} borderRadius="md" objectFit="cover" />
+                  ) : (
+                    <Flex w={10} h={10} bg="gray.50" borderRadius="md" alignItems="center" justifyContent="center">
+                      <Music size={14} color="#CBD5E0"/>
+                    </Flex>
+                  )}
+                  
+                  <VStack align="start" gap={0} flex="1" overflow="hidden">
+                    <Text fontSize="sm" fontWeight="bold" color="gray.900" truncate w="full">{data.title}</Text>
+                    
+                    <Text fontSize="11px" color="gray.500" truncate w="full">{data.artist}</Text>
+                    
+                    <HStack gap={2} fontSize="10px" mt={0.5}>
+                      <Text color={getBpmGrayscale(data.bpm)} fontWeight="700">{data.bpm || '--'} BPM</Text>
+                      
+                      <Box px={1.5} py={0.5} borderRadius="sm" bg={harmonic.color} color="white" fontWeight="700" textTransform="none">
+                        {harmonic.label}
+                      </Box>
+
+                      {data.style && (
+                        <Box px={1.5} py={0.5} borderRadius="sm" bg="gray.100" color="gray.600" fontWeight="600" textTransform="capitalize">
+                          {data.style}
+                        </Box>
+                      )}
+                    </HStack>
+                  </VStack>
+                  <Button size="sm" variant="ghost" onClick={() => addTrackToPlaylist(track)} opacity={0} _groupHover={{ opacity: 1 }} borderRadius="full"><Plus size={16}/></Button>
+                </HStack>
+              );
+            })}
+
+            {isLoadingLibrary && (
+              <Text textAlign="center" fontSize="xs" color="gray.400" py={4}>Loading more tracks...</Text>
+            )}
+          </Box>
         </VStack>
 
-        <Flex gap={6} flex="1" minH="0">
-          
-          {/* --- LEFT SIDE: LIBRARY SEARCH & LIST --- */}
-          <VStack w="400px" align="stretch" bg="white" borderRadius="2xl" border="1px solid" borderColor="gray.100" overflow="hidden">
-            <Box p={4} borderBottom="1px solid" borderColor="gray.50">
-              <HStack bg="gray.50" px={4} py={2} borderRadius="xl">
-                <Search size={16} color="#A0AEC0" />
-                <Input 
-                  border="none" bg="transparent" placeholder="Search entire library..." size="sm" 
-                  value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
-                  _focus={{ outline: 'none' }} 
-                />
-              </HStack>
-            </Box>
-            
-            {/* ⚡️ ATTACHED onScroll HERE */}
-            <Box overflowY="auto" flex="1" p={2} onScroll={handleScroll}>
-              {libraryTracks.map((track) => {
-                const data = getTrackData(track);
-                const harmonic = getKeyInfo(data.scale, data.musicalKey);
-
-                return (
-                  <HStack key={track.id || Math.random()} p={2.5} mb={1} borderRadius="xl" _hover={{ bg: "gray.50" }} className="group">
-                    {data.hasCover ? (
-                      <Image src={data.cover} w={10} h={10} borderRadius="md" objectFit="cover" />
-                    ) : (
-                      <Flex w={10} h={10} bg="gray.50" borderRadius="md" alignItems="center" justifyContent="center">
-                        <Music size={14} color="#CBD5E0"/>
-                      </Flex>
-                    )}
-                    
-                    <VStack align="start" gap={0} flex="1" overflow="hidden">
-                      <Text fontSize="sm" fontWeight="bold" color="gray.900" truncate w="full">{data.title}</Text>
-                      
-                      <Text fontSize="11px" color="gray.500" truncate w="full">{data.artist}</Text>
-                      
-                      <HStack gap={2} fontSize="10px" mt={0.5}>
-                        <Text color={getBpmGrayscale(data.bpm)} fontWeight="700">{data.bpm || '--'} BPM</Text>
-                        
-                        <Box px={1.5} py={0.5} borderRadius="sm" bg={harmonic.color} color="white" fontWeight="700" textTransform="none">
-                          {harmonic.label}
-                        </Box>
-
-                        {data.style && (
-                          <Box px={1.5} py={0.5} borderRadius="sm" bg="gray.100" color="gray.600" fontWeight="600" textTransform="capitalize">
-                            {data.style}
-                          </Box>
-                        )}
-                      </HStack>
-                    </VStack>
-                    <Button size="sm" variant="ghost" onClick={() => addTrackToPlaylist(track)} opacity={0} _groupHover={{ opacity: 1 }} borderRadius="full"><Plus size={16}/></Button>
-                  </HStack>
-                );
+        {/* --- RIGHT SIDE: PLAYLIST BUILDER --- */}
+        <VStack flex="1" align="stretch" bg="gray.50" borderRadius="2xl" border="1px solid" borderColor="gray.100" overflow="hidden">
+          <Box flex="1" overflowY="auto" p={4}>
+            <DndContext 
+              sensors={sensors} 
+              collisionDetection={closestCenter} 
+              onDragEnd={(e) => handleDragEnd(e, () => {
+                // ⚡️ AUTOSAVE TOAST
+                toaster.create({
+                  title: "Order saved",
+                  type: "info",
+                  duration: 1500,
+                });
               })}
+            >
+              <SortableContext items={(playlistTracks || []).map(t => String(t.id))} strategy={verticalListSortingStrategy}>
+                {playlistTracks.map((track, index) => (
+                  <SortableTrack key={String(track.id)} track={track} index={index + 1} onRemove={removeTrackFromPlaylist} />
+                ))}
+              </SortableContext>
+            </DndContext>
+          </Box>
+        </VStack>
 
-              {/* ⚡️ LOADING INDICATOR FOR INFINITE SCROLL */}
-              {isLoadingLibrary && (
-                <Text textAlign="center" fontSize="xs" color="gray.400" py={4}>Loading more tracks...</Text>
-              )}
-            </Box>
-          </VStack>
-
-          {/* --- RIGHT SIDE: PLAYLIST BUILDER --- */}
-          <VStack flex="1" align="stretch" bg="gray.50" borderRadius="2xl" border="1px solid" borderColor="gray.100" overflow="hidden">
-            <Box flex="1" overflowY="auto" p={4}>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={(playlistTracks || []).map(t => String(t.id))} strategy={verticalListSortingStrategy}>
-                  {playlistTracks.map((track, index) => (
-                    <SortableTrack key={String(track.id)} track={track} index={index + 1} onRemove={removeTrackFromPlaylist} />
-                  ))}
-                </SortableContext>
-              </DndContext>
-            </Box>
-          </VStack>
-
-        </Flex>
-      </Box>
-    </>
+      </Flex>
+    </Box>
   );
 };

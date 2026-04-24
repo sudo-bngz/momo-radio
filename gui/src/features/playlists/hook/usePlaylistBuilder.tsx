@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../../services/api';
 import type { Track } from '../../../types';
 import { useParams } from 'react-router-dom';
+import { toaster } from '../../../components/ui/toaster';
 
 export const usePlaylistBuilder = () => {
   const { id } = useParams();
@@ -13,42 +14,58 @@ export const usePlaylistBuilder = () => {
   
   const [libraryTracks, setLibraryTracks] = useState<Track[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
+  
+  // Notice we removed the `page` state to prevent unnecessary re-renders
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // --- FETCH LIBRARY
-  const fetchLibrary = useCallback(async (pageNum: number, search: string, reset: boolean = false) => {
-    if (isLoadingLibrary || (!hasMore && !reset)) return;
+  // ⚡️ STABILITY REFS: These track background state without triggering React re-renders!
+  const isLoadingRef = useRef(false);
+  const hasMoreRef = useRef(true);
+  const pageRef = useRef(1);
+
+  // --- FETCH LIBRARY ---
+  const fetchLibrary = useCallback(async (pageNum: number, search: string, isReset: boolean = false) => {
+    if (isLoadingRef.current) return;
+    if (!isReset && !hasMoreRef.current) return;
+
+    isLoadingRef.current = true;
     setIsLoadingLibrary(true);
     
     try {
       const limit = 50;
       const offset = (pageNum - 1) * limit;
       
-      // ⚡️ FIXED: Passed as an object { limit, offset, search } instead of 3 arguments
       const response = await api.getTracks({ limit, offset, search });
       const newTracks = response.data || [];
 
-      if (reset) {
-        setLibraryTracks(newTracks);
-      } else {
-        setLibraryTracks(prev => [...prev, ...newTracks]);
-      }
+      setLibraryTracks(prev => {
+        if (isReset) return newTracks;
+        // Deduplication Shield
+        const existingIds = new Set(prev.map(t => t.id));
+        const uniqueNewTracks = newTracks.filter(t => !existingIds.has(t.id));
+        return [...prev, ...uniqueNewTracks];
+      });
       
-      setHasMore(newTracks.length === limit);
+      const more = newTracks.length === limit;
+      setHasMore(more);
+      hasMoreRef.current = more;
+
     } catch (error) {
       console.error("Failed to load library tracks", error);
     } finally {
+      isLoadingRef.current = false;
       setIsLoadingLibrary(false);
     }
-  }, [hasMore, isLoadingLibrary]);
+  }, []); 
 
-  // Initial Load & Search Trigger
+  // --- SEARCH BAR DEBOUNCE EFFECT ---
   useEffect(() => {
-    setPage(1);
+    // Reset pagination states
+    pageRef.current = 1;
     setHasMore(true);
+    hasMoreRef.current = true;
     
     const delayDebounceFn = setTimeout(() => {
       fetchLibrary(1, searchQuery, true);
@@ -57,14 +74,13 @@ export const usePlaylistBuilder = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, fetchLibrary]);
 
-  // Load More Trigger
-  const loadMore = () => {
-    if (hasMore && !isLoadingLibrary) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      fetchLibrary(nextPage, searchQuery, false);
+  // --- INFINITE SCROLL TRIGGER ---
+  const loadMore = useCallback(() => {
+    if (!isLoadingRef.current && hasMoreRef.current) {
+      pageRef.current += 1;
+      fetchLibrary(pageRef.current, searchQuery, false);
     }
-  };
+  }, [searchQuery, fetchLibrary]);
 
   // --- FETCH EXISTING PLAYLIST ---
   useEffect(() => {
@@ -72,7 +88,7 @@ export const usePlaylistBuilder = () => {
       const loadPlaylist = async () => {
         try {
           const res = await api.getPlaylist(playlistId);
-          setPlaylistName(res.name); // ⚡️ Accessing directly based on your getPlaylist API return type
+          setPlaylistName(res.name); 
           setPlaylistDescription(res.description || '');
           setPlaylistTracks(res.tracks || []);
         } catch (error) {
@@ -85,16 +101,27 @@ export const usePlaylistBuilder = () => {
 
   // --- ACTIONS ---
   const addTrackToPlaylist = (track: Track) => {
-    setPlaylistTracks(prev => [...prev, track]);
+    setPlaylistTracks(prev => {
+      if (prev.some(t => t.id === track.id)) {
+        toaster.create({
+          title: "Already in playlist",
+          description: "This track is already in your rotation.",
+          type: "warning",
+          duration: 2000,
+        });
+        return prev;
+      }
+      return [...prev, track];
+    });
   };
 
   const removeTrackFromPlaylist = (id: number) => {
     setPlaylistTracks(prev => prev.filter(t => t.id !== id));
   };
 
-  const handleDragEnd = (event: any) => {
+  const handleDragEnd = async (event: any, onAutosaveSuccess?: () => void) => {
     const { active, over } = event;
-    if (active.id !== over.id) {
+    if (active && over && active.id !== over.id) {
       const oldIndex = playlistTracks.findIndex(t => String(t.id) === active.id);
       const newIndex = playlistTracks.findIndex(t => String(t.id) === over.id);
       
@@ -103,6 +130,15 @@ export const usePlaylistBuilder = () => {
       newArray.splice(newIndex, 0, movedItem);
       
       setPlaylistTracks(newArray);
+
+      if (playlistId) {
+        try {
+          await api.updatePlaylistTracks(playlistId, newArray.map(t => t.id));
+          if (onAutosaveSuccess) onAutosaveSuccess();
+        } catch (error) {
+          console.error("Autosave failed", error);
+        }
+      }
     }
   };
 
@@ -115,14 +151,10 @@ export const usePlaylistBuilder = () => {
       };
 
       if (playlistId) {
-        // Update basic info
         await api.updatePlaylist(playlistId, payload);
-        // Update tracks array
         await api.updatePlaylistTracks(playlistId, playlistTracks.map(t => t.id));
       } else {
-        // Create new playlist
         const newPlaylist = await api.createPlaylist(payload);
-        // Link the tracks to the newly created playlist
         await api.updatePlaylistTracks(newPlaylist.id, playlistTracks.map(t => t.id));
       }
       return true;
