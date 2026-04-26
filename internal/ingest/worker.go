@@ -311,7 +311,13 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 
 	// 7. Upload Final Playable Audio to Asset Bucket
 	updateStatus("uploading", 90)
-	destinationKey := BuildPath(meta, key)
+
+	// Get the base path from your metadata logic
+	baseDestinationKey := BuildPath(meta, key)
+	finalExt := filepath.Ext(baseDestinationKey)
+	pathWithoutExt := strings.TrimSuffix(baseDestinationKey, finalExt)
+	destinationKey := fmt.Sprintf("%s_%d%s", pathWithoutExt, payload.TrackID, finalExt)
+
 	fClean, err := os.Open(cleanPath)
 	if err != nil {
 		updateStatus("failed", 0)
