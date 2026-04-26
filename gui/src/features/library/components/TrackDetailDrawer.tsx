@@ -4,7 +4,7 @@ import {
   Box, Flex, HStack, VStack, Text, Icon, IconButton, 
   Input, Grid, Button, Spinner 
 } from '@chakra-ui/react';
-import { Music, X, Edit2, Radio } from 'lucide-react';
+import { Music, X, Edit2, Radio, HardDrive, Activity } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Track } from '../../../types';
 
@@ -15,7 +15,7 @@ interface TrackDetailDrawerProps {
   onTrackUpdated?: (updatedTrack: Partial<Track>) => void;
 }
 
-const TABS = ['Details', 'Album', 'Tags', 'Radio'];
+const TABS = ['Details', 'Album', 'Tags', 'Acoustics', 'File', 'Radio'];
 
 // Human-readable time formatting
 const formatTimeAgo = (dateInput: string | Date | null | undefined): string => {
@@ -31,7 +31,7 @@ const formatTimeAgo = (dateInput: string | Date | null | undefined): string => {
     const hours = Math.floor(secondsPast / 3600);
     return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
   }
-  if (secondsPast < 604800) { // Less than 7 days
+  if (secondsPast < 604800) { 
     const days = Math.floor(secondsPast / 86400);
     return days === 1 ? '1 day ago' : `${days} days ago`;
   }
@@ -43,10 +43,17 @@ const formatTimeAgo = (dateInput: string | Date | null | undefined): string => {
   });
 };
 
+// Human-readable bytes formatter
+const formatBytes = (bytes?: number) => {
+  if (!bytes) return '-';
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(2)} MB`;
+};
+
 export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, onClose, track, onTrackUpdated }) => {
   const [activeTab, setActiveTab] = useState('Details');
   
-  const [fullTrack, setFullTrack] = useState<any>(null); // Temporarily using any to handle the nested backend objects
+  const [fullTrack, setFullTrack] = useState<any>(null); 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -55,7 +62,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
   // Live state for visual tags
   const [genreInput, setGenreInput] = useState('');
   const [styleInput, setStyleInput] = useState('');
-  const [moodInput, setMoodInput] = useState('');
 
   const navigate = useNavigate();
 
@@ -74,7 +80,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
             setFullTrack(data);
             setGenreInput(data.genre || '');
             setStyleInput(data.style || '');
-            setMoodInput(data.mood || '');
           }
         })
         .catch(err => {
@@ -96,7 +101,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
     if (fullTrack) {
       setGenreInput(fullTrack.genre || '');
       setStyleInput(fullTrack.style || '');
-      setMoodInput(fullTrack.mood || '');
     }
   };
 
@@ -114,9 +118,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
       title: formData.get('title') as string,
       genre: formData.get('genre') as string,
       style: formData.get('style') as string,
-      mood: formData.get('mood') as string,
-      // Note: Updating artist and album names via string here will require 
-      // specific handling on your Go backend later if you want to allow edits.
       publisher: formData.get('publisher') as string,
       catalog_number: formData.get('catalog_number') as string,
       release_country: formData.get('release_country') as string,
@@ -145,8 +146,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 
   if (!isOpen && !track) return null;
 
-  // ⚡️ SAFELY RESOLVE RELATIONAL DATA
-  // Check if it's an object (from GetTrack) or a string (from the LibraryList)
+  // SAFELY RESOLVE RELATIONAL DATA
   const artistName = fullTrack?.artist?.name || (typeof fullTrack?.artist === 'string' ? fullTrack.artist : track?.artist) || '';
   const albumTitle = fullTrack?.album?.title || (typeof fullTrack?.album === 'string' ? fullTrack.album : track?.album) || '';
   const coverURL = fullTrack?.cover_url || fullTrack?.album?.cover_url || track?.cover_url;
@@ -159,6 +159,12 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
     : '0:00';
     
   const lastPlayedDate = formatTimeAgo(fullTrack?.last_played);
+
+  // Helper to handle navigation and closing the drawer simultaneously
+  const handleNavigate = (path: string) => {
+    onClose();
+    navigate(path);
+  };
 
   return (
     <>
@@ -209,16 +215,13 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                 <Text 
                   fontSize="sm" 
                   color="blue.600" 
-                  cursor="pointer" 
-                  _hover={{ textDecoration: "underline" }}
+                  cursor={artistName ? "pointer" : "default"}
+                  _hover={artistName ? { textDecoration: "underline" } : {}}
                   onClick={() => {
-                    if (artistName) {
-                      onClose(); 
-                      navigate(`/artists/${encodeURIComponent(artistName)}`); 
-                    }
+                    if (artistName) handleNavigate(`/artists/${encodeURIComponent(artistName)}`);
                   }}
                 >
-                  {artistName /* ⚡️ Using resolved string */}
+                  {artistName}
               </Text>
               </VStack>
             </HStack>
@@ -227,13 +230,16 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
             </IconButton>
           </Flex>
 
-          <HStack gap={6} borderBottom="1px solid" borderColor="gray.100">
+          <HStack gap={6} borderBottom="1px solid" borderColor="gray.100" overflowX="auto"
+            css={{ '&::-webkit-scrollbar': { display: 'none' } }}
+          >
             {TABS.map(tab => (
               <Box 
                 key={tab} px={1} pb={3} cursor="pointer"
                 borderBottom="2px solid" borderColor={activeTab === tab ? "blue.600" : "transparent"}
                 color={activeTab === tab ? "blue.600" : "gray.500"} fontWeight={activeTab === tab ? "600" : "500"}
                 onClick={() => setActiveTab(tab)} _hover={{ color: "blue.600" }} transition="all 0.2s"
+                whiteSpace="nowrap"
               >
                 <Text fontSize="sm">{tab}</Text>
               </Box>
@@ -251,41 +257,38 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
               <Box display={activeTab === 'Details' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <EditableField label="Title" name="title" value={fullTrack?.title} isEditing={isEditing} />
-                  {/* ⚡️ Using resolved string */}
-                  <EditableField label="Artist(s)" name="artist" value={artistName} isEditing={isEditing} />
-                  <EditableField label="Recording Year" name="year" value={fullTrack?.year} isEditing={isEditing} />
-
-                  <Box borderTop="1px dashed" borderColor="gray.200" my={2} />
-
-                  <FormRow label="Acoustics">
-                    <HStack gap={4}>
-                      <VStack align="start" gap={0}>
-                        <Text fontSize="xs" color="gray.400">BPM</Text>
-                        <Text fontSize="sm" fontWeight="600" color="gray.900">{displayBPM}</Text>
-                      </VStack>
-                      <Box w="1px" h="30px" bg="gray.200" />
-                      <VStack align="start" gap={0}>
-                        <Text fontSize="xs" color="gray.400">Key</Text>
-                        <Text fontSize="sm" fontWeight="600" color="gray.900">{displayKey}</Text>
-                      </VStack>
-                      <Box w="1px" h="30px" bg="gray.200" />
-                      <VStack align="start" gap={0}>
-                        <Text fontSize="xs" color="gray.400">Duration</Text>
-                        <Text fontSize="sm" fontWeight="600" color="gray.900">{displayDuration}</Text>
-                      </VStack>
-                    </HStack>
-                  </FormRow>
+                  <EditableField 
+                    label="Artist(s)" 
+                    name="artist" 
+                    value={artistName} 
+                    isEditing={isEditing} 
+                    onLinkClick={() => handleNavigate(`/artists/${encodeURIComponent(artistName)}`)}
+                  />
+                  <EditableField label="Recording Year" name="year" value={fullTrack?.album?.year || fullTrack?.year} isEditing={isEditing} />
                 </VStack>
               </Box>
 
               {/* ALBUM TAB */}
               <Box display={activeTab === 'Album' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
-                  {/* ⚡️ Using resolved string */}
-                  <EditableField label="Album Name" name="album" value={albumTitle} isEditing={isEditing} placeholder="Original Mix / EP Name" />
-                  <EditableField label="Publisher/Label" name="publisher" value={fullTrack?.publisher} isEditing={isEditing} placeholder="e.g. Warp Records" />
-                  <EditableField label="Catalog No." name="catalog_number" value={fullTrack?.catalog_number} isEditing={isEditing} placeholder="e.g. WAP62" />
-                  <EditableField label="Country" name="release_country" value={fullTrack?.release_country} isEditing={isEditing} placeholder="e.g. UK, US, FR" />
+                  <EditableField 
+                    label="Album Name" 
+                    name="album" 
+                    value={albumTitle} 
+                    isEditing={isEditing} 
+                    placeholder="Original Mix / EP Name" 
+                    onLinkClick={() => handleNavigate(`/albums/${encodeURIComponent(albumTitle)}`)}
+                  />
+                  <EditableField 
+                    label="Publisher/Label" 
+                    name="publisher" 
+                    value={fullTrack?.album?.publisher} 
+                    isEditing={isEditing} 
+                    placeholder="e.g. Warp Records" 
+                    onLinkClick={() => handleNavigate(`/labels/${encodeURIComponent(fullTrack?.album?.publisher)}`)}
+                  />
+                  <EditableField label="Catalog No." name="catalog_number" value={fullTrack?.album?.catalog_number} isEditing={isEditing} placeholder="e.g. WAP62" />
+                  <EditableField label="Country" name="release_country" value={fullTrack?.album?.release_country} isEditing={isEditing} placeholder="e.g. UK, US, FR" />
                 </VStack>
               </Box>
 
@@ -298,7 +301,10 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                         <StyledInput name="genre" value={genreInput} onChange={(e: any) => setGenreInput(e.target.value)} placeholder="Comma separated genres" />
                       )}
                       {!isEditing && <input type="hidden" name="genre" value={genreInput} />}
-                      <TagDisplay rawString={genreInput} />
+                      <TagDisplay 
+                        rawString={genreInput} 
+                        onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)}
+                      />
                     </Box>
                   </FormRow>
 
@@ -308,18 +314,81 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                         <StyledInput name="style" value={styleInput} onChange={(e: any) => setStyleInput(e.target.value)} placeholder="e.g. Minimal, Deep Tech" />
                       )}
                       {!isEditing && <input type="hidden" name="style" value={styleInput} />}
-                      <TagDisplay rawString={styleInput} />
+                      <TagDisplay 
+                        rawString={styleInput} 
+                        onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)}
+                      />
                     </Box>
                   </FormRow>
+                </VStack>
+              </Box>
 
-                  <FormRow label="Mood">
-                    <Box>
-                      {isEditing && (
-                        <StyledInput name="mood" value={moodInput} onChange={(e: any) => setMoodInput(e.target.value)} placeholder="e.g. Uplifting, Dark, Chill" />
-                      )}
-                      {!isEditing && <input type="hidden" name="mood" value={moodInput} />}
-                      <TagDisplay rawString={moodInput} colorScheme="purple" />
-                    </Box>
+              {/* ACOUSTICS TAB */}
+              <Box display={activeTab === 'Acoustics' ? 'block' : 'none'}>
+                <VStack align="stretch" gap={6}>
+                  <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
+                    <Flex bg="blue.100" p={3} borderRadius="full">
+                      <Icon as={Activity} boxSize={5} color="blue.600" />
+                    </Flex>
+                    <VStack align="start" gap={0}>
+                      <Text fontSize="sm" fontWeight="600" color="gray.900">Acoustic Analysis</Text>
+                      <Text fontSize="xs" color="gray.500">Calculated during ingestion.</Text>
+                    </VStack>
+                  </HStack>
+
+                  <FormRow label="BPM">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900">{displayBPM}</Text>
+                  </FormRow>
+
+                  <FormRow label="Musical Key">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900">{displayKey}</Text>
+                  </FormRow>
+
+                  <FormRow label="Duration">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900">{displayDuration}</Text>
+                  </FormRow>
+
+                  <Box borderTop="1px dashed" borderColor="gray.200" my={2} />
+
+                  <FormRow label="Danceability">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900">
+                      {fullTrack?.danceability ? fullTrack.danceability.toFixed(2) : '-'}
+                    </Text>
+                  </FormRow>
+
+                  <FormRow label="Loudness">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900">
+                      {fullTrack?.loudness ? `${fullTrack.loudness.toFixed(1)} dB` : '-'}
+                    </Text>
+                  </FormRow>
+                </VStack>
+              </Box>
+
+              {/* FILE SPECS TAB */}
+              <Box display={activeTab === 'File' ? 'block' : 'none'}>
+                <VStack align="stretch" gap={6}>
+                  <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
+                    <Flex bg="blue.100" p={3} borderRadius="full">
+                      <Icon as={HardDrive} boxSize={5} color="blue.600" />
+                    </Flex>
+                    <VStack align="start" gap={0}>
+                      <Text fontSize="sm" fontWeight="600" color="gray.900">Audio File Specs</Text>
+                      <Text fontSize="xs" color="gray.500">Extracted securely during ingestion.</Text>
+                    </VStack>
+                  </HStack>
+                  
+                  <FormRow label="Format">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900" textTransform="uppercase">{fullTrack?.format || '-'}</Text>
+                  </FormRow>
+
+                  <FormRow label="File Size">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900">{formatBytes(fullTrack?.file_size)}</Text>
+                  </FormRow>
+
+                  <FormRow label="Bitrate">
+                    <Text fontSize="sm" fontWeight="600" color="gray.900">
+                      {fullTrack?.bitrate ? `${Math.round(fullTrack.bitrate / 1000)} kbps` : '-'}
+                    </Text>
                   </FormRow>
                 </VStack>
               </Box>
@@ -390,30 +459,11 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 // --- HELPER COMPONENTS ---
 
 const FormRow = ({ label, children }: { label: string, children: React.ReactNode }) => (
-  <Grid templateColumns="120px 1fr" alignItems="start" gap={4}>
-    <Text fontSize="sm" color="gray.500" mt={isInputMode(children) ? 2 : 0}>{label}</Text>
+  <Grid templateColumns="120px 1fr" alignItems="center" gap={4}>
+    <Text fontSize="sm" color="gray.500">{label}</Text>
     <Box w="100%">{children}</Box>
   </Grid>
 );
-
-const isInputMode = (children: any) => {
-  return typeof children === 'object' && children !== null && 'props' in children;
-};
-
-const EditableField = ({ label, name, value, isEditing, placeholder = '' }: any) => {
-  return (
-    <FormRow label={label}>
-      {isEditing ? (
-        <StyledInput name={name} defaultValue={value || ''} placeholder={placeholder} />
-      ) : (
-        <Text fontSize="sm" fontWeight="600" color={value ? "gray.900" : "gray.400"} minH="24px" pt={0.5}>
-          {value || '-'}
-          <input type="hidden" name={name} value={value || ''} />
-        </Text>
-      )}
-    </FormRow>
-  );
-};
 
 const StyledInput = (props: any) => (
   <Input 
@@ -425,18 +475,57 @@ const StyledInput = (props: any) => (
   />
 );
 
-const TagDisplay = ({ rawString, colorScheme = "blue" }: { rawString: string, colorScheme?: string }) => {
-  if (!rawString.trim()) return <Text fontSize="sm" color="gray.400" pt={0.5}>-</Text>;
-  const tags = rawString.split(',').map(s => s.trim()).filter(Boolean);
+const EditableField = ({ label, name, value, isEditing, placeholder = '', onLinkClick }: any) => {
+  const isClickable = !isEditing && onLinkClick && value;
+
+  return (
+    <FormRow label={label}>
+      {isEditing ? (
+        <StyledInput name={name} defaultValue={value || ''} placeholder={placeholder} />
+      ) : (
+        <Text 
+          fontSize="sm" 
+          fontWeight="600" 
+          color={value ? (isClickable ? "blue.600" : "gray.900") : "gray.400"} 
+          h="38px" 
+          display="flex" 
+          alignItems="center"
+          cursor={isClickable ? "pointer" : "default"}
+          _hover={isClickable ? { textDecoration: "underline" } : {}}
+          onClick={() => {
+            if (isClickable) onLinkClick();
+          }}
+        >
+          {value || '-'}
+          <input type="hidden" name={name} value={value || ''} />
+        </Text>
+      )}
+    </FormRow>
+  );
+};
+
+const TagDisplay = ({ rawString, colorScheme = "blue", onTagClick }: any) => {
+  if (!rawString.trim()) return <Text fontSize="sm" color="gray.400" h="38px" display="flex" alignItems="center">-</Text>;
+  const tags = rawString.split(',').map((s: string) => s.trim()).filter(Boolean);
   
   const bg = colorScheme === 'purple' ? 'purple.50' : 'blue.50';
   const color = colorScheme === 'purple' ? 'purple.700' : 'blue.700';
   const border = colorScheme === 'purple' ? 'purple.100' : 'blue.100';
 
   return (
-    <HStack flexWrap="wrap" gap={2} mt={2}>
-      {tags.map((tag, index) => (
-        <Box key={index} px={2.5} py={1} bg={bg} color={color} fontSize="xs" fontWeight="600" borderRadius="md" border="1px solid" borderColor={border}>
+    <HStack flexWrap="wrap" gap={2} my={2}>
+      {tags.map((tag: string, index: number) => (
+        <Box 
+          key={index} 
+          px={2.5} py={1} 
+          bg={bg} color={color} 
+          fontSize="xs" fontWeight="600" 
+          borderRadius="md" border="1px solid" borderColor={border}
+          cursor={onTagClick ? "pointer" : "default"}
+          transition="all 0.2s"
+          _hover={onTagClick ? { transform: "translateY(-1px)", shadow: "sm", opacity: 0.8 } : {}}
+          onClick={() => onTagClick && onTagClick(tag)}
+        >
           {tag}
         </Box>
       ))}
