@@ -17,6 +17,7 @@ type Config struct {
 		BucketIngest string `mapstructure:"bucket_ingest"`
 		BucketProd   string `mapstructure:"bucket_prod"`
 		BucketStream string `mapstructure:"bucket_stream_live"`
+		BucketMaster string `mapstructure:"bucket_master"`
 		LocalStorage string `mapstructure:"local_storage_path"` // For local provider
 	} `mapstructure:"storage"`
 	Server struct {
@@ -74,6 +75,7 @@ func Load() *Config {
 	viper.BindEnv("storage.bucket_ingest")
 	viper.BindEnv("storage.bucket_prod")
 	viper.BindEnv("storage.bucket_stream_live")
+	viper.BindEnv("storage.bucket_master")
 	viper.BindEnv("storage.local_storage_path")
 
 	viper.BindEnv("server.temp_dir")

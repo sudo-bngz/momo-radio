@@ -38,13 +38,15 @@ type Album struct {
 	Tracks   []Track `json:"tracks,omitempty"`
 }
 
+// 3. Track represents a single audio file
 type Track struct {
 	gorm.Model `json:"-"`
 	ID         uint `gorm:"primarykey" json:"id"`
 
 	// Core Metadata
-	Key   string `gorm:"uniqueIndex;not null" json:"key"`
-	Title string `gorm:"index" json:"title"`
+	Key       string `gorm:"uniqueIndex;not null" json:"key"`
+	MasterKey string `gorm:"type:text;not null" json:"master_key"`
+	Title     string `gorm:"index" json:"title"`
 
 	ProcessingStatus   string `gorm:"default:'pending';index" json:"processing_status"`
 	ProcessingProgress int    `gorm:"default:0" json:"processing_progress"`
@@ -79,11 +81,10 @@ type Track struct {
 	LastPlayed *time.Time `gorm:"index" json:"last_played"`
 }
 
+// 4. PlayHistory represents a single instance of a track being played
 type PlayHistory struct {
 	gorm.Model
-	TrackID    uint
-	Track      Track
-	PlayedAt   time.Time  `gorm:"index"`
-	PlayCount  int        `gorm:"default:0"`
-	LastPlayed *time.Time `gorm:"index"`
+	TrackID  uint
+	Track    Track
+	PlayedAt time.Time `gorm:"index"`
 }

@@ -99,6 +99,7 @@ func (s *Server) setupRoutes() {
 			protected.GET("/tracks/:id/status-stream", middleware.RequireRole("dj", "manager"), trackHandler.TrackStatusStream)
 			protected.PUT("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.UpdateTrack)
 			protected.GET("/tracks/queue", middleware.RequireRole("dj", "manager"), trackHandler.GetQueue)
+			protected.POST("/tracks/:id/analysis", trackHandler.Analysis)
 
 			// --- ARTISTS
 			protected.GET("/artists", middleware.RequireRole("dj", "manager"), artistHandler.GetArtists)

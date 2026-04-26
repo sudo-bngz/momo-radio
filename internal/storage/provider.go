@@ -15,7 +15,6 @@ type StorageProvider interface {
 }
 
 type LinkableProvider interface {
-	// Make sure the arguments here match what you want to use
 	GetPublicURL(bucket, region, key string) string
 }
 

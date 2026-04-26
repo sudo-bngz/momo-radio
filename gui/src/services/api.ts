@@ -79,7 +79,7 @@ export const api = {
     return response.data;
   },
 
-  // ⚡️ NEW: Fetch the live processing queue
+  // Fetch the live processing queue
   getQueue: async (): Promise<any[]> => {
     const response = await apiClient.get('/tracks/queue');
     return response.data;
@@ -103,6 +103,10 @@ export const api = {
 
   updateTrack: async (id: number | string, data: Partial<Track>): Promise<void> => {
     await apiClient.put(`/tracks/${id}`, data);
+  },
+
+  analysis: async (id: number | string): Promise<void> => {
+    await apiClient.post(`/tracks/${id}/analysis`);
   },
 
   // 3. PLAYLIST BUILDER

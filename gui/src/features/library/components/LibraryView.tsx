@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { 
   Box, VStack, HStack, Text, Input, Spinner, Table, Heading, Button, Badge, Select, Icon, createListCollection 
 } from '@chakra-ui/react';
-import { Search, Play, Pause, Plus, Music, ChevronDown } from 'lucide-react';
+import { Search, Play, Pause, Plus, Music, ChevronDown, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
 import { TrackDetailDrawer } from './TrackDetailDrawer'; 
 import type { SortOption } from '../hook/useLibrary';
+import { api } from '../../../services/api';
+import { toaster } from '../../../components/ui/toaster'; 
 
 const sortOptions = createListCollection({
   items: [
@@ -41,6 +43,30 @@ export const LibraryView: React.FC = () => {
       if (hasMore && !isFetchingMore && !isLoading) {
         loadMore();
       }
+    }
+  };
+
+  // ⚡️ NEW: Handler to retry stuck analysis jobs
+  const handleRetry = async (e: React.MouseEvent, trackId: number) => {
+    e.stopPropagation(); // Prevents the row click from firing
+    try {
+      await api.analysis(trackId);
+      toaster.create({
+        title: "Analysis Restarted",
+        description: "The track has been added back to the queue.",
+        type: "info",
+        duration: 3000,
+      });
+      // Optionally reset the local UI state so they see an immediate update
+      setTracks(prev => prev.map(t => t.id === trackId ? { ...t, processing_status: 'pending' } : t));
+    } catch (error) {
+      console.error("Failed to retry analysis", error);
+      toaster.create({
+        title: "Failed to restart",
+        description: "Please check the server logs.",
+        type: "error",
+        duration: 3000,
+      });
     }
   };
 
@@ -152,11 +178,7 @@ export const LibraryView: React.FC = () => {
                   const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
                   const hasAudioData = track.duration && track.duration > 0;
                   
-                  // 2. Is the DB explicitly screaming that it's processing?
                   const hasPendingFlag = ['pending', 'processing'].includes(track.status || '') || ['pending', 'processing'].includes(track.processing_status || '');
-
-                  // 3. The rule: If it has audio data, it's playable (ignores stuck DB flags). 
-                  // If it's missing audio data, it is forced into the pending/disabled state!
                   const isPending = !hasAudioData || (hasPendingFlag && !hasAudioData);
 
                   return (
@@ -205,13 +227,34 @@ export const LibraryView: React.FC = () => {
                         </Box>
                       </Table.Cell>
 
+                      {/* ⚡️ UPDATED: Added Retry Button logic inside the title cell */}
                       <Table.Cell 
                         fontWeight={isThisTrackPlaying ? "bold" : "500"} 
                         color={isPending ? "blue.500" : (isThisTrackPlaying ? "blue.600" : "gray.900")} 
                         fontStyle={isPending ? "italic" : "normal"}
                         onClick={() => !isPending && setSelectedTrack(track)}
                       >
-                        {track.title} {isPending && "(Analyzing...)"}
+                        <HStack gap={2}>
+                          <Text>
+                            {track.title} {isPending && "(Analyzing...)"}
+                          </Text>
+                          {isPending && (
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              borderRadius="full"
+                              h="24px"
+                              w="24px"
+                              p={0}
+                              color="blue.500"
+                              onClick={(e) => handleRetry(e, track.id)}
+                              _hover={{ bg: "blue.100", color: "blue.700" }}
+                              title="Relaunch Analysis"
+                            >
+                              <Icon as={RefreshCw} boxSize={3.5} />
+                            </Button>
+                          )}
+                        </HStack>
                       </Table.Cell>
                       
                       <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"} _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }} onClick={(e) => { if(!isPending) { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(track.artist)}`); } }}>

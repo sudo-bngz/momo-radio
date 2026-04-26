@@ -74,13 +74,9 @@ func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
 
 	for i := range orderedTracks {
 		if orderedTracks[i].Album.CoverKey != "" {
-			url := h.storage.GetPublicURL(orderedTracks[i].Album.CoverKey)
-			if err == nil {
-				orderedTracks[i].Album.CoverURL = url
-			}
+			orderedTracks[i].Album.CoverURL = h.storage.GetPublicURL(orderedTracks[i].Album.CoverKey)
 		}
 	}
-
 	// 3. Attach the correctly ordered tracks to the playlist payload
 	playlist.Tracks = orderedTracks
 

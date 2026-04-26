@@ -19,6 +19,7 @@ type Client struct {
 	bucketProd   string
 	bucketIngest string
 	bucketStream string
+	bucketMaster string // ⚡️ Standardized to match other bucket names
 	region       string
 
 	cache      map[string][]string
@@ -51,6 +52,7 @@ func New(cfg *config.Config) *Client {
 		bucketProd:   cfg.Storage.BucketProd,
 		bucketIngest: cfg.Storage.BucketIngest,
 		bucketStream: cfg.Storage.BucketStream,
+		bucketMaster: cfg.Storage.BucketMaster,
 		region:       cfg.Storage.Region,
 		cache:        make(map[string][]string),
 		cacheTime:    make(map[string]time.Time),
@@ -101,6 +103,21 @@ func (c *Client) UploadAssetFile(key string, body io.ReadSeeker, contentType, ca
 	return c.backend.Put(c.bucketProd, key, body, contentType, cacheControl)
 }
 
+// --- Master Vault Methods --- ⚡️ NEW
+
+func (c *Client) UploadMasterFile(key string, body io.ReadSeeker, contentType string) error {
+	// No cache control needed for private files
+	return c.backend.Put(c.bucketMaster, key, body, contentType, "")
+}
+
+func (c *Client) DownloadMasterFile(key string) (*FileObject, error) {
+	return c.backend.Get(c.bucketMaster, key)
+}
+
+func (c *Client) DeleteMasterFile(key string) error {
+	return c.backend.Delete(c.bucketMaster, key)
+}
+
 // --- Ingester Methods ---
 
 func (c *Client) UploadIngestFile(key string, body io.ReadSeeker, contentType string) error {
@@ -127,7 +144,6 @@ func (c *Client) GetPublicURL(key string) string {
 	if key == "" {
 		return ""
 	}
-	// This check now compiles because there's no name collision
 	if linker, ok := c.backend.(LinkableProvider); ok {
 		return linker.GetPublicURL(c.bucketProd, c.region, key)
 	}

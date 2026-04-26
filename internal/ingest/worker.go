@@ -54,7 +54,7 @@ const TypeTrackProcess = "track:process"
 
 type TrackProcessPayload struct {
 	TrackID uint   `json:"track_id"`
-	FileKey string `json:"file_key"` // The path in the ingest bucket
+	FileKey string `json:"file_key"`
 }
 
 // --- WORKER ---
@@ -106,12 +106,13 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 
 	var payload TrackProcessPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		log.Printf("Task Failed: Failed to parse payload: %v", err)
 		return fmt.Errorf("failed to parse payload: %v", err)
 	}
 
 	key := payload.FileKey
 	trackIDStr := fmt.Sprintf("%d", payload.TrackID)
-	log.Printf("⚙️ Starting Job for Track ID %d: %s", payload.TrackID, key)
+	log.Printf("Starting Job for Track ID %d: %s", payload.TrackID, key)
 
 	// Updates DB and shouts to Frontend via Redis SSE
 	updateStatus := func(status string, progress int) {
@@ -122,7 +123,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		w.redis.Publish(ctx, "track_status:"+trackIDStr, status)
 	}
 
-	// 1. Setup Files & Downloading
+	// 1. Setup Files & Downloading from the Dropzone
 	updateStatus("downloading", 10)
 
 	baseName := filepath.Base(key)
@@ -139,6 +140,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
+		log.Printf("Task Failed: Could not download from ingest dropzone: %v", err)
 		return err
 	}
 	fRaw, _ := os.Create(rawPath)
@@ -146,18 +148,39 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	obj.Body.Close()
 	fRaw.Close()
 
+	// Upload the untouched raw file to your private Master Vault
+	updateStatus("archiving master", 15)
+	fMaster, err := os.Open(rawPath)
+	if err == nil {
+		safeFilename := strings.ReplaceAll(baseName, " ", "_")
+		masterKey := fmt.Sprintf("%d_%s", payload.TrackID, safeFilename)
+
+		err = w.storage.UploadMasterFile(masterKey, fMaster, "audio/mpeg")
+		fMaster.Close()
+
+		if err != nil {
+			log.Printf("Warning: Failed to secure Master File: %v", err)
+		} else {
+			log.Printf("Original file secured in Master Vault: %s", masterKey)
+		}
+	} else {
+		log.Printf("Warning: Could not open local raw file for Master upload: %v", err)
+	}
+
+	// 3. Audio Validation
 	if err := audio.Validate(rawPath); err != nil {
 		w.storage.DeleteIngestFile(key)
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
+		log.Printf("Task Failed: Audio validation failed for %s: %v", rawPath, err)
 		return fmt.Errorf("invalid audio file format")
 	}
 
-	// 2. Local Metadata & Deep Acoustic Analysis
+	// 4. Local Metadata & Deep Acoustic Analysis
 	updateStatus("analyzing", 30)
 	meta, _ := metadata.GetLocal(rawPath)
 
-	log.Printf("   🎼 Performing Deep Acoustic Analysis for %s...", baseName)
+	log.Printf("Performing Deep Acoustic Analysis for %s...", baseName)
 	w.analysisSem <- struct{}{}
 	analysis, err := audio.AnalyzeDeep(rawPath)
 	<-w.analysisSem
@@ -171,7 +194,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		meta.Duration = analysis.Duration
 	}
 
-	// 3. Metadata Enrichment (Discogs/iTunes)
+	// 5. Metadata Enrichment (Discogs/iTunes)
 	updateStatus("enriching", 60)
 
 	searchArtist := meta.Artist
@@ -249,20 +272,22 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		artistOrigin = "Unknown"
 	}
 
-	// 4. Normalize Audio
+	// 6. Normalize Audio
 	updateStatus("normalizing", 80)
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
+		log.Printf("Task Failed: Failed to normalize audio %s: %v", rawPath, err)
 		return err
 	}
 
-	// 5. Upload Final Audio
+	// 7. Upload Final Playable Audio to Asset Bucket
 	updateStatus("uploading", 90)
 	destinationKey := BuildPath(meta, key)
 	fClean, err := os.Open(cleanPath)
 	if err != nil {
 		updateStatus("failed", 0)
+		log.Printf("Task Failed: Failed to open cleaned audio file %s: %v", cleanPath, err)
 		return err
 	}
 	defer fClean.Close()
@@ -270,10 +295,11 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	if err := w.storage.UploadAssetFile(destinationKey, fClean, "audio/mpeg", "public, max-age=31536000"); err != nil {
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
+		log.Printf("Task Failed: Failed to upload to asset bucket: %v", err)
 		return err
 	}
 
-	// 6. Database Relations
+	// 8. Database Relations
 	var artist models.Artist
 	w.db.DB.Where(models.Artist{Name: meta.Artist}).FirstOrCreate(&artist)
 	if artist.ArtistCountry == "" && artistOrigin != "Unknown" {
@@ -318,16 +344,14 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		albumID = &album.ID
 	}
 
-	// 7. Cover Art Pipeline
+	// 9. Cover Art Pipeline
 	if albumID != nil && album.CoverKey == "" {
 		var rawImage []byte
 		var errImg error
 
-		// Local attached picture wins first!
 		if len(meta.AttachedPicture) > 0 {
 			rawImage = meta.AttachedPicture
 		} else if discogsCoverURL != "" {
-			// Cloud fetch as fallback
 			rawImage, errImg = metadata.DownloadImage(discogsCoverURL, w.cfg.Services.DiscogsToken)
 		}
 
@@ -343,8 +367,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	// 8. Finalize Track record
-	// Note: We use .Updates() because the API already created the row when the user uploaded it!
+	// 10. Finalize Track record
 	w.db.DB.Model(&models.Track{}).Where("id = ?", payload.TrackID).Updates(map[string]interface{}{
 		"key":                 destinationKey,
 		"title":               meta.Title,
@@ -364,9 +387,10 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		"processing_progress": 100,
 	})
 
-	// 9. Cleanup
+	// Delete the file from the Ingest bucket now that it is safely in the Master & Prod buckets
+	log.Printf("Sweeping ingest bucket: deleting %s", key)
 	w.storage.DeleteIngestFile(key)
-	w.cleanupFolders([]string{key}) // Clean up the parent folder if it's now empty
+	w.cleanupFolders([]string{key})
 
 	// Signal the frontend to close the stream
 	w.redis.Publish(ctx, "track_status:"+trackIDStr, "completed")
@@ -393,7 +417,7 @@ func (w *Worker) cleanupFolders(allKeys []string) {
 	for _, dir := range dirs {
 		isEmpty, err := w.storage.IsPrefixEmpty(dir)
 		if err == nil && isEmpty {
-			log.Printf("🧹 Removing empty folder: %s", dir)
+			log.Printf("Removing empty folder: %s", dir)
 			_ = w.storage.DeleteIngestFile(dir)
 		}
 	}

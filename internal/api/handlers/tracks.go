@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"momo-radio/internal/config"
 	"momo-radio/internal/metadata"
@@ -45,7 +46,7 @@ func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisCli
 	}
 }
 
-// LibraryTrack prevents sending massive payloads, now including Album data!
+// LibraryTrack prevents sending massive payloads
 type LibraryTrack struct {
 	ID         uint    `json:"id"`
 	Title      string  `json:"title"`
@@ -242,7 +243,6 @@ func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	})
 }
 
-// UploadTrack processes the file, tags it, uploads to ingest bucket, creates DB row, and dispatches Asynq job.
 // UploadTrack processes the file, tags it, extracts embedded covers, uploads to ingest bucket, creates DB rows, and dispatches Asynq job.
 func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	// 1. Parse File & Form
@@ -302,7 +302,8 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	}
 	defer finalFile.Close()
 
-	b2Key := "incoming/" + filepath.Base(fileHeader.Filename)
+	safeFilename := strings.ReplaceAll(filepath.Base(fileHeader.Filename), " ", "_")
+	b2Key := fmt.Sprintf("incoming/%d_%s", time.Now().Unix(), safeFilename)
 	contentType := fileHeader.Header.Get("Content-Type")
 
 	err = h.storage.UploadIngestFile(b2Key, finalFile, contentType)
@@ -391,6 +392,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		AlbumID:            albumIDPtr, // Will be NULL if albumTitle was empty
 		Genre:              c.PostForm("genre"),
 		Key:                b2Key,
+		MasterKey:          b2Key,
 		ProcessingStatus:   "pending",
 		ProcessingProgress: 0,
 	}
@@ -411,7 +413,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	defer asynqClient.Close()
 
 	// Pass track_id so the worker knows what to analyze
-	payloadData := map[string]interface{}{
+	payloadData := map[string]any{
 		"track_id": newTrack.ID,
 		"file_key": b2Key,
 	}
@@ -557,4 +559,49 @@ func (h *TrackHandler) GetQueue(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, queue)
+}
+
+// Using to reset a stuck track and pushes it back into the Asynq queue
+func (h *TrackHandler) Analysis(c *gin.Context) {
+	id := c.Param("id")
+	var track models.Track
+
+	if err := h.db.First(&track, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
+		return
+	}
+
+	// 1. Reset the DB status so the UI knows it's working again
+	h.db.Model(&track).Updates(map[string]interface{}{
+		"processing_status":   "pending",
+		"processing_progress": 0,
+	})
+
+	// 2. Initialize Asynq client (Using the exact same config as UploadTrack)
+	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
+		Addr:     redisAddr,
+		Password: h.config.Redis.Password,
+		DB:       h.config.Redis.DB,
+	})
+	defer asynqClient.Close()
+
+	// 3. Re-create the payload using the track's stored B2 key
+	payloadData := map[string]any{
+		"track_id": track.ID,
+		"file_key": track.Key,
+	}
+	payloadBytes, _ := json.Marshal(payloadData)
+	task := asynq.NewTask("track:process", payloadBytes)
+
+	// 4. Enqueue the job again
+	_, err := asynqClient.Enqueue(task)
+	if err != nil {
+		slog.Error("Failed to re-enqueue job", "error", err)
+		h.db.Model(&track).Update("processing_status", "failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to restart analysis queue"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Analysis restarted successfully"})
 }

@@ -60,7 +60,7 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 	defer os.Remove(safeWav)
 
 	// 2. Run the extractor
-	log.Printf("🚀 Running Essentia...")
+	log.Printf("Running Essentia...")
 	cmd := exec.Command("streaming_extractor_music", safeWav, jsonPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -92,7 +92,7 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 		Energy:       raw.LowLevel.SpectralEnergy.Mean,
 	}
 
-	log.Printf("✨ Result: %s | %.2f BPM | %s %s",
+	log.Printf("Result: %s | %.2f BPM | %s %s",
 		filepath.Base(path),
 		analysis.BPM,
 		analysis.MusicalKey,
