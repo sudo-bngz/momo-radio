@@ -561,7 +561,7 @@ func (h *TrackHandler) GetQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, queue)
 }
 
-// Using to reset a stuck track and pushes it back into the Asynq queue
+// resets a stuck track and pushes it back into the Asynq queue
 func (h *TrackHandler) Analysis(c *gin.Context) {
 	id := c.Param("id")
 	var track models.Track
@@ -577,7 +577,7 @@ func (h *TrackHandler) Analysis(c *gin.Context) {
 		"processing_progress": 0,
 	})
 
-	// 2. Initialize Asynq client (Using the exact same config as UploadTrack)
+	// 2. Initialize Asynq client
 	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
 		Addr:     redisAddr,
@@ -586,10 +586,11 @@ func (h *TrackHandler) Analysis(c *gin.Context) {
 	})
 	defer asynqClient.Close()
 
-	// 3. Re-create the payload using the track's stored B2 key
+	// 3. Pass the IsRetry flag to the worker!
 	payloadData := map[string]any{
 		"track_id": track.ID,
 		"file_key": track.Key,
+		"is_retry": true,
 	}
 	payloadBytes, _ := json.Marshal(payloadData)
 	task := asynq.NewTask("track:process", payloadBytes)

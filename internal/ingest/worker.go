@@ -55,6 +55,7 @@ const TypeTrackProcess = "track:process"
 type TrackProcessPayload struct {
 	TrackID uint   `json:"track_id"`
 	FileKey string `json:"file_key"`
+	IsRetry bool   `json:"is_retry"`
 }
 
 // --- WORKER ---
@@ -123,9 +124,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		w.redis.Publish(ctx, "track_status:"+trackIDStr, status)
 	}
 
-	// 1. Setup Files & Downloading from the Dropzone
-	updateStatus("downloading", 10)
-
+	// 1. Setup Local Temp Files
 	baseName := filepath.Base(key)
 	ext := filepath.Ext(baseName)
 	nameWithoutExt := strings.TrimSuffix(baseName, ext)
@@ -136,40 +135,69 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	defer os.Remove(rawPath)
 	defer os.Remove(cleanPath)
 
-	obj, err := w.storage.DownloadIngestFile(key)
-	if err != nil {
+	var obj *storage.FileObject
+	var downloadErr error
+
+	if payload.IsRetry {
+		updateStatus("downloading (retry)", 10)
+
+		var track models.Track
+		w.db.DB.First(&track, payload.TrackID)
+
+		// Priority 1: Try Master Vault
+		log.Printf("🔍 Retry requested. Looking for Master file: %s", track.MasterKey)
+		obj, downloadErr = w.storage.DownloadMasterFile(track.MasterKey)
+
+		// Priority 2: Fallback to Stream Asset
+		if downloadErr != nil {
+			log.Printf("Master missing! Falling back to stream asset: %s", track.Key)
+			obj, downloadErr = w.storage.DownloadFile(track.Key)
+		}
+	} else {
+		updateStatus("downloading (ingest)", 10)
+		obj, downloadErr = w.storage.DownloadIngestFile(key)
+	}
+
+	// Handle Download Failure
+	if downloadErr != nil {
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
-		log.Printf("Task Failed: Could not download from ingest dropzone: %v", err)
-		return err
+		log.Printf("Task Failed: Could not download audio file: %v", downloadErr)
+		return downloadErr
 	}
+
+	// Write the downloaded file to the local disk for processing
 	fRaw, _ := os.Create(rawPath)
 	io.Copy(fRaw, obj.Body)
 	obj.Body.Close()
 	fRaw.Close()
 
-	// Upload the untouched raw file to your private Master Vault
-	updateStatus("archiving master", 15)
-	fMaster, err := os.Open(rawPath)
-	if err == nil {
-		safeFilename := strings.ReplaceAll(baseName, " ", "_")
-		masterKey := fmt.Sprintf("%d_%s", payload.TrackID, safeFilename)
+	// ⚡️ 2. IMMEDIATELY SECURE THE MASTER FILE (Only on Fresh Uploads!)
+	if !payload.IsRetry {
+		updateStatus("archiving master", 15)
+		fMaster, err := os.Open(rawPath)
+		if err == nil {
+			safeFilename := strings.ReplaceAll(baseName, " ", "_")
+			masterKey := fmt.Sprintf("%d_%s", payload.TrackID, safeFilename)
 
-		err = w.storage.UploadMasterFile(masterKey, fMaster, "audio/mpeg")
-		fMaster.Close()
+			err = w.storage.UploadMasterFile(masterKey, fMaster, "audio/mpeg")
+			fMaster.Close()
 
-		if err != nil {
-			log.Printf("Warning: Failed to secure Master File: %v", err)
+			if err != nil {
+				log.Printf("Warning: Failed to secure Master File: %v", err)
+			} else {
+				log.Printf("Original file secured in Master Vault: %s", masterKey)
+			}
 		} else {
-			log.Printf("Original file secured in Master Vault: %s", masterKey)
+			log.Printf("Warning: Could not open local raw file for Master upload: %v", err)
 		}
-	} else {
-		log.Printf("Warning: Could not open local raw file for Master upload: %v", err)
 	}
 
 	// 3. Audio Validation
 	if err := audio.Validate(rawPath); err != nil {
-		w.storage.DeleteIngestFile(key)
+		if !payload.IsRetry {
+			w.storage.DeleteIngestFile(key) // Only clean dropzone if it was a fresh upload
+		}
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
 		log.Printf("Task Failed: Audio validation failed for %s: %v", rawPath, err)
@@ -180,7 +208,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	updateStatus("analyzing", 30)
 	meta, _ := metadata.GetLocal(rawPath)
 
-	log.Printf("Performing Deep Acoustic Analysis for %s...", baseName)
+	log.Printf("   🎼 Performing Deep Acoustic Analysis for %s...", baseName)
 	w.analysisSem <- struct{}{}
 	analysis, err := audio.AnalyzeDeep(rawPath)
 	<-w.analysisSem
@@ -234,7 +262,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 				meta.Title = enriched.Title
 			}
 
-			time.Sleep(2 * time.Second) // Respect rate limits
+			time.Sleep(2 * time.Second)
 			mbCountry, errAc := metadata.GetArtistCountryViaMusicBrainz(meta.Artist, w.cfg.Services.ContactEmail)
 			if errAc == nil && mbCountry != "" {
 				artistOrigin = utils.ResolveCountry(mbCountry)
@@ -369,7 +397,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 
 	// 10. Finalize Track record
 	w.db.DB.Model(&models.Track{}).Where("id = ?", payload.TrackID).Updates(map[string]interface{}{
-		"key":                 destinationKey,
+		"key":                 destinationKey, // Points to the public playable asset
 		"title":               meta.Title,
 		"artist_id":           artist.ID,
 		"album_id":            albumID,
@@ -387,10 +415,11 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		"processing_progress": 100,
 	})
 
-	// Delete the file from the Ingest bucket now that it is safely in the Master & Prod buckets
-	log.Printf("Sweeping ingest bucket: deleting %s", key)
-	w.storage.DeleteIngestFile(key)
-	w.cleanupFolders([]string{key})
+	if !payload.IsRetry {
+		log.Printf("🧹 Sweeping dropzone: deleting %s", key)
+		w.storage.DeleteIngestFile(key)
+		w.cleanupFolders([]string{key})
+	}
 
 	// Signal the frontend to close the stream
 	w.redis.Publish(ctx, "track_status:"+trackIDStr, "completed")
