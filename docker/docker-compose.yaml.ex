@@ -1,10 +1,10 @@
 services:
-  # 1. The Ingester (Organizer)
-  ingester:
+  # 1. The worker
+  worker:
     build:
       context: .. # Point to project root
       dockerfile: docker/Dockerfile.ingest
-    container_name: radio_ingester
+    container_name: radio_worker
     restart: unless-stopped
     #volumes:
       # Mount config.yaml so you can edit it on the host
@@ -34,7 +34,7 @@ services:
       - RADIO_B2_KEY_ID=${B2_KEY_ID}
       - RADIO_B2_APP_KEY=${B2_APP_KEY}
     depends_on:
-      - ingester
+      - worker
   postgres:
     image: postgres:15-alpine
     container_name: radio_db

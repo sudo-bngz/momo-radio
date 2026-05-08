@@ -51,8 +51,8 @@ jobs:
         run: go mod download
 
       # 3. Verify Builds
-      - name: Verify Build (Ingester)
-        run: go build -v ./cmd/ingester/
+      - name: Verify Build (worker)
+        run: go build -v ./cmd/worker/
 
       - name: Verify Build (Radio Engine)
         run: go build -v ./cmd/radio/
@@ -80,8 +80,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - service: ingester
-            dockerfile: docker/Dockerfile.ingest
+          - service: worker
+            dockerfile: docker/Dockerfile.worker
           - service: streamer
             dockerfile: docker/Dockerfile.streamer
           - service: api

@@ -77,29 +77,6 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client, redisCl
 	}
 }
 
-// StartServer begins listening to the Redis queue for jobs
-func (w *Worker) StartServer() error {
-	redisAddr := fmt.Sprintf("%s:%s", w.cfg.Redis.Host, w.cfg.Redis.Port)
-
-	srv := asynq.NewServer(
-		asynq.RedisClientOpt{
-			Addr:     redisAddr,
-			Password: w.cfg.Redis.Password,
-			DB:       w.cfg.Redis.DB,
-		},
-		asynq.Config{
-			Concurrency: 4,
-			Queues:      map[string]int{"default": 10},
-		},
-	)
-
-	mux := asynq.NewServeMux()
-	mux.HandleFunc(TypeTrackProcess, w.HandleProcessTask)
-
-	log.Println("Asynq Ingest Worker listening for track jobs...")
-	return srv.Run(mux)
-}
-
 // HandleProcessTask executes the heavy processing pipeline
 func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	timer := prometheus.NewTimer(duration)

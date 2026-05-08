@@ -8,11 +8,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/export"
 	"momo-radio/internal/ingest"
 	"momo-radio/internal/storage"
 )
@@ -29,7 +31,6 @@ func main() {
 
 	var targetArtists []string
 	flag.Func("artists", "Comma-separated list of artists to target (e.g. -artists='Daft Punk,Justice')", func(s string) error {
-		// Compatible with Go 1.24+ strings.SplitSeq, or fallback to strings.Split
 		for _, a := range strings.Split(s, ",") {
 			targetArtists = append(targetArtists, strings.TrimSpace(a))
 		}
@@ -61,8 +62,9 @@ func main() {
 		log.Fatalf("Failed to create temp dir: %v", err)
 	}
 
-	// 6. Create the Asynq Worker
-	worker := ingest.New(cfg, store, db, redisClient)
+	// 6. Instantiate the Domain Workers
+	ingestWorker := ingest.New(cfg, store, db, redisClient)
+	exportWorker := export.New(cfg, store, db, redisClient)
 
 	// 7. MODE SELECTION (CLI Maintenance)
 	if *repairMeta || *repairAudio || *repairCountry {
@@ -71,12 +73,12 @@ func main() {
 
 		if *repairAudio {
 			log.Println("Starting Audio Repair (Essentia)...")
-			worker.RepairAudio()
+			ingestWorker.RepairAudio()
 		}
 
 		if *repairMeta {
 			log.Println("Starting Metadata Repair...")
-			worker.RepairMetadata()
+			ingestWorker.RepairMetadata()
 		}
 
 		if *repairCountry {
@@ -84,7 +86,7 @@ func main() {
 				log.Println("MODE: DRY RUN (No DB writes)")
 			}
 			log.Printf("Starting Country Repair (%s) for %d targets...", *repairProvider, len(targetArtists))
-			worker.RepairCountry(*dryRun, targetArtists, *repairProvider)
+			ingestWorker.RepairCountry(*dryRun, targetArtists, *repairProvider)
 		}
 
 		log.Println("All maintenance tasks finished. Exiting.")
@@ -92,10 +94,12 @@ func main() {
 	}
 
 	// 8. NORMAL OPERATION
-	log.Printf("Starting Radio Ingestion Worker [Storage: %s]...", cfg.Storage.Provider)
+	log.Printf("Starting Unified Radio Worker [Storage: %s]...", cfg.Storage.Provider)
 
-	// 9. Setup Metrics
+	// 9. Setup Metrics for ALL domains
 	ingest.RegisterMetrics()
+	export.RegisterMetrics() // ⚡️ Register export metrics
+
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 		log.Printf("Metrics exposed at http://localhost%s/metrics", cfg.Server.MetricsPort)
@@ -104,8 +108,26 @@ func main() {
 		}
 	}()
 
-	// 9. Start Asynq Server (Blocks forever)
-	if err := worker.StartServer(); err != nil {
+	// 10. Start the Unified Asynq Server
+	srv := asynq.NewServer(
+		asynq.RedisClientOpt{
+			Addr:     redisAddr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		},
+		asynq.Config{
+			Concurrency: cfg.Worker.Concurrency,
+			Queues:      cfg.Worker.Queues,
+		},
+	)
+
+	// 11. Wire the tasks to their respective handlers!
+	mux := asynq.NewServeMux()
+	mux.HandleFunc(ingest.TypeTrackProcess, ingestWorker.HandleProcessTask)
+	mux.HandleFunc(export.TypeExportRekordbox, exportWorker.HandleRekordboxTask)
+
+	log.Println("Asynq Multiplexer listening for jobs...")
+	if err := srv.Run(mux); err != nil {
 		log.Fatalf("Failed to start Asynq worker: %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 
 	"momo-radio/gui"
@@ -19,31 +21,45 @@ import (
 )
 
 type Server struct {
-	cfg     *config.Config
-	db      *database.Client
-	storage *storage.Client
-	redis   *redis.Client
-	router  *gin.Engine
+	cfg         *config.Config
+	db          *database.Client
+	storage     *storage.Client
+	redis       *redis.Client
+	asynqClient *asynq.Client
+	router      *gin.Engine
 }
 
-// ⚡️ ADDED: redisClient to the constructor parameters
 func New(cfg *config.Config, db *database.Client, storage *storage.Client, redisClient *redis.Client) *Server {
 	if cfg.Radio.LogLevel != "debug" {
-		gin.SetMode(gin.ReleaseMode) // Set to Release for production
+		gin.SetMode(gin.ReleaseMode)
 	}
 
+	redisOpt := asynq.RedisClientOpt{
+		Addr:     fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	}
+	asynqClient := asynq.NewClient(redisOpt)
+
 	s := &Server{
-		cfg:     cfg,
-		db:      db,
-		storage: storage,
-		redis:   redisClient,
-		router:  gin.Default(),
+		cfg:         cfg,
+		db:          db,
+		storage:     storage,
+		redis:       redisClient,
+		asynqClient: asynqClient,
+		router:      gin.Default(),
 	}
 
 	s.setupMiddleware()
 	s.setupRoutes()
 
 	return s
+}
+
+func (s *Server) Close() {
+	if s.asynqClient != nil {
+		s.asynqClient.Close()
+	}
 }
 
 func (s *Server) setupMiddleware() {
@@ -68,6 +84,7 @@ func (s *Server) setupRoutes() {
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
 	artistHandler := handlers.NewArtistHandler(s.db.DB)
 	albumHandler := handlers.NewAlbumHandler(s.db.DB)
+	exportHandler := handlers.NewExportHandler(s.asynqClient)
 
 	// Health Check
 	s.router.GET("/health", func(c *gin.Context) {
@@ -118,6 +135,7 @@ func (s *Server) setupRoutes() {
 			protected.DELETE("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.DeletePlaylist)
 			protected.PUT("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylist)
 			protected.PUT("/playlists/:id/tracks", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylistTracks)
+			protected.POST("/playlists/:id/export/rekordbox", middleware.RequireRole("dj", "manager"), exportHandler.ExportToRekordbox)
 
 			// --- MANAGER ONLY (Program Directors) ---
 			protected.GET("/schedules", middleware.RequireRole("dj"), schedulerHandler.GetSchedule)

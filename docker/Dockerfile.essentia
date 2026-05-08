@@ -10,12 +10,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source code
-COPY cmd/ingester/ ./cmd/ingester/
+COPY cmd/worker/ ./cmd/worker/
 COPY internal/ ./internal/
 
 # Build a static binary
 # We use CGO_ENABLED=0 to ensure the binary is independent of the host C libraries
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/ingester cmd/ingester/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/worker cmd/worker/main.go
 
 # --- Stage 2: Runtime (Custom Debian + Essentia + Go) ---
 FROM debian:bookworm-slim
@@ -42,13 +42,13 @@ RUN wget https://essentia.upf.edu/extractors/essentia-extractors-v2.1_beta2-linu
 WORKDIR /app
 
 # Copy the Go binary from the builder stage
-COPY --from=builder /bin/ingester .
+COPY --from=builder /bin/worker .
 
 # Create necessary directories
 RUN mkdir -p ./temp_processing ./music_library
 
 # Final check: ensure everything is executable
-RUN chmod +x ./ingester
+RUN chmod +x ./worker
 
 # Run the Go application
-CMD ["./ingester"]
+CMD ["./worker"]

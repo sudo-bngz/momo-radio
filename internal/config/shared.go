@@ -59,6 +59,10 @@ type Config struct {
 		DiscogsToken string `mapstructure:"discogs_token"`
 		ContactEmail string `mapstructure:"contact_email"`
 	} `mapstructure:"services"`
+	Worker struct { // ⚡️ FIXED: Renamed to Worker to match main.go
+		Concurrency int            `mapstructure:"concurrency"`
+		Queues      map[string]int `mapstructure:"queues"`
+	} `mapstructure:"worker"` // ⚡️ FIXED: Matches the 'worker:' block in yaml
 }
 
 func Load() *Config {
@@ -115,6 +119,9 @@ func Load() *Config {
 	viper.BindEnv("services.discogs_token")
 	viper.BindEnv("services.contact_email")
 
+	// Worker Bindings ⚡️ NEW: Added bindings so it works with ENV vars
+	viper.BindEnv("worker.concurrency")
+
 	// Defaults
 	viper.SetDefault("server.polling_interval_seconds", 10)
 	viper.SetDefault("server.temp_dir", "/tmp/")
@@ -141,6 +148,14 @@ func Load() *Config {
 	viper.SetDefault("radio.hls_flags", "append_list+omit_endlist+temp_file")
 	viper.SetDefault("radio.prefetch_count", 5)
 	viper.SetDefault("radio.provider", "starvation")
+
+	// Worker Defaults ⚡️ NEW: Prevents Asynq from crashing if config.yaml is missing
+	viper.SetDefault("worker.concurrency", 6)
+	viper.SetDefault("worker.queues", map[string]int{
+		"default": 10,
+		"ingest":  7,
+		"exports": 3,
+	})
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")

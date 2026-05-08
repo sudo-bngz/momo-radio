@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   Box, Flex, Heading, Text, Button, Icon, HStack, VStack, Spinner, SimpleGrid, Badge, Input, Image, Grid
 } from '@chakra-ui/react';
-import { Plus, Edit2, Trash2, ListMusic, AlertTriangle, Clock, Play, Disc3, Tag, Search, Music } from 'lucide-react';
+import { Plus, Edit2, Trash2, ListMusic, AlertTriangle, Clock, Play, Disc3, Tag, Search, Music, DownloadCloud } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api'; 
+import { toaster } from '../../../components/ui/toaster';
 import type { Playlist } from '../../../types';
 
 // --- MOSAIC HELPER COMPONENT ---
@@ -33,7 +34,7 @@ const PlaylistMosaic = ({ tracks = [] }: { tracks: any[] }) => {
       {covers.map((src, i) => (
         <Box 
           key={i} w="full" h="full" 
-          minH="0" minW="0" overflow="hidden" /* ⚡️ FIXED: Prevents grid blowout */
+          minH="0" minW="0" overflow="hidden" 
           borderRight={i % 2 === 0 ? "2px solid" : "none"} 
           borderBottom={i < 2 ? "2px solid" : "none"} 
           borderColor="white"
@@ -78,8 +79,9 @@ export const PlaylistList: React.FC = () => {
     try {
       await api.deletePlaylist(playlistToDelete.id);
       fetchPlaylists();
+      toaster.create({ title: "Playlist deleted", type: "success" });
     } catch (error) {
-      console.error("Failed to delete playlist:", error);
+      toaster.create({ title: "Failed to delete", type: "error" });
     } finally {
       setIsDeleting(null);
       setPlaylistToDelete(null);
@@ -88,7 +90,28 @@ export const PlaylistList: React.FC = () => {
 
   const handlePlay = (e: React.MouseEvent, playlist: Playlist) => {
     e.stopPropagation(); 
-    console.log(`▶️ Now playing playlist: ${playlist.name}`);
+    console.log(`Now playing playlist: ${playlist.name}`);
+  };
+
+  const handleExport = async (e: React.MouseEvent, playlist: Playlist) => {
+    e.stopPropagation();
+    toaster.create({
+      title: "Export Started",
+      description: "Packaging files for Rekordbox. This may take a moment...",
+      type: "info",
+      duration: 4000,
+    });
+    
+    try {
+      // Assumes you add this route to your api.ts frontend service
+      await api.exportToRekordbox(playlist.id); 
+    } catch (error) {
+      toaster.create({
+        title: "Export Failed",
+        description: "Could not start the export job.",
+        type: "error",
+      });
+    }
   };
 
   const filteredPlaylists = playlists.filter(p => 
@@ -98,7 +121,7 @@ export const PlaylistList: React.FC = () => {
 
   return (
     <>
-      {/* --- SLEEK DELETE MODAL --- */}
+      {/* --- DELETE MODAL --- */}
       {playlistToDelete && (
         <Flex 
           position="fixed" top="0" left="0" w="100vw" h="100vh" 
@@ -115,7 +138,7 @@ export const PlaylistList: React.FC = () => {
               </Text>
             </VStack>
             <HStack w="full" mt={4} gap={3}>
-              <Button flex={1} variant="outline" borderRadius="xl" onClick={() => setPlaylistToDelete(null)} disabled={isDeleting === playlistToDelete.id}>
+              <Button flex={1} variant="ghost" borderRadius="xl" onClick={() => setPlaylistToDelete(null)} disabled={isDeleting === playlistToDelete.id}>
                 Cancel
               </Button>
               <Button flex={1} bg="red.500" color="white" borderRadius="xl" _hover={{ bg: "red.600" }} onClick={confirmDelete} loading={isDeleting === playlistToDelete.id}>
@@ -135,20 +158,14 @@ export const PlaylistList: React.FC = () => {
             <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
               <Icon as={ListMusic} boxSize={3} strokeWidth={3} />
             </Box>
-            <Text cursor="pointer" _hover={{ color: "blue.500" }} onClick={() => navigate('/')}>
-              Playlists
-            </Text>
-            <Text color="gray.300">/</Text>
-            <Text color="gray.900" fontWeight="500">
-              All Playlists
-            </Text>
+            <Text color="gray.900" fontWeight="500">Playlists</Text>
           </HStack>
 
           <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
             Playlists
           </Heading>
           <Text fontSize="sm" color="gray.500">
-            {playlists.length} playlists in your collection
+            {playlists.length} curated rotations
           </Text>
         </VStack>
 
@@ -166,7 +183,7 @@ export const PlaylistList: React.FC = () => {
             <Box position="relative" flex="1">
               <Icon as={Search} position="absolute" left={4} top="50%" transform="translateY(-50%)" color="gray.400" zIndex={2} />
               <Input 
-                pl={12} h="48px" fontSize="lg" placeholder="Search..." 
+                pl={12} h="48px" fontSize="lg" placeholder="Search rotations..." 
                 value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                 borderRadius="xl" bg="gray.50" border="none" color="gray.900" 
                 _focus={{ bg: "white", shadow: "sm", ring: "1px", ringColor: "blue.500" }}
@@ -213,22 +230,24 @@ export const PlaylistList: React.FC = () => {
                   className="group"
                   _hover={{ shadow: "xl", transform: "translateY(-4px)", borderColor: "gray.200" }}
                 >
-                  {/* --- NEW MOSAIC HEADER --- */}
+                  {/* --- MOSAIC HEADER --- */}
                   <Box position="relative" h="160px" w="full" bg="gray.50" flexShrink={0} overflow="hidden">
                     <PlaylistMosaic tracks={playlist.tracks || []} />
                     
-                    {/* Subtle gradient overlay to make hover buttons pop */}
                     <Box 
                       position="absolute" inset={0} bg="blackAlpha.400" 
                       opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s" 
                     />
 
-                    {/* Hover Actions */}
+                    {/* ⚡️ ENHANCED HOVER ACTIONS (Includes Rekordbox) */}
                     <HStack position="absolute" top={3} right={3} gap={2} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.2s">
-                      <Button size="xs" variant="solid" bg="whiteAlpha.900" color="gray.800" backdropFilter="blur(10px)" _hover={{ bg: "white" }} onClick={() => navigate(`/playlists/edit/${playlist.id}`)}>
+                      <Button size="xs" variant="solid" bg="whiteAlpha.900" color="purple.600" backdropFilter="blur(10px)" _hover={{ bg: "white", transform: "scale(1.05)" }} onClick={(e) => handleExport(e, playlist)} title="Export to Rekordbox">
+                        <DownloadCloud size={14} />
+                      </Button>
+                      <Button size="xs" variant="solid" bg="whiteAlpha.900" color="gray.800" backdropFilter="blur(10px)" _hover={{ bg: "white", transform: "scale(1.05)" }} onClick={() => navigate(`/playlists/edit/${playlist.id}`)}>
                         <Edit2 size={14} />
                       </Button>
-                      <Button size="xs" variant="solid" bg="whiteAlpha.900" color="red.600" backdropFilter="blur(10px)" _hover={{ bg: "white" }} onClick={() => setPlaylistToDelete(playlist)}>
+                      <Button size="xs" variant="solid" bg="whiteAlpha.900" color="red.600" backdropFilter="blur(10px)" _hover={{ bg: "white", transform: "scale(1.05)" }} onClick={() => setPlaylistToDelete(playlist)}>
                         <Trash2 size={14} />
                       </Button>
                     </HStack>
@@ -251,7 +270,7 @@ export const PlaylistList: React.FC = () => {
                         {playlist.name}
                       </Heading>
                       <Text fontSize="sm" color="gray.500" fontWeight="500" lineClamp={2}>
-                        {playlist.description || "General station rotation containing mixed genres."}
+                        {playlist.description || "General station rotation."}
                       </Text>
                     </Box>
 

@@ -1,6 +1,6 @@
 # **🐳  Docker Deployment**
 
-This directory contains the Docker configuration to run the **Ingester** and **Radio Engine** as isolated, lightweight containers.
+This directory contains the Docker configuration to run the **worker** and **Radio Engine** as isolated, lightweight containers.
 
 The setup uses a **Multi-Stage Build** process:
 
@@ -61,10 +61,10 @@ docker-compose logs -f
 docker-compose logs -f radio
 ```
 
-# View logs for the ingester  
+# View logs for the worker  
 
 ```
-docker-compose logs -f ingester
+docker-compose logs -f worker
 ```
 
 ### **Stop**

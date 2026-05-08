@@ -140,6 +140,11 @@ export const api = {
     await apiClient.delete(`/playlists/${playlistId}`);
   },
 
+  exportToRekordbox: async (playlistId: number): Promise<{ message: string, task_id: string }> => {
+    const response = await apiClient.post(`/playlists/${playlistId}/export/rekordbox`);
+    return response.data;
+  },
+
   // 4. SCHEDULER
   getSchedule: async (start: string, end: string): Promise<ScheduleSlot[]> => {
     const response = await apiClient.get<ScheduleSlot[]>('/schedules', {

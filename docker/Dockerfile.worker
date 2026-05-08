@@ -1,10 +1,11 @@
 # --- Stage 1: Build (Go) ---
-FROM golang:1.25-bookworm AS go-builder
+FROM golang:1.26.2-bookworm AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /bin/ingester cmd/ingester/main.go
+
+RUN CGO_ENABLED=0 go build -o /bin/worker cmd/worker/main.go
 RUN CGO_ENABLED=0 go build -o /bin/migrate cmd/migrate/migrate.go
 
 # --- Stage 2: Compile Essentia (Tailored for Atom C2750) ---
@@ -36,7 +37,6 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     python3 waf install
 
 # --- Stage 3: Final Runtime ---
-# --- Stage 3: Final Runtime ---
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
@@ -51,7 +51,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY --from=essentia-builder /usr/local/bin/essentia_streaming_extractor_music /usr/local/bin/streaming_extractor_music
-COPY --from=go-builder /bin/ingester /usr/local/bin/ingester
+
+COPY --from=go-builder /bin/worker /usr/local/bin/worker
+COPY --from=go-builder /bin/migrate /usr/local/bin/migrate
 
 RUN mkdir -p ./temp_processing
-CMD ["ingester"]
+
+
+CMD ["worker"]

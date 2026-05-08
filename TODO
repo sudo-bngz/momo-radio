@@ -1,4 +1,6 @@
-- fond video pour livestream
 - ID donnée au hasard
-- playlist programmable
 - events des autres
+- Offer a WebRTC-based broadcasting studio directly in the browser. DJs can just click "Go Live" from their dashboard and speak into their microphone without downloading anything.
+- Multi-Tenancy. A station owner can invite people via email or Discord login and assign roles (e.g., "DJ" can only upload tracks, "Admin" can change the billing, "Editor" can build playlists).
+- Spotify integration
+- real-time analytics dashboards. Furthermore, you can integrate Stripe natively, allowing station owners to easily sell premium "ad-free" streams or take listener donations directly through your platform.
