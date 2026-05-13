@@ -11,21 +11,52 @@ import type {
 
 const API_URL = '/api/v1';
 
-// Create a dedicated Axios instance
 export const apiClient = axios.create({
   baseURL: API_URL,
 });
 
 /**
- * REQUEST INTERCEPTOR
- * Attaches the JWT token to every request if it exists in the store.
+ * ⚡️ MULTI-TENANT REQUEST INTERCEPTOR
+ * Aggressively attaches the Organization ID to Headers, Query Params, JSON Bodies, and FormData.
  */
 apiClient.interceptors.request.use((config) => {
   const state = useAuthStore.getState();
-  const token = state.token;
+  const token = state.session?.access_token;
+  const orgId = state.activeOrganizationId;
   
-  if (token) {
+  if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (orgId) {
+    // 1. ALWAYS attach to Headers
+    if (config.headers) {
+      config.headers['X-Organization-Id'] = orgId;
+    }
+
+    // 2. ALWAYS inject into Query Params (Great for GET lists like /tracks and /playlists)
+    config.params = {
+      ...config.params,
+      org_id: orgId,
+    };
+
+    // 3. Inject into FormData (For audio file uploads)
+    if (config.data instanceof FormData) {
+      if (!config.data.has('organization_id')) {
+        config.data.append('organization_id', orgId);
+      }
+    } 
+    // 4. Inject into standard JSON POST/PUT bodies (For creating playlists/metadata)
+    else if (
+      config.data && 
+      typeof config.data === 'object' && 
+      ['post', 'put', 'patch'].includes(config.method?.toLowerCase() || '')
+    ) {
+      config.data = {
+        ...config.data,
+        organization_id: orgId,
+      };
+    }
   }
   
   return config;
@@ -35,12 +66,11 @@ apiClient.interceptors.request.use((config) => {
 
 /**
  * RESPONSE INTERCEPTOR
- * Intercepts 401 Unauthorized errors to trigger the logout/session-expired modal.
+ * Intercepts 401 Unauthorized errors to trigger the modal.
  */
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // If the server returns 401, the JWT is either expired or invalid
     if (error.response && error.response.status === 401) {
       console.warn('Session expired or unauthorized. Triggering re-login.');
       useAuthStore.getState().setSessionExpired(true);
@@ -51,6 +81,7 @@ apiClient.interceptors.response.use(
 
 /**
  * GLOBAL API METHODS
+ * (Notice how clean these stay! The interceptor does all the heavy lifting.)
  */
 export const api = {
   // 1. INGESTION & UPLOAD
@@ -64,7 +95,6 @@ export const api = {
     return response.data;
   },
 
-  // ⚡️ UPDATED: Now returns the data so useIngest can grab the track_id for the SSE stream!
   uploadTrack: async (file: File, metadata: TrackMetadata): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -79,7 +109,6 @@ export const api = {
     return response.data;
   },
 
-  // Fetch the live processing queue
   getQueue: async (): Promise<any[]> => {
     const response = await apiClient.get('/tracks/queue');
     return response.data;

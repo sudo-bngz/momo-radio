@@ -22,6 +22,13 @@ func NewSchedulerHandler(db *gorm.DB, cfg *config.Config) *SchedulerHandler {
 }
 
 func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
+	// ⚡️ 1. Extract Tenant ID
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	var input struct {
 		PlaylistID   uint   `json:"playlist_id" binding:"required"`
 		StartTime    string `json:"start_time" binding:"required"`
@@ -38,8 +45,9 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 	}
 
 	var playlist models.Playlist
-	if err := h.db.First(&playlist, input.PlaylistID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
+	// 2. Verify the Playlist actually belongs to this Tenant!
+	if err := h.db.Where("id = ? AND organization_id = ?", input.PlaylistID, orgID).First(&playlist).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found or unauthorized"})
 		return
 	}
 
@@ -61,7 +69,6 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 		localTime = parsedTime.In(loc)
 
 		// Scenario B: Frontend sends exact local wall-clock (e.g., "2026-04-23T15:45")
-		// This entirely prevents Javascript offset bugs!
 	} else {
 		layout := "2006-01-02T15:04"
 		if len(input.StartTime) == 19 {
@@ -75,7 +82,6 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 		}
 		localTime = parsedTime
 	}
-	// ----------------------------------------
 
 	exactDate := localTime.Format("2006-01-02")
 	dayOfWeek := localTime.Weekday().String()[0:3]
@@ -85,13 +91,14 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 	endTimeStr := parsedEnd.Format("15:04")
 
 	slot := models.ScheduleSlot{
-		PlaylistID:   &input.PlaylistID,
-		ScheduleType: input.ScheduleType,
-		Date:         exactDate,
-		Days:         dayOfWeek,
-		StartTime:    startTimeStr,
-		EndTime:      endTimeStr,
-		IsActive:     true,
+		OrganizationID: orgID, // 3. Bind the Slot to the Tenant
+		PlaylistID:     &input.PlaylistID,
+		ScheduleType:   input.ScheduleType,
+		Date:           exactDate,
+		Days:           dayOfWeek,
+		StartTime:      startTimeStr,
+		EndTime:        endTimeStr,
+		IsActive:       true,
 	}
 
 	if err := h.db.Create(&slot).Error; err != nil {
@@ -103,13 +110,31 @@ func (h *SchedulerHandler) CreateScheduleSlot(c *gin.Context) {
 }
 
 func (h *SchedulerHandler) GetSchedule(c *gin.Context) {
-	// Return all slots so the React calendar can render both one-time and recurring events
+	// ⚡️ Extract Tenant ID
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	var slots []models.ScheduleSlot
-	h.db.Preload("Playlist").Where("is_active = ?", true).Find(&slots)
+	// ⚡️ Scope to Tenant
+	if err := h.db.Preload("Playlist").Where("organization_id = ? AND is_active = ?", orgID, true).Find(&slots).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch schedule"})
+		return
+	}
+
 	c.JSON(http.StatusOK, slots)
 }
 
 func (h *SchedulerHandler) DeleteScheduleSlot(c *gin.Context) {
+	// ⚡️ Extract Tenant ID
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	idStr := c.Param("id")
 	slotID, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
@@ -117,9 +142,16 @@ func (h *SchedulerHandler) DeleteScheduleSlot(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.ScheduleSlot{}, uint(slotID))
+	// ⚡️ Verify ownership before deleting
+	result := h.db.Where("id = ? AND organization_id = ?", slotID, orgID).Delete(&models.ScheduleSlot{})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error during deletion"})
+		return
+	}
+
 	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Slot not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Slot not found or unauthorized"})
 		return
 	}
 

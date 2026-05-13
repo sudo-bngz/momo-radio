@@ -68,8 +68,8 @@ func (s *Server) setupMiddleware() {
 	corsConfig.AllowAllOrigins = true
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 
-	// IMPORTANT: "Authorization" must be allowed so the frontend can send the JWT
-	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	// IMPORTANT: Allow Authorization (JWT) and X-Organization-Id (Tenant Context)
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-Organization-Id"}
 
 	s.router.Use(cors.New(corsConfig))
 	//s.router.Use(middleware.SilentLogger())
@@ -97,50 +97,52 @@ func (s *Server) setupRoutes() {
 		// ==========================================
 		// PUBLIC ROUTES (No Token Required)
 		// ==========================================
-		v1.POST("/auth/login", authHandler.Login)
-		v1.GET("/stats", statsHandler.GetStats)
+		jwtOnly := v1.Group("/")
+		jwtOnly.Use(middleware.RequireValidJWT(s.cfg.Supabase.JWTPublicKey))
+		{
+			jwtOnly.GET("/auth/me", authHandler.GetMe)
+		}
+
+		// Supabase Webhook for User Sync
+		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
 
 		// ==========================================
-		// PROTECTED ROUTES (JWT Token Required)
+		// PROTECTED ROUTES (Requires Supabase JWT + Tenant Context)
 		// ==========================================
 		protected := v1.Group("/")
-		protected.Use(middleware.RequireAuth())
 		{
-			// --- ADMIN ONLY ---
-			protected.POST("/auth/register", middleware.RequireRole("admin"), authHandler.Register)
+			// --- STATS ---
+			protected.GET("/stats", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), statsHandler.GetStats)
+			// --- TRACKS ---
+			protected.GET("/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTracks)
+			protected.GET("/tracks/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTrack)
+			protected.GET("/tracks/:id/stream", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.StreamTrack)
+			protected.GET("/tracks/:id/status-stream", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.TrackStatusStream)
+			protected.PUT("/tracks/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.UpdateTrack)
+			protected.GET("/tracks/queue", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetQueue)
+			protected.POST("/tracks/:id/analysis", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.Analysis)
 
-			// --- TRACK
-			protected.GET("/tracks", middleware.RequireRole("dj", "manager"), trackHandler.GetTracks)
-			protected.GET("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.GetTrack)
-			protected.GET("/tracks/:id/stream", middleware.RequireRole("dj", "manager"), trackHandler.StreamTrack)
-			protected.GET("/tracks/:id/status-stream", middleware.RequireRole("dj", "manager"), trackHandler.TrackStatusStream)
-			protected.PUT("/tracks/:id", middleware.RequireRole("dj", "manager"), trackHandler.UpdateTrack)
-			protected.GET("/tracks/queue", middleware.RequireRole("dj", "manager"), trackHandler.GetQueue)
-			protected.POST("/tracks/:id/analysis", trackHandler.Analysis)
+			// --- UPLOAD / CURATION ---
+			protected.POST("/upload/analyze", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.PreAnalyzeFile)
+			protected.POST("/upload/confirm", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.UploadTrack)
 
-			// --- ARTISTS
-			protected.GET("/artists", middleware.RequireRole("dj", "manager"), artistHandler.GetArtists)
+			// --- ARTISTS & ALBUMS ---
+			protected.GET("/artists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), artistHandler.GetArtists)
+			protected.GET("/albums", middleware.RequireSupabaseAuth(s.db.DB, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbums)
 
-			// --- ALBUMS
-			protected.GET("/albums", middleware.RequireRole("dj", "manager"), albumHandler.GetAlbums)
+			// --- PLAYLISTS ---
+			protected.GET("/playlists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylists)
+			protected.GET("/playlists/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylist)
+			protected.POST("/playlists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), playlistHandler.CreatePlaylist)
+			protected.DELETE("/playlists/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), playlistHandler.DeletePlaylist)
+			protected.PUT("/playlists/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), playlistHandler.UpdatePlaylist)
+			protected.PUT("/playlists/:id/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), playlistHandler.UpdatePlaylistTracks)
+			protected.POST("/playlists/:id/export/rekordbox", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), exportHandler.ExportToRekordbox)
 
-			// --- DJ & MANAGER (Curators) ---
-			protected.POST("/upload/analyze", middleware.RequireRole("dj", "manager"), trackHandler.PreAnalyzeFile)
-			protected.POST("/upload/confirm", middleware.RequireRole("dj", "manager"), trackHandler.UploadTrack)
-
-			// --- PLAYLIST
-			protected.GET("/playlists", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylists)
-			protected.GET("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.GetPlaylist)
-			protected.POST("/playlists", middleware.RequireRole("dj", "manager"), playlistHandler.CreatePlaylist)
-			protected.DELETE("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.DeletePlaylist)
-			protected.PUT("/playlists/:id", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylist)
-			protected.PUT("/playlists/:id/tracks", middleware.RequireRole("dj", "manager"), playlistHandler.UpdatePlaylistTracks)
-			protected.POST("/playlists/:id/export/rekordbox", middleware.RequireRole("dj", "manager"), exportHandler.ExportToRekordbox)
-
-			// --- MANAGER ONLY (Program Directors) ---
-			protected.GET("/schedules", middleware.RequireRole("dj"), schedulerHandler.GetSchedule)
-			protected.POST("/schedules", middleware.RequireRole("manager"), schedulerHandler.CreateScheduleSlot)
-			protected.DELETE("/schedules/:id", middleware.RequireRole("manager"), schedulerHandler.DeleteScheduleSlot)
+			// --- SCHEDULING (Station Managers Only) ---
+			protected.GET("/schedules", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), schedulerHandler.GetSchedule)
+			protected.POST("/schedules", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.CreateScheduleSlot)
+			protected.DELETE("/schedules/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.DeleteScheduleSlot)
 		}
 	}
 
@@ -148,7 +150,6 @@ func (s *Server) setupRoutes() {
 	// EMBEDDED REACT UI (SPA Fallback)
 	// ==========================================
 
-	// Extract the "dist" folder from the embedded filesystem
 	distFS, err := fs.Sub(gui.DistFS, "dist")
 	if err != nil {
 		panic("Failed to load embedded frontend: " + err.Error())
@@ -157,13 +158,11 @@ func (s *Server) setupRoutes() {
 	s.router.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// 1. If it's an API route that wasn't found, return a 404 JSON response
 		if strings.HasPrefix(path, "/api") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "API endpoint not found"})
 			return
 		}
 
-		// 2. Check if the requested file exists in the embedded React dist folder
 		cleanPath := strings.TrimPrefix(path, "/")
 		if cleanPath == "" {
 			cleanPath = "index.html"
@@ -173,15 +172,12 @@ func (s *Server) setupRoutes() {
 		if err == nil {
 			defer file.Close()
 			stat, _ := file.Stat()
-
-			// If it's a file (like /assets/main.js), serve it directly
 			if !stat.IsDir() {
 				http.ServeContent(c.Writer, c.Request, stat.Name(), stat.ModTime(), file.(io.ReadSeeker))
 				return
 			}
 		}
 
-		// 3. If the file doesn't exist, it's a React Router path. Serve index.html.
 		indexFile, err := distFS.Open("index.html")
 		if err != nil {
 			c.String(http.StatusInternalServerError, "Frontend not built properly (index.html missing)")

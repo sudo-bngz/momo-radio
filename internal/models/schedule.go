@@ -4,15 +4,17 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // Schedule defines WHEN something plays (The Station Manager)
 type Schedule struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"` // Hidden from JSON responses
+	OrganizationID uuid.UUID      `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ID             uint           `gorm:"primaryKey" json:"id"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"` // Hidden from JSON responses
 
 	// --- Identification ---
 	Name     string `gorm:"type:varchar(255);not null" json:"name"`

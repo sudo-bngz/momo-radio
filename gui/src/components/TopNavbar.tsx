@@ -6,8 +6,6 @@ import { LogOut, Settings, BookOpen, Users, Music, ChevronDown } from 'lucide-re
 import { useAuthStore } from '../store/useAuthStore';
 import { useDashboard } from '../features/dashboard/hook/useDashboard';
 
-// 1. Define the animation outside the component using the helper
-// This ensures the animation is registered globally in the CSSOM
 const scrollAnimation = keyframes`
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
@@ -15,34 +13,37 @@ const scrollAnimation = keyframes`
 
 export const TopNav: React.FC = () => {
   const user = useAuthStore((state) => state.user);
+  const organizations = useAuthStore((state) => state.organizations);
+  const activeOrgId = useAuthStore((state) => state.activeOrganizationId);
   const logout = useAuthStore((state) => state.logout);
   const { nowPlaying, isLoading } = useDashboard(); 
 
   if (!user) return null;
 
-  const roleColor = user.role === 'admin' ? 'red' : user.role === 'manager' ? 'purple' : 'blue';
+  const activeOrg = organizations?.find(o => o.id === activeOrgId) || organizations?.[0];
+  const userRole = activeOrg?.role || 'viewer';
+  const roleColor = userRole === 'admin' ? 'red' : userRole === 'owner' ? 'purple' : 'blue';
   
-// 1. STRICTLY extract the string and completely block raw objects
+  // ⚡️ EXTRACT GOOGLE METADATA: Supabase stores the OAuth details in user_metadata
+  const metadata = user.user_metadata || {};
+  const avatarUrl = metadata.avatar_url;
+  const displayName = metadata.full_name || metadata.name || user.email || "User";
+
   let safeArtistName = "Unknown Artist";
-  
   if (nowPlaying?.artist) {
     if (typeof nowPlaying.artist === 'string') {
       safeArtistName = nowPlaying.artist;
     } else if (typeof nowPlaying.artist === 'object') {
-      // If it's an object, ONLY take the name, or fall back to a safe string
       safeArtistName = (nowPlaying.artist as any).name || "Unknown Artist";
     }
   }
 
-  // 2. Build the text. If we have a track title, build the string. Otherwise, AutoDJ.
   const trackText = nowPlaying?.title 
     ? `${safeArtistName} - ${nowPlaying.title}` 
     : "AutoDJ is active";
 
   return (
-    // Container: Passthrough clicks (pointerEvents="none") so dashboard works underneath
     <Box w="100%" pt={4} pr={6} mb={4} zIndex={50} pointerEvents="none" position="relative">
-      
       <Flex justify="flex-end" align="start" gap={4}>
 
         {/* 1. ON AIR WIDGET */}
@@ -55,9 +56,8 @@ export const TopNav: React.FC = () => {
           shadow="sm"
           border="1px solid" borderColor="gray.100"
           display={{ base: 'none', lg: 'flex' }}
-          pointerEvents="auto" // Re-enable clicks
+          pointerEvents="auto"
         >
-          {/* Live Indicator */}
           <HStack gap={2} mr={4}>
             <Box w={2} h={2} bg="red.500" borderRadius="full" animation="pulse 2s infinite" />
             <Text fontSize="10px" fontWeight="900" color="red.500" letterSpacing="widest">LIVE</Text>
@@ -65,35 +65,19 @@ export const TopNav: React.FC = () => {
           
           <Box w="1px" h="16px" bg="gray.100" mr={4} />
           
-          {/* SCROLLING TRACK TEXT */}
           <HStack gap={3} mr={4} w="180px" overflow="hidden" position="relative">
-            {/* Flex shrink 0 prevents the icon from getting squashed */}
             <Icon as={Music} boxSize={3.5} color="gray.400" flexShrink={0} zIndex={2} bg="white" />
-            
             {isLoading ? (
               <Spinner size="xs" color="gray.400" />
             ) : (
-              <Box 
-                flex="1" 
-                overflow="hidden" 
-                position="relative" 
-                h="20px" // Define height to contain the text
-                display="flex"
-                alignItems="center"
-              >
+              <Box flex="1" overflow="hidden" position="relative" h="20px" display="flex" alignItems="center">
                 <Text 
                   fontSize="xs" 
                   fontWeight="600" 
                   color="gray.700" 
                   whiteSpace="nowrap"
-                  
-                  // ⚡️ THE FIX:
-                  // 1. display="inline-block" is required for transform to work
-                  // 2. We use the 'scrollAnimation' variable defined above
                   display="inline-block"
                   animation={`${scrollAnimation} 12s linear infinite`}
-                  
-                  // Optimization: Tells browser to expect changes
                   willChange="transform" 
                 >
                   {trackText}
@@ -102,7 +86,6 @@ export const TopNav: React.FC = () => {
             )}
           </HStack>
           
-          {/* Listeners Badge */}
           <HStack bg="gray.50" py={1} px={2.5} borderRadius="full" gap={1.5}>
             <Icon as={Users} boxSize={3} color="gray.500" />
             <Text fontSize="xs" fontWeight="bold" color="gray.700">42</Text>
@@ -126,14 +109,17 @@ export const TopNav: React.FC = () => {
                 gap={3}
               >
                 <Avatar.Root size="xs">
+                  {/* ⚡️ ADD AVATAR IMAGE: Automatically falls back to initials if avatarUrl is missing */}
+                  <Avatar.Image src={avatarUrl} />
                   <Avatar.Fallback bg={`${roleColor}.100`} color={`${roleColor}.700`} fontWeight="bold" fontSize="xs">
-                    {user.username.substring(0, 2).toUpperCase()}
+                    {displayName.slice(0, 2).toUpperCase()}
                   </Avatar.Fallback>
                 </Avatar.Root>
                 
                 <Flex direction="column" align="flex-start" gap={0}>
                   <Text fontSize="xs" fontWeight="bold" color="gray.800" lineHeight="1.2">
-                    {user.username}
+                    {/* ⚡️ USE DISPLAY NAME */}
+                    {displayName}
                   </Text>
                 </Flex>
                 <Icon as={ChevronDown} boxSize={3.5} color="gray.400" />

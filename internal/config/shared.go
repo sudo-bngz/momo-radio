@@ -9,16 +9,16 @@ import (
 
 type Config struct {
 	Storage struct {
-		Provider     string `mapstructure:"provider"` // "s3", "local", "gdrive"
-		KeyID        string `mapstructure:"key_id"`   // S3 Access Key / B2 KeyID
-		AppKey       string `mapstructure:"app_key"`  // S3 Secret Key / B2 AppKey
+		Provider     string `mapstructure:"provider"`
+		KeyID        string `mapstructure:"key_id"`
+		AppKey       string `mapstructure:"app_key"`
 		Endpoint     string `mapstructure:"endpoint"`
 		Region       string `mapstructure:"region"`
 		BucketIngest string `mapstructure:"bucket_ingest"`
 		BucketProd   string `mapstructure:"bucket_prod"`
 		BucketStream string `mapstructure:"bucket_stream_live"`
 		BucketMaster string `mapstructure:"bucket_master"`
-		LocalStorage string `mapstructure:"local_storage_path"` // For local provider
+		LocalStorage string `mapstructure:"local_storage_path"`
 	} `mapstructure:"storage"`
 	Server struct {
 		TempDir         string `mapstructure:"temp_dir"`
@@ -59,10 +59,13 @@ type Config struct {
 		DiscogsToken string `mapstructure:"discogs_token"`
 		ContactEmail string `mapstructure:"contact_email"`
 	} `mapstructure:"services"`
-	Worker struct { // ⚡️ FIXED: Renamed to Worker to match main.go
+	Worker struct {
 		Concurrency int            `mapstructure:"concurrency"`
 		Queues      map[string]int `mapstructure:"queues"`
-	} `mapstructure:"worker"` // ⚡️ FIXED: Matches the 'worker:' block in yaml
+	} `mapstructure:"worker"`
+	Supabase struct {
+		JWTPublicKey string `mapstructure:"jwt_public_key"`
+	} `mapstructure:"supabase"`
 }
 
 func Load() *Config {
@@ -82,6 +85,7 @@ func Load() *Config {
 	viper.BindEnv("storage.bucket_master")
 	viper.BindEnv("storage.local_storage_path")
 
+	// Server Bindings
 	viper.BindEnv("server.temp_dir")
 	viper.BindEnv("server.polling_interval_seconds")
 	viper.BindEnv("server.metrics_port")
@@ -102,14 +106,14 @@ func Load() *Config {
 	viper.BindEnv("radio.prefetch_count")
 	viper.BindEnv("radio.provider")
 
-	// Register Database keys
+	// Database keys
 	viper.BindEnv("database.host")
 	viper.BindEnv("database.port")
 	viper.BindEnv("database.user")
 	viper.BindEnv("database.password")
 	viper.BindEnv("database.name")
 
-	// Register Redis keys
+	// Redis keys
 	viper.BindEnv("redis.host")
 	viper.BindEnv("redis.port")
 	viper.BindEnv("redis.password")
@@ -119,8 +123,11 @@ func Load() *Config {
 	viper.BindEnv("services.discogs_token")
 	viper.BindEnv("services.contact_email")
 
-	// Worker Bindings ⚡️ NEW: Added bindings so it works with ENV vars
+	// Worker Bindings
 	viper.BindEnv("worker.concurrency")
+
+	// Auth
+	viper.BindEnv("supabase.jwt_public_key", "SUPABASE_JWT_PUBLIC_KEY")
 
 	// Defaults
 	viper.SetDefault("server.polling_interval_seconds", 10)
@@ -134,10 +141,10 @@ func Load() *Config {
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
 
-	// Radio Defaults (Optimized for Live HLS)
+	// Radio Defaults
 	viper.SetDefault("radio.bitrate", "128k")
 	viper.SetDefault("radio.segment_time", "4")
-	viper.SetDefault("radio.list_size", "15") // 60s buffer
+	viper.SetDefault("radio.list_size", "15")
 	viper.SetDefault("radio.segment_dir", "./hls_output")
 	viper.SetDefault("radio.log_level", "error")
 	viper.SetDefault("radio.input_format", "mp3")
@@ -149,7 +156,7 @@ func Load() *Config {
 	viper.SetDefault("radio.prefetch_count", 5)
 	viper.SetDefault("radio.provider", "starvation")
 
-	// Worker Defaults ⚡️ NEW: Prevents Asynq from crashing if config.yaml is missing
+	// Worker Defaults
 	viper.SetDefault("worker.concurrency", 6)
 	viper.SetDefault("worker.queues", map[string]int{
 		"default": 10,
@@ -186,5 +193,8 @@ func validateConfig(cfg *Config) {
 	}
 	if cfg.Storage.Provider == "local" && cfg.Storage.LocalStorage == "" {
 		log.Fatal("Critical: Local storage path is missing (RADIO_STORAGE_LOCAL_STORAGE_PATH)")
+	}
+	if cfg.Supabase.JWTPublicKey == "" {
+		log.Fatal("Critical: Supabase JWT Public Key is missing (SUPABASE_JWT_PUBLIC_KEY)")
 	}
 }

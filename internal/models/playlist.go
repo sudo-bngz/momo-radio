@@ -3,15 +3,17 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // Playlist represents a curated collection of tracks
 type Playlist struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"` // Hiding DeletedAt from the API
+	OrganizationID uuid.UUID      `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ID             uint           `gorm:"primarykey" json:"id"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"` // Hiding DeletedAt from the API
 
 	Name          string  `json:"name" gorm:"not null"`
 	Description   string  `json:"description"`
@@ -29,10 +31,11 @@ type PlaylistTrack struct {
 
 // ScheduleSlot represents a playlist assigned to a specific time on the calendar
 type ScheduleSlot struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	OrganizationID uuid.UUID      `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ID             uint           `gorm:"primarykey" json:"id"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 
 	ScheduleType string `json:"schedule_type" gorm:"not null;default:'one_time'"`
 	Date         string `json:"date"`

@@ -28,12 +28,21 @@ type LibraryArtist struct {
 	ArtistCountry string `json:"artist_country"`
 }
 
-// ListArtists returns a list of all artists
+// --- ARTIST ENDPOINTS ---
+
+// GetArtists returns a list of all artists scoped by Tenant
 func (h *ArtistHandler) GetArtists(c *gin.Context) {
+	// 1. Extract Tenant ID
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	var artists []models.Artist
 
-	// Only load the artists, don't preload tracks here to keep the payload light
-	if err := h.db.Order("name ASC").Find(&artists).Error; err != nil {
+	// 2. Scope to Tenant
+	if err := h.db.Where("organization_id = ?", orgID).Order("name ASC").Find(&artists).Error; err != nil {
 		slog.Error("Failed to fetch artists", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
@@ -42,16 +51,23 @@ func (h *ArtistHandler) GetArtists(c *gin.Context) {
 	c.JSON(http.StatusOK, artists)
 }
 
-// GetArtistByName returns an artist and their full discography
+// GetArtistByName returns an artist and their full discography scoped by Tenant
 func (h *ArtistHandler) GetArtistByName(c *gin.Context) {
-	artistName := c.Param("name")
+	// ⚡️ 1. Extract Tenant ID
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
 
+	artistName := c.Param("name")
 	var artist models.Artist
 
+	// 2. Scope to Tenant
 	err := h.db.
 		Preload("Albums").
 		Preload("Tracks").
-		Where("name = ?", artistName).
+		Where("name = ? AND organization_id = ?", artistName, orgID).
 		First(&artist).Error
 
 	if err != nil {

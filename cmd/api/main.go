@@ -37,7 +37,7 @@ func main() {
 	db.AutoMigrate()
 
 	// 5. Seeding users
-	database.SeedAdminUser(db.DB)
+	database.SeedDatabase(db.DB)
 
 	// 6. Storage
 	store := storage.New(cfg)

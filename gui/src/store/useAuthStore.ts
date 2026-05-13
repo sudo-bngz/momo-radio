@@ -1,14 +1,26 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiClient } from '../services/api';
-import type { User } from '../types';
+import type { Session, User } from '@supabase/supabase-js';
+
+export interface Organization {
+  id: string;
+  name: string;
+  role: string;
+  plan: string;
+}
 
 interface AuthState {
+  session: Session | null;
   user: User | null;
-  token: string | null;
+  organizations: Organization[];
+  activeOrganizationId: string | null;
   isAuthenticated: boolean;
-  isSessionExpired: boolean; // 👈 Track if the JWT has expired
-  login: (username: string, password: string) => Promise<void>;
+  isSessionExpired: boolean;
+
+  // Actions
+  setSession: (session: Session | null) => void;
+  setOrganizations: (orgs: Organization[]) => void;
+  setActiveOrganization: (id: string) => void;
   logout: () => void;
   setSessionExpired: (expired: boolean) => void;
 }
@@ -16,34 +28,37 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
+      session: null,
       user: null,
-      token: null,
+      organizations: [],
+      activeOrganizationId: null,
       isAuthenticated: false,
       isSessionExpired: false,
 
-      login: async (username: string, password: string) => {
-        const res = await apiClient.post('/auth/login', { username, password });
-        const { token, user } = res.data;
+      setSession: (session) => set({ 
+        session, 
+        user: session?.user || null,
+        isAuthenticated: !!session,
+        isSessionExpired: false
+      }),
 
-        set({ 
-          token, 
-          user, 
-          isAuthenticated: true,
-          isSessionExpired: false
-        });
-      },
+      setOrganizations: (organizations) => set((state) => ({ 
+        organizations,
+        // Auto-select the first org if one isn't picked yet
+        activeOrganizationId: state.activeOrganizationId || (organizations.length > 0 ? organizations[0].id : null)
+      })),
+
+      setActiveOrganization: (id) => set({ activeOrganizationId: id }),
 
       logout: () => {
-        // Clear all auth state
         set({ 
+          session: null, 
           user: null, 
-          token: null, 
+          organizations: [], 
+          activeOrganizationId: null,
           isAuthenticated: false,
           isSessionExpired: false 
         });
-        
-        // window.location.href is fine for a hard reset, 
-        // but the Modal we built will also handle redirection.
         localStorage.removeItem('momo-auth-storage');
         window.location.href = '/login';
       },
@@ -52,6 +67,14 @@ export const useAuthStore = create<AuthState>()(
         set({ isSessionExpired: expired });
       }
     }),
-    { name: 'momo-auth-storage' }
+    { 
+      name: 'momo-auth-storage',
+      // Supabase automatically persists the token elsewhere. 
+      // We only need Zustand to remember which organization the user was looking at.
+      partialize: (state) => ({ 
+        activeOrganizationId: state.activeOrganizationId,
+        organizations: state.organizations
+      })
+    }
   )
 );

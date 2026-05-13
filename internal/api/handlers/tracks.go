@@ -20,9 +20,9 @@ import (
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
 
-	"github.com/bogem/id3v2"
 	"github.com/dhowden/tag"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -36,7 +36,7 @@ type TrackHandler struct {
 	redis   *redis.Client
 }
 
-// NewTrackHandler creates a new TrackHandler instance with its required dependencies
+// NewTrackHandler creates a new TrackHandler instance
 func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisClient *redis.Client) *TrackHandler {
 	return &TrackHandler{
 		db:      db,
@@ -61,8 +61,24 @@ type LibraryTrack struct {
 	Status     string  `json:"status"`
 }
 
-// GetTracks returns a paginated, lightweight list of tracks using DTO mapping
+// ⚡️ Safely extract Organization ID from Gin Context
+func getOrgID(c *gin.Context) (uuid.UUID, bool) {
+	orgIDRaw, exists := c.Get("organizationID")
+	if !exists {
+		return uuid.Nil, false
+	}
+	orgID, ok := orgIDRaw.(uuid.UUID)
+	return orgID, ok
+}
+
+// GetTracks returns a paginated, lightweight list of tracks scoped by Tenant
 func (h *TrackHandler) GetTracks(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing or invalid"})
+		return
+	}
+
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	search := c.Query("search")
@@ -72,20 +88,21 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		limit = 200
 	}
 
-	// 1. Build the base query and PRELOAD the relational data
+	// 1. Build the base query, PRELOAD, and ⚡️ SCOPE TO TENANT
 	query := h.db.Model(&models.Track{}).
 		Preload("Artist").
-		Preload("Album")
+		Preload("Album").
+		Where("tracks.organization_id = ?", orgID)
 
-	// 2. Apply Search (We use LEFT JOIN so we can filter by the artist's name)
+	// 2. Apply Search
 	if search != "" {
 		searchTerm := "%" + search + "%"
 		query = query.
 			Joins("LEFT JOIN artists ON artists.id = tracks.artist_id").
-			Where("artists.name ILIKE ? OR tracks.title ILIKE ?", searchTerm, searchTerm)
+			Where("(artists.name ILIKE ? OR tracks.title ILIKE ?)", searchTerm, searchTerm)
 	}
 
-	// 3. Get Total Count for UI pagination
+	// 3. Get Total Count
 	var total int64
 	query.Count(&total)
 
@@ -99,7 +116,7 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		query = query.Order("tracks.id DESC")
 	}
 
-	// 5. Fetch the actual database models
+	// 5. Fetch Models
 	var tracks []models.Track
 	result := query.Limit(limit).Offset(offset).Find(&tracks)
 
@@ -110,7 +127,6 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 	}
 
 	var libraryTracks []LibraryTrack
-
 	for _, t := range tracks {
 		artistName := "Unknown Artist"
 		if t.Artist.Name != "" {
@@ -118,7 +134,6 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		}
 
 		var coverURL string
-
 		if t.Album.ID != 0 && t.Album.CoverKey != "" {
 			coverURL = h.storage.GetPublicURL(t.Album.CoverKey)
 		}
@@ -154,10 +169,17 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 
 // GetTrack returns the FULL metadata for a single track
 func (h *TrackHandler) GetTrack(c *gin.Context) {
-	id := c.Param("id")
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
 
+	id := c.Param("id")
 	var track models.Track
-	if err := h.db.Preload("Artist").Preload("Album").First(&track, id).Error; err != nil {
+
+	// ⚡️ Scope to Tenant
+	if err := h.db.Preload("Artist").Preload("Album").Where("organization_id = ?", orgID).First(&track, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
 			return
@@ -169,9 +191,15 @@ func (h *TrackHandler) GetTrack(c *gin.Context) {
 	c.JSON(http.StatusOK, track)
 }
 
+// UpdateTrack scopes the update query to the specific organization
 func (h *TrackHandler) UpdateTrack(c *gin.Context) {
-	id := c.Param("id")
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
 
+	id := c.Param("id")
 	var updateData map[string]interface{}
 	if err := c.ShouldBindJSON(&updateData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
@@ -182,8 +210,10 @@ func (h *TrackHandler) UpdateTrack(c *gin.Context) {
 	delete(updateData, "key")
 	delete(updateData, "duration")
 	delete(updateData, "file_size")
+	delete(updateData, "organization_id") // Prevent malicious tenant reassignment
 
-	result := h.db.Model(&models.Track{}).Where("id = ?", id).Updates(updateData)
+	// ⚡️ Scope to Tenant
+	result := h.db.Model(&models.Track{}).Where("id = ? AND organization_id = ?", id, orgID).Updates(updateData)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update track metadata"})
 		return
@@ -197,6 +227,7 @@ func (h *TrackHandler) UpdateTrack(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Track updated successfully"})
 }
 
+// PreAnalyzeFile (No changes needed here as it doesn't touch the DB)
 func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -243,8 +274,14 @@ func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	})
 }
 
-// UploadTrack processes the file, tags it, extracts embedded covers, uploads to ingest bucket, creates DB rows, and dispatches Asynq job.
+// UploadTrack creates Artists, Albums, and Tracks strictly attached to the Tenant
 func (h *TrackHandler) UploadTrack(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	// 1. Parse File & Form
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -270,19 +307,19 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		return
 	}
 	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
 
 	// 3. Copy Stream
 	uploadedFile, err := fileHeader.Open()
 	if err != nil {
+		tempFile.Close()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "File open error"})
 		return
 	}
-	defer uploadedFile.Close()
 	io.Copy(tempFile, uploadedFile)
+	uploadedFile.Close()
 	tempFile.Close()
 
-	// 4. STAMP METADATA (Optional: Ensures the file has the user's manual edits before uploading)
+	// 4. STAMP METADATA
 	switch ext {
 	case ".mp3":
 		if err := metadata.StampMP3(tempFile.Name(), meta); err != nil {
@@ -294,7 +331,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		}
 	}
 
-	// 5. Upload Main Audio File to Ingest Bucket
+	// 5. Upload Main Audio File
 	finalFile, err := os.Open(tempFile.Name())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read processed file"})
@@ -312,26 +349,25 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		return
 	}
 
-	// 6. Resolve Artist
+	// 6. ⚡️ Resolve Artist (Scoped to Organization)
 	artistName := strings.TrimSpace(c.PostForm("artist"))
 	if artistName == "" {
 		artistName = "Unknown Artist"
 	}
-
 	var artist models.Artist
-	h.db.Where(models.Artist{Name: artistName}).FirstOrCreate(&artist)
+	h.db.Where("name = ? AND organization_id = ?", artistName, orgID).
+		FirstOrCreate(&artist, models.Artist{Name: artistName, OrganizationID: orgID})
 
-	// 7. Resolve Album & Extract Embedded Cover Art
+	// 7. ⚡️ Resolve Album (Scoped to Organization)
 	albumTitle := strings.TrimSpace(c.PostForm("album"))
 	var album models.Album
-	var albumIDPtr *uint // Defaults to nil (NULL in DB) for Singles
+	var albumIDPtr *uint
 
 	if albumTitle != "" {
-		h.db.Where(models.Album{Title: albumTitle, ArtistID: artist.ID}).FirstOrCreate(&album)
+		h.db.Where("title = ? AND artist_id = ? AND organization_id = ?", albumTitle, artist.ID, orgID).
+			FirstOrCreate(&album, models.Album{Title: albumTitle, ArtistID: artist.ID, OrganizationID: orgID})
 
 		albumUpdates := map[string]any{}
-
-		// Map Release Info from React
 		if label := strings.TrimSpace(c.PostForm("label")); label != "" {
 			albumUpdates["Publisher"] = label
 		}
@@ -345,7 +381,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 			albumUpdates["Year"] = year
 		}
 
-		// LOCAL COVER EXTRACTION
+		// EXTRACT COVER
 		if album.CoverKey == "" {
 			f, _ := os.Open(tempFile.Name())
 			m, tagErr := tag.ReadFrom(f)
@@ -353,43 +389,31 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 
 			if tagErr == nil && m.Picture() != nil {
 				pic := m.Picture()
-
 				picExt := pic.Ext
 				if picExt == "" {
-					picExt = "jpg" // Fallback
+					picExt = "jpg"
 				}
 
 				coverKey := fmt.Sprintf("covers/album_%d.%s", album.ID, picExt)
-
-				// Upload directly to the public ASSETS bucket!
-				uploadErr := h.storage.UploadAssetFile(
-					coverKey,
-					bytes.NewReader(pic.Data),
-					pic.MIMEType,
-					"public, max-age=31536000",
-				)
-
+				uploadErr := h.storage.UploadAssetFile(coverKey, bytes.NewReader(pic.Data), pic.MIMEType, "public, max-age=31536000")
 				if uploadErr == nil {
 					albumUpdates["CoverKey"] = coverKey
-				} else {
-					slog.Error("Failed to upload embedded cover to assets", "error", uploadErr)
 				}
 			}
 		}
-		// Apply updates to the DB
+
 		if len(albumUpdates) > 0 {
 			h.db.Model(&album).Updates(albumUpdates)
 		}
-
-		// Point our variable to the memory address of the album ID so we can link the track
 		albumIDPtr = &album.ID
 	}
 
-	// 8. ⚡️ Create Initial "Pending" Track DB Row
+	// 8. ⚡️ Create Track DB Row (Scoped to Organization)
 	newTrack := models.Track{
+		OrganizationID:     orgID, // Bind it to the tenant!
 		Title:              c.PostForm("title"),
 		ArtistID:           artist.ID,
-		AlbumID:            albumIDPtr, // Will be NULL if albumTitle was empty
+		AlbumID:            albumIDPtr,
 		Genre:              c.PostForm("genre"),
 		Key:                b2Key,
 		MasterKey:          b2Key,
@@ -412,7 +436,6 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	})
 	defer asynqClient.Close()
 
-	// Pass track_id so the worker knows what to analyze
 	payloadData := map[string]any{
 		"track_id": newTrack.ID,
 		"file_key": b2Key,
@@ -422,13 +445,11 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 
 	_, err = asynqClient.Enqueue(task)
 	if err != nil {
-		slog.Error("Failed to enqueue job", "error", err)
 		h.db.Model(&newTrack).Update("processing_status", "failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue processing job"})
 		return
 	}
 
-	// 10. Return success and Track ID to React for the SSE Stream
 	c.JSON(http.StatusCreated, gin.H{
 		"status":   "queued",
 		"message":  "Upload successful, processing started.",
@@ -437,38 +458,20 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	})
 }
 
-// --- Helper Functions ---
-
-func stampMP3(path, title, artist, album, genre, year, bpm, key string) error {
-	tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
-	if err != nil {
-		return err
-	}
-	defer tag.Close()
-
-	tag.SetTitle(title)
-	tag.SetArtist(artist)
-	tag.SetAlbum(album)
-	tag.SetGenre(genre)
-	tag.SetYear(year)
-
-	if bpm != "" {
-		tag.AddTextFrame("TBPM", tag.DefaultEncoding(), bpm)
-	}
-	if key != "" {
-		tag.AddTextFrame("TKEY", tag.DefaultEncoding(), key)
-	}
-
-	return tag.Save()
-}
-
-// StreamTrack streams the audio file using the storage abstraction
+// StreamTrack ensures the user actually owns the file they are trying to stream
 func (h *TrackHandler) StreamTrack(c *gin.Context) {
-	trackID := c.Param("id")
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
 
+	trackID := c.Param("id")
 	var track models.Track
-	if err := h.db.First(&track, "id = ?", trackID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Track metadata not found"})
+
+	// ⚡️ Scope to Tenant
+	if err := h.db.Where("organization_id = ?", orgID).First(&track, "id = ?", trackID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Track metadata not found or unauthorized"})
 		return
 	}
 
@@ -477,8 +480,8 @@ func (h *TrackHandler) StreamTrack(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Audio file missing from storage"})
 		return
 	}
-
 	defer obj.Body.Close()
+
 	if seeker, ok := obj.Body.(io.ReadSeeker); ok {
 		http.ServeContent(c.Writer, c.Request, track.Title, obj.LastModified, seeker)
 		return
@@ -488,13 +491,26 @@ func (h *TrackHandler) StreamTrack(c *gin.Context) {
 		"Cache-Control": "public, max-age=31536000",
 		"Accept-Ranges": "none",
 	}
-
 	c.DataFromReader(http.StatusOK, obj.ContentLength, obj.ContentType, obj.Body, extraHeaders)
 }
 
-// TrackStatusStream is the SSE endpoint.
+// TrackStatusStream validates ownership before subscribing to Redis
 func (h *TrackHandler) TrackStatusStream(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	trackID := c.Param("id")
+
+	// ⚡️ Prevent users from spying on other organizations' processing streams
+	var count int64
+	h.db.Model(&models.Track{}).Where("id = ? AND organization_id = ?", trackID, orgID).Count(&count)
+	if count == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Track not found or unauthorized"})
+		return
+	}
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -511,11 +527,9 @@ func (h *TrackHandler) TrackStatusStream(c *gin.Context) {
 		select {
 		case <-clientGone:
 			return
-
 		case msg := <-ch:
 			c.SSEvent("status", msg.Payload)
 			c.Writer.Flush()
-
 			if msg.Payload == "completed" || msg.Payload == "failed" {
 				return
 			}
@@ -523,12 +537,21 @@ func (h *TrackHandler) TrackStatusStream(c *gin.Context) {
 	}
 }
 
-// GetQueue returns the recent ingestion queue for the UI
+// GetQueue fetches recent processing jobs scoped to the tenant
 func (h *TrackHandler) GetQueue(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	var tracks []models.Track
 
-	// This captures pending, processing, failed, and newly completed tracks.
-	err := h.db.Order("created_at DESC").Limit(100).Find(&tracks).Error
+	// Scope to Tenant
+	err := h.db.Where("organization_id = ?", orgID).
+		Order("created_at DESC").
+		Limit(100).
+		Find(&tracks).Error
 
 	if err != nil {
 		slog.Error("Failed to fetch queue", "error", err)
@@ -538,7 +561,6 @@ func (h *TrackHandler) GetQueue(c *gin.Context) {
 
 	var queue []map[string]any
 	for _, t := range tracks {
-		// Map DB's processing_status to the UI's expected status types
 		uiStatus := "processing"
 		switch t.ProcessingStatus {
 		case "pending":
@@ -558,26 +580,38 @@ func (h *TrackHandler) GetQueue(c *gin.Context) {
 		})
 	}
 
+	// Always return an array to avoid null responses causing React mapping errors
+	if queue == nil {
+		queue = make([]map[string]any, 0)
+	}
+
 	c.JSON(http.StatusOK, queue)
 }
 
-// resets a stuck track and pushes it back into the Asynq queue
+// Analysis safely restarts processing for a tenant-owned track
 func (h *TrackHandler) Analysis(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
 	id := c.Param("id")
 	var track models.Track
 
-	if err := h.db.First(&track, id).Error; err != nil {
+	// ⚡️ Scope to Tenant
+	if err := h.db.Where("organization_id = ?", orgID).First(&track, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
 		return
 	}
 
-	// 1. Reset the DB status so the UI knows it's working again
-	h.db.Model(&track).Updates(map[string]interface{}{
+	// 1. Reset status
+	h.db.Model(&track).Updates(map[string]any{
 		"processing_status":   "pending",
 		"processing_progress": 0,
 	})
 
-	// 2. Initialize Asynq client
+	// 2. Queue Job
 	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
 		Addr:     redisAddr,
@@ -586,7 +620,6 @@ func (h *TrackHandler) Analysis(c *gin.Context) {
 	})
 	defer asynqClient.Close()
 
-	// 3. Pass the IsRetry flag to the worker!
 	payloadData := map[string]any{
 		"track_id": track.ID,
 		"file_key": track.Key,
@@ -595,7 +628,6 @@ func (h *TrackHandler) Analysis(c *gin.Context) {
 	payloadBytes, _ := json.Marshal(payloadData)
 	task := asynq.NewTask("track:process", payloadBytes)
 
-	// 4. Enqueue the job again
 	_, err := asynqClient.Enqueue(task)
 	if err != nil {
 		slog.Error("Failed to re-enqueue job", "error", err)

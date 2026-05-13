@@ -3,15 +3,17 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // RuleSet defines the criteria for intelligent AutoDJ selection.
 type RuleSet struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	OrganizationID uuid.UUID      `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ID             uint           `gorm:"primaryKey" json:"id"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// --- Metadata ---
 	Name string `gorm:"type:varchar(255);not null;uniqueIndex" json:"name"` // e.g., "Deep House Peak Hour"

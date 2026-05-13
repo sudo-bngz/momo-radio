@@ -3,13 +3,15 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // 1. Artist represents a music creator
 type Artist struct {
-	gorm.Model `json:"-"`
-	ID         uint `gorm:"primarykey" json:"id"`
+	gorm.Model     `json:"-"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ID             uint      `gorm:"primarykey" json:"id"`
 
 	Name          string `gorm:"uniqueIndex;not null" json:"name"`
 	ArtistCountry string `gorm:"size:100" json:"artist_country"`
@@ -21,8 +23,9 @@ type Artist struct {
 
 // 2. Album represents a collection of tracks or a release
 type Album struct {
-	gorm.Model `json:"-"`
-	ID         uint `gorm:"primarykey" json:"id"`
+	gorm.Model     `json:"-"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ID             uint      `gorm:"primarykey" json:"id"`
 
 	Title          string `gorm:"index;not null" json:"title"`
 	Year           string `json:"year"`
@@ -40,8 +43,9 @@ type Album struct {
 
 // 3. Track represents a single audio file
 type Track struct {
-	gorm.Model `json:"-"`
-	ID         uint `gorm:"primarykey" json:"id"`
+	gorm.Model     `json:"-"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ID             uint      `gorm:"primarykey" json:"id"`
 
 	// Core Metadata
 	Key       string `gorm:"uniqueIndex;not null" json:"key"`
@@ -84,7 +88,8 @@ type Track struct {
 // 4. PlayHistory represents a single instance of a track being played
 type PlayHistory struct {
 	gorm.Model
-	TrackID  uint
-	Track    Track
-	PlayedAt time.Time `gorm:"index"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
+	TrackID        uint
+	Track          Track
+	PlayedAt       time.Time `gorm:"index"`
 }
