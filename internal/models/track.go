@@ -10,10 +10,10 @@ import (
 // 1. Artist represents a music creator
 type Artist struct {
 	gorm.Model     `json:"-"`
-	OrganizationID uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
 	ID             uint      `gorm:"primarykey" json:"id"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_org_artist_name" json:"organization_id"`
+	Name           string    `gorm:"not null;uniqueIndex:idx_org_artist_name" json:"name"`
 
-	Name          string `gorm:"uniqueIndex;not null" json:"name"`
 	ArtistCountry string `gorm:"size:100" json:"artist_country"`
 
 	// Relationships
@@ -23,11 +23,13 @@ type Artist struct {
 
 // 2. Album represents a collection of tracks or a release
 type Album struct {
-	gorm.Model     `json:"-"`
-	OrganizationID uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
-	ID             uint      `gorm:"primarykey" json:"id"`
+	gorm.Model `json:"-"`
+	ID         uint `gorm:"primarykey" json:"id"`
 
-	Title          string `gorm:"index;not null" json:"title"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_org_album_title" json:"organization_id"`
+	ArtistID       uint      `gorm:"not null;uniqueIndex:idx_org_album_title" json:"artist_id"`
+	Title          string    `gorm:"not null;uniqueIndex:idx_org_album_title" json:"title"`
+
 	Year           string `json:"year"`
 	Publisher      string `json:"publisher"`
 	CatalogNumber  string `gorm:"index" json:"catalog_number"`
@@ -36,9 +38,8 @@ type Album struct {
 	CoverURL       string `gorm:"-" json:"cover_url"`
 
 	// Relationships
-	ArtistID uint    `gorm:"index;not null" json:"artist_id"`
-	Artist   Artist  `json:"artist,omitempty"`
-	Tracks   []Track `json:"tracks,omitempty"`
+	Artist Artist  `json:"artist,omitempty"`
+	Tracks []Track `json:"tracks,omitempty"`
 }
 
 // 3. Track represents a single audio file

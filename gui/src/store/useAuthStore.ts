@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Session, User } from '@supabase/supabase-js';
+import { supabase } from '../services/client'; 
 
 export interface Organization {
   id: string;
@@ -21,7 +22,7 @@ interface AuthState {
   setSession: (session: Session | null) => void;
   setOrganizations: (orgs: Organization[]) => void;
   setActiveOrganization: (id: string) => void;
-  logout: () => void;
+  logout: () => Promise<void>; 
   setSessionExpired: (expired: boolean) => void;
 }
 
@@ -44,13 +45,22 @@ export const useAuthStore = create<AuthState>()(
 
       setOrganizations: (organizations) => set((state) => ({ 
         organizations,
-        // Auto-select the first org if one isn't picked yet
         activeOrganizationId: state.activeOrganizationId || (organizations.length > 0 ? organizations[0].id : null)
       })),
 
       setActiveOrganization: (id) => set({ activeOrganizationId: id }),
 
-      logout: () => {
+      // Make the function async and await Supabase signOut
+      logout: async () => {
+        
+        // Tell Supabase to clear its local storage session
+        try {
+          await supabase.auth.signOut();
+        } catch (error) {
+          console.error("Supabase sign out error:", error);
+        }
+
+        // Clear Zustand state
         set({ 
           session: null, 
           user: null, 
@@ -59,7 +69,11 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           isSessionExpired: false 
         });
+        
+        // Clear Zustand's persisted storage
         localStorage.removeItem('momo-auth-storage');
+        
+        // Finally, redirect
         window.location.href = '/login';
       },
 
@@ -69,8 +83,6 @@ export const useAuthStore = create<AuthState>()(
     }),
     { 
       name: 'momo-auth-storage',
-      // Supabase automatically persists the token elsewhere. 
-      // We only need Zustand to remember which organization the user was looking at.
       partialize: (state) => ({ 
         activeOrganizationId: state.activeOrganizationId,
         organizations: state.organizations

@@ -31,7 +31,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isPlayerVisible, setPlayerVisible] = useState(false);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const token = useAuthStore((state) => state.token);
+  const token = useAuthStore((state) => state.session?.access_token);
 
   // Updated playTrack: accepts the list of tracks context
   const playTrack = (track: Track, playlist: Track[] = []) => {

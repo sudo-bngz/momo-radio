@@ -340,7 +340,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	defer finalFile.Close()
 
 	safeFilename := strings.ReplaceAll(filepath.Base(fileHeader.Filename), " ", "_")
-	b2Key := fmt.Sprintf("incoming/%d_%s", time.Now().Unix(), safeFilename)
+	b2Key := fmt.Sprintf("incoming/%s/%d_%s", orgID.String(), time.Now().Unix(), safeFilename)
 	contentType := fileHeader.Header.Get("Content-Type")
 
 	err = h.storage.UploadIngestFile(b2Key, finalFile, contentType)
@@ -394,7 +394,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 					picExt = "jpg"
 				}
 
-				coverKey := fmt.Sprintf("covers/album_%d.%s", album.ID, picExt)
+				coverKey := fmt.Sprintf("covers/%s/album_%d.%s", orgID.String(), album.ID, picExt)
 				uploadErr := h.storage.UploadAssetFile(coverKey, bytes.NewReader(pic.Data), pic.MIMEType, "public, max-age=31536000")
 				if uploadErr == nil {
 					albumUpdates["CoverKey"] = coverKey

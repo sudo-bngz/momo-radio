@@ -12,7 +12,6 @@ const INITIAL_META: TrackMetadata = {
   cover_base64: '' 
 };
 
-// Define the return type to explicitly fix TypeScript errors in the View
 export interface UseIngestReturn {
   status: UploadStatus;
   file: File | null;
@@ -92,30 +91,24 @@ export const useIngest = (): UseIngestReturn => {
     setErrorMsg('');
 
     try {
-      // 1. Simulate frontend upload progress since standard fetch() doesn't expose it easily.
-      // (It gives the user visual feedback while the file transfers to your Go server)
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => Math.min(prev + 15, 90));
       }, 300);
 
-      // 2. Fire the actual upload request
-      // We expect your Go backend to return something like: { status: "queued", track_id: 123 }
       const response = await api.uploadTrack(file, meta) as any; 
       
       clearInterval(progressInterval);
       setUploadProgress(100);
 
-      // 3. Switch to processing mode and connect to Server-Sent Events (SSE)
       if (response && response.track_id) {
         setStatus('processing');
         setProcessStep('Awaiting worker assignment...');
+        const state = useAuthStore.getState();
+        const token = state.session?.access_token;
+        const orgId = state.activeOrganizationId;
 
-        // 2. Grab the token
-        const token = useAuthStore.getState().token;
-
-        // 3. Append the token to the URL query string
         const eventSource = new EventSource(
-          `/api/v1/tracks/${response.track_id}/status-stream?token=${token}`
+          `/api/v1/tracks/${response.track_id}/status-stream?token=${token}&org_id=${orgId}`
         );
 
         eventSource.addEventListener('status', (e) => {
@@ -129,7 +122,6 @@ export const useIngest = (): UseIngestReturn => {
             setErrorMsg('Deep acoustic analysis failed on the server.');
             eventSource.close();
           } else {
-            // Update the UI with messages like "Extracting BPM...", "Generating Waveform..."
             setProcessStep(msg);
           }
         });
@@ -141,7 +133,6 @@ export const useIngest = (): UseIngestReturn => {
           eventSource.close();
         };
       } else {
-        // Fallback if the backend doesn't return a track_id for some reason
         setStatus('success');
       }
 
