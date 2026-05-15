@@ -33,15 +33,15 @@ jobs:
       - name: Build Binaries (Linux/AMD64)
         run: |
           mkdir -p dist
-          echo "Building Ingester..."
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-ingester ./cmd/ingester/
+          echo "Building Worker..."
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-radio-worker ./cmd/worker/
 
           echo "Building Streamer (Radio)..."
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-streamer ./cmd/radio/
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-radio-streamer ./cmd/radio/
 
           # If you have an API cmd, uncomment this:
           # echo "Building API..."
-          # GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-api ./cmd/api/
+          # GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/momo-radio-api ./cmd/api/
 
       # --- 2. Generate Changelog ---
       - name: Generate Changelog with git-cliff
