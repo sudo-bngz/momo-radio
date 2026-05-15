@@ -5,11 +5,13 @@ import (
 	"math/rand"
 	"momo-radio/internal/models"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type StarvationSelector struct {
-	db *gorm.DB
+	db    *gorm.DB
+	orgID uuid.UUID
 }
 
 func (s *StarvationSelector) Name() string { return "Starvation" }
@@ -18,7 +20,7 @@ func (s *StarvationSelector) PickTrack(rules *models.RuleSet, _ *models.Track) (
 	var candidates []models.Track
 
 	query := s.db.Model(&models.Track{})
-	query = applyBaseFilters(query, rules)
+	query = applyBaseFilters(query, rules, s.orgID)
 
 	// Sort by oldest played first.
 	// We grab 20 to pick one randomly so the station doesn't feel like a loop.

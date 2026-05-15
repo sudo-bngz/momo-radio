@@ -5,43 +5,49 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 
 	"momo-radio/internal/config"
 )
 
-// StartStreamProcess starts the FFmpeg transcoding pipeline.
-// We added 'runID' to ensure segment filenames are unique per session (avoids cache collisions).
-func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startSequence int64) {
+// ⚡️ Added 'segmentDir string' so each tenant gets an isolated FFmpeg output folder
+func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startSequence int64, segmentDir string) {
 
 	startNum := strconv.FormatInt(startSequence, 10)
 
-	// Pattern: stream_{RunID}_{Sequence}.ts
-	// Example: stream_1700000000_050.ts
-	// %%03d tells FFmpeg to put the 3-digit sequence number there.
-	segmentPattern := fmt.Sprintf("%s/stream_%d_%%03d.ts", cfg.Radio.SegmentDir, runID)
-	playlistPath := fmt.Sprintf("%s/stream.m3u8", cfg.Radio.SegmentDir)
+	// ⚡️ Route output to the tenant-specific directory
+	segmentPattern := filepath.Join(segmentDir, fmt.Sprintf("stream_%d_%%03d.ts", runID))
+	playlistPath := filepath.Join(segmentDir, "stream.m3u8")
+
+	// ⚡️ Pull FFmpeg parameters dynamically from your Viper Config
+	// Fallbacks are provided just in case the config file is missing them
+	codec := fallbackStr(cfg.Radio.AudioCodec, "libmp3lame")
+	bitrate := fallbackStr(cfg.Radio.Bitrate, "192k")
+	sampleRate := fallbackStr(cfg.Radio.SampleRate, "44100")
+
+	hlsTime := fallbackInt(cfg.Radio.SegmentTime, 10)
+	hlsListSize := fallbackInt(cfg.Radio.ListSize, 6)
 
 	args := []string{
 		"-re",
 		"-i", "pipe:0",
 
-		"-c:a", "libmp3lame",
-		"-b:a", "192k",
-		"-ar", "44100",
+		// ⚡️ Audio Configuration via Viper
+		"-c:a", codec,
+		"-b:a", bitrate,
+		"-ar", sampleRate,
 
+		// ⚡️ HLS Configuration via Viper
 		"-f", "hls",
-		"-hls_time", "10",
-		"-hls_list_size", "6",
+		"-hls_time", strconv.Itoa(hlsTime),
+		"-hls_list_size", strconv.Itoa(hlsListSize),
 		"-hls_flags", "delete_segments",
 		"-hls_segment_type", "mpegts",
 
-		// Ensure filenames are unique to this "Run"
+		// Output Routing
 		"-hls_segment_filename", segmentPattern,
-
-		// Continuity logic
 		"-start_number", startNum,
-
 		playlistPath,
 	}
 
@@ -53,9 +59,25 @@ func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startS
 		return
 	}
 
-	log.Printf("FFmpeg started (RunID: %d | Seq: %s)", runID, startNum)
+	log.Printf("FFmpeg started (RunID: %d | Seq: %s | Dir: %s)", runID, startNum, segmentDir)
 
 	if err := cmd.Wait(); err != nil {
 		log.Printf("FFmpeg exited: %v", err)
 	}
+}
+
+// --- Helper functions for safe config reading ---
+
+func fallbackStr(val, fallback string) string {
+	if val == "" {
+		return fallback
+	}
+	return val
+}
+
+func fallbackInt(val, fallback int) int {
+	if val == 0 {
+		return fallback
+	}
+	return val
 }

@@ -4,9 +4,10 @@ import (
 	"strings"
 	"time"
 
-	"momo-radio/internal/models"
-
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"momo-radio/internal/models"
 )
 
 // Selector defines the common interface for any "AutoDJ" mode.
@@ -15,29 +16,33 @@ type Selector interface {
 	PickTrack(rules *models.RuleSet, lastTrack *models.Track) (*models.Track, error)
 }
 
-// NewSelector is a factory that returns the requested algorithm.
-func NewSelector(mode string, db *gorm.DB) Selector {
+// ⚡️ Added orgID parameter to the factory
+func NewSelector(mode string, db *gorm.DB, orgID uuid.UUID) Selector {
 	switch strings.ToLower(mode) {
 	case "starvation":
-		return &StarvationSelector{db: db}
+		// Pass orgID into the specific selector
+		return &StarvationSelector{db: db, orgID: orgID}
 	default:
-		return &RandomSelector{db: db}
+		// Pass orgID into the specific selector
+		return &RandomSelector{db: db, orgID: orgID}
 	}
 }
 
-// applyBaseFilters handles common constraints like Genre, BPM, and Year.
-// It is lowercase, meaning it is "private" to the dj package.
-func applyBaseFilters(db *gorm.DB, rules *models.RuleSet) *gorm.DB {
+// ⚡️ Forcefully accept orgID so NO query can ever escape the tenant's library!
+func applyBaseFilters(db *gorm.DB, rules *models.RuleSet, orgID uuid.UUID) *gorm.DB {
+	// 1. ⚡️ THE LOCK: Always restrict to the specific organization first!
+	db = db.Where("organization_id = ?", orgID)
+
 	if rules == nil {
 		return db
 	}
 
-	// 1. Filter by Genre
+	// 2. Filter by Genre
 	if rules.Genre != "" {
 		db = db.Where("genre = ?", rules.Genre)
 	}
 
-	// 2. Filter by BPM Range
+	// 3. Filter by BPM Range
 	if rules.MinBPM > 0 {
 		db = db.Where("bpm >= ?", rules.MinBPM)
 	}
@@ -45,12 +50,12 @@ func applyBaseFilters(db *gorm.DB, rules *models.RuleSet) *gorm.DB {
 		db = db.Where("bpm <= ?", rules.MaxBPM)
 	}
 
-	// 3. Filter by Release Year
+	// 4. Filter by Release Year
 	if rules.MinYear > 0 {
 		db = db.Where("year >= ?", rules.MinYear)
 	}
 
-	// 4. Global Anti-Repetition
+	// 5. Global Anti-Repetition
 	// Prevents the same track from playing twice within 2 hours.
 	twoHoursAgo := time.Now().Add(-2 * time.Hour)
 	db = db.Where("last_played_at IS NULL OR last_played_at < ?", twoHoursAgo)

@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"momo-radio/internal/models"
-
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"momo-radio/internal/models"
 )
 
 type Manager struct {
@@ -32,7 +33,7 @@ func extractHHMM(t string) string {
 	return t
 }
 
-func (m *Manager) GetCurrentSchedule() *models.ScheduleSlot {
+func (m *Manager) GetCurrentSchedule(orgID uuid.UUID) *models.ScheduleSlot {
 	loc, err := time.LoadLocation(m.timezone)
 	var now time.Time
 
@@ -49,9 +50,12 @@ func (m *Manager) GetCurrentSchedule() *models.ScheduleSlot {
 
 	var schedules []models.ScheduleSlot
 
-	err = m.db.Preload("Playlist").Preload("RuleSet").Where("is_active = ?", true).Find(&schedules).Error
+	err = m.db.Preload("Playlist").Preload("RuleSet").
+		Where("organization_id = ? AND is_active = ?", orgID, true).
+		Find(&schedules).Error
+
 	if err != nil {
-		log.Printf("Error fetching schedules: %v", err)
+		log.Printf("[%s] Error fetching schedules: %v", orgID, err)
 		return m.fallbackSchedule()
 	}
 
@@ -70,7 +74,7 @@ func (m *Manager) GetCurrentSchedule() *models.ScheduleSlot {
 		dbDate := strings.Split(slot.Date, "T")[0]
 
 		if slot.ScheduleType == "one_time" && dbDate == todayDate {
-			log.Printf("Scheduler: Playing One-Time Event (ID: %d)", slot.ID)
+			log.Printf("[%s] Scheduler: Playing One-Time Event (ID: %d)", orgID, slot.ID)
 			return slot
 		}
 
@@ -81,11 +85,11 @@ func (m *Manager) GetCurrentSchedule() *models.ScheduleSlot {
 	}
 
 	if bestRecurringMatch != nil {
-		log.Printf("Scheduler: Playing Recurring Event (ID: %d)", bestRecurringMatch.ID)
+		log.Printf("[%s] Scheduler: Playing Recurring Event (ID: %d)", orgID, bestRecurringMatch.ID)
 		return bestRecurringMatch
 	}
 
-	log.Printf("Scheduler: No events match current time (%s %s %s). Triggering fallback AutoDJ.", m.timezone, todayDay, currentTime)
+	log.Printf("[%s] Scheduler: No events match current time (%s %s %s). Triggering fallback AutoDJ.", orgID, m.timezone, todayDay, currentTime)
 	return m.fallbackSchedule()
 }
 

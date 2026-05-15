@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
@@ -21,21 +22,21 @@ import (
 	"momo-radio/internal/audio"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/dj"
 	"momo-radio/internal/models"
 	"momo-radio/internal/scheduler"
 	"momo-radio/internal/storage"
-
-	"momo-radio/internal/dj"
 )
 
 // --- METRICS ---
 var (
-	tracksPlayed = prometheus.NewCounter(
-		prometheus.CounterOpts{Name: "radio_playout_tracks_total", Help: "Tracks played"},
+	tracksPlayed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "radio_playout_tracks_total", Help: "Tracks played per tenant"},
+		[]string{"organization_id"},
 	)
 	uploadsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{Name: "radio_hls_uploads_total", Help: "HLS uploads"},
-		[]string{"type"},
+		[]string{"type", "organization_id"},
 	)
 	uploadDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -63,12 +64,11 @@ type Engine struct {
 	scheduler *scheduler.Manager
 }
 
-// CurrentTrack represents the metadata sent to the frontend
 type CurrentTrack struct {
 	Artist    string `json:"artist"`
 	Title     string `json:"title"`
 	Album     string `json:"album"`
-	Show      string `json:"show"` // The active radio program
+	Show      string `json:"show"`
 	StartedAt int64  `json:"started_at"`
 }
 
@@ -98,25 +98,54 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine
 	}
 }
 
+// ⚡️ Run is now a Manager that spawns pipelines for ALL active tenants
 func (e *Engine) Run() {
 	if e.cfg.Radio.DryRun {
-		e.runSimulation()
 		return
 	}
 
 	log.Printf("Engine Run ID: %d", e.runID)
 
-	// 1. Prepare output dir
-	os.RemoveAll(e.cfg.Radio.SegmentDir)
-	os.MkdirAll(e.cfg.Radio.SegmentDir, 0755)
+	go e.startRedirectServer()
 
-	// 2. Resume Logic
-	state, err := e.state.GetCurrentState()
+	activeTenants := make(map[uuid.UUID]bool)
+	ticker := time.NewTicker(30 * time.Second)
+
+	// Check immediately, then poll for new tenants every 30s
+	e.checkAndStartTenants(activeTenants)
+	for range ticker.C {
+		e.checkAndStartTenants(activeTenants)
+	}
+}
+
+func (e *Engine) checkAndStartTenants(active map[uuid.UUID]bool) {
+	var orgIDs []uuid.UUID
+	// Find any organization that has at least one track
+	e.db.DB.Model(&models.Track{}).Distinct("organization_id").Pluck("organization_id", &orgIDs)
+
+	for _, id := range orgIDs {
+		if !active[id] {
+			active[id] = true
+			log.Printf("🚀 Starting broadcast pipeline for Tenant: %s", id)
+			go e.runTenantPipeline(id)
+		}
+	}
+}
+
+// ⚡️ runTenantPipeline manages the HLS stream for ONE specific organization
+func (e *Engine) runTenantPipeline(orgID uuid.UUID) {
+	// 1. Prepare an isolated output dir for this tenant
+	segmentDir := filepath.Join(e.cfg.Radio.SegmentDir, orgID.String())
+	os.RemoveAll(segmentDir)
+	os.MkdirAll(segmentDir, 0755)
+
+	// 2. Resume Logic (Scoped to Tenant)
+	state, err := e.state.GetCurrentState(orgID) // ⚡️ Must update state manager to accept orgID!
 	startSequence := 0
 	var resumeTrackID uint
 
 	if err == nil && time.Since(state.UpdatedAt) < 10*time.Minute {
-		log.Printf("RECOVERED STATE: Resuming HLS sequence at %d", state.Sequence)
+		log.Printf("[%s] RECOVERED STATE: Resuming sequence %d", orgID, state.Sequence)
 		startSequence = state.Sequence + 2
 		resumeTrackID = state.TrackID
 	}
@@ -124,18 +153,16 @@ func (e *Engine) Run() {
 	// 3. Setup Pipeline
 	pr, pw := io.Pipe()
 
-	// A. FFmpeg Consumer (The Audio Engine)
-	go audio.StartStreamProcess(pr, e.cfg, e.runID, int64(startSequence))
+	// A. FFmpeg Consumer (Pass the scoped segment dir!)
+	go audio.StartStreamProcess(pr, e.cfg, e.runID, int64(startSequence), segmentDir) // ⚡️ Must update audio pkg!
 
-	// B. Orchestrator Producer (The Decision Maker)
-	go e.runOrchestrator(pw, resumeTrackID)
+	// B. Orchestrator Producer
+	go e.runOrchestrator(orgID, pw, resumeTrackID)
 
-	// C. Helper Server & Uploader
-	go e.startRedirectServer()
-	e.startStreamUploader()
+	// C. Uploader
+	e.startStreamUploader(orgID, segmentDir)
 }
 
-// Helper function to extract the Show Name based on the active schedule slot
 func getShowName(slot *models.ScheduleSlot) string {
 	if slot == nil || slot.ScheduleType == "fallback" {
 		return "General Rotation"
@@ -149,110 +176,79 @@ func getShowName(slot *models.ScheduleSlot) string {
 	return "Momo Radio"
 }
 
-// runOrchestrator is the main producer loop.
-// It bridges the Clock (Scheduler) with the DJ (Selector).
-func (e *Engine) runOrchestrator(output *io.PipeWriter, resumeID uint) {
+// ⚡️ Orchestrator scoped to Tenant
+func (e *Engine) runOrchestrator(orgID uuid.UUID, output *io.PipeWriter, resumeID uint) {
 	defer output.Close()
 
-	// 1. Initialize our Selection Strategies
+	// Pass orgID into selectors so they only pull tenant tracks
 	selectors := map[string]dj.Selector{
-		"random":     dj.NewSelector("random", e.db.DB),
-		"starvation": dj.NewSelector("starvation", e.db.DB),
+		"random":     dj.NewSelector("random", e.db.DB, orgID), // ⚡️ Must update Selector init!
+		"starvation": dj.NewSelector("starvation", e.db.DB, orgID),
 	}
 
-	// 2. Track internal state for selection logic
 	var lastTrack *models.Track
 	firstRun := true
-
-	log.Println("Orchestrator started: System is live.")
 
 	for {
 		var selectedTrack *models.Track
 		var err error
 
-		// --- STEP A: HANDLE RESUME (Cold Start) ---
 		if firstRun && resumeID != 0 {
-			if dbErr := e.db.DB.First(&selectedTrack, resumeID).Error; dbErr == nil {
-				log.Printf("Resume: Found interrupted track ID %d", resumeID)
+			if dbErr := e.db.DB.Where("organization_id = ?", orgID).First(&selectedTrack, resumeID).Error; dbErr == nil {
 				lastTrack = selectedTrack
 			}
 			firstRun = false
 		}
 
-		// --- STEP B: SELECTION LOGIC ---
 		if selectedTrack == nil {
-			// Ask the Scheduler: "What should be on air at this exact second?"
-			activeSlot := e.scheduler.GetCurrentSchedule()
-			showName := getShowName(activeSlot)
+			activeSlot := e.scheduler.GetCurrentSchedule(orgID) // ⚡️ Must update Scheduler to accept orgID
 
-			if activeSlot.PlaylistID != nil {
-				selectedTrack, err = e.pickNextFromPlaylist(*activeSlot.PlaylistID, lastTrack)
-				log.Printf("Mode: Fixed Playlist [%s]", showName)
-
-			} else if activeSlot.RuleSetID != nil {
-				// MODE: Intelligent AutoDJ
-				// (Safeguard in case RuleSet isn't preloaded)
+			if activeSlot != nil && activeSlot.PlaylistID != nil {
+				selectedTrack, err = e.pickNextFromPlaylist(orgID, *activeSlot.PlaylistID, lastTrack)
+			} else if activeSlot != nil && activeSlot.RuleSetID != nil {
 				mode := "random"
 				if activeSlot.RuleSet != nil && activeSlot.RuleSet.Mode != "" {
 					mode = strings.ToLower(activeSlot.RuleSet.Mode)
 				}
-
 				selector, exists := selectors[mode]
 				if !exists {
 					selector = selectors["random"]
 				}
-
-				log.Printf("Mode: AutoDJ (%s) | Ruleset: %s", selector.Name(), showName)
 				selectedTrack, err = selector.PickTrack(activeSlot.RuleSet, lastTrack)
 			}
 		}
 
-		// --- STEP C: EMERGENCY FAIL-SAFE ---
 		if err != nil || selectedTrack == nil {
-			log.Printf("Selection Error: %v. Triggering emergency random fallback.", err)
 			selectedTrack, _ = selectors["random"].PickTrack(nil, nil)
 		}
 
-		// --- STEP D: PLAYOUT EXECUTION ---
 		if selectedTrack != nil {
-			// 1. Update global stream state (for recovery/frontend)
-			e.state.UpdateTrack(selectedTrack.ID, 0)
+			e.state.UpdateTrack(orgID, selectedTrack.ID, 0) // ⚡️ Scope state to org
 
-			// 2. Manage Cache (Prefetch this track, cleanup old ones)
 			e.cache.Prefetch([]string{selectedTrack.Key})
 			go e.cache.Cleanup([]string{selectedTrack.Key})
 
-			// 3. Metadata & Stats
-			log.Printf("NOW PLAYING: %s - %s", selectedTrack.Artist.Name, selectedTrack.Title)
-			tracksPlayed.Inc()
+			tracksPlayed.WithLabelValues(orgID.String()).Inc()
 
-			// Update the now_playing.json for the frontend using the extracted Show Name
-			go e.updateNowPlaying(selectedTrack, getShowName(e.scheduler.GetCurrentSchedule()))
+			go e.updateNowPlaying(orgID, selectedTrack, getShowName(e.scheduler.GetCurrentSchedule(orgID)))
+			go e.recordTrackPlay(orgID, selectedTrack)
 
-			// Record in DB (increments play_count and updates last_played_at)
-			go e.recordTrackPlay(selectedTrack)
-
-			// 4. Update internal state for the NEXT loop iteration
 			lastTrack = selectedTrack
 
-			// 5. Stream Audio: This blocks until the file is fully copied to FFmpeg
 			if err := e.streamFileToPipe(selectedTrack.Key, output); err != nil {
-				log.Printf("Pipe Stream Error: %v (Skipping track)", err)
+				log.Printf("[%s] Pipe Stream Error: %v", orgID, err)
 				continue
 			}
 		}
-
-		// Small safety sleep to prevent infinite tight loops if errors occur rapidly
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
-// pickNextFromPlaylist finds the strict next track in a fixed playlist sequence
-func (e *Engine) pickNextFromPlaylist(playlistID uint, lastTrack *models.Track) (*models.Track, error) {
+// ⚡️ Scoped strictly to the tenant
+func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrack *models.Track) (*models.Track, error) {
 	var track models.Track
-	currentSortOrder := -1 // Default to -1 so the first query looks for sort_order > -1 (which is 0)
+	currentSortOrder := -1
 
-	// 1. If we played a track previously, find its exact position in THIS playlist
 	if lastTrack != nil {
 		e.db.DB.Table("playlist_tracks").
 			Select("sort_order").
@@ -260,20 +256,18 @@ func (e *Engine) pickNextFromPlaylist(playlistID uint, lastTrack *models.Track) 
 			Scan(&currentSortOrder)
 	}
 
-	// 2. Try to get the strictly NEXT track in the curated order
 	err := e.db.DB.Model(&models.Track{}).
 		Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
-		Where("playlist_tracks.playlist_id = ? AND playlist_tracks.sort_order > ?", playlistID, currentSortOrder).
+		Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ? AND playlist_tracks.sort_order > ?", playlistID, orgID, currentSortOrder).
 		Preload("Artist").
 		Preload("Album").
 		Order("playlist_tracks.sort_order ASC").
 		First(&track).Error
 
-	// 3. If it hit the end of the playlist (or it's the very first track), loop back to the start!
 	if err != nil {
 		err = e.db.DB.Model(&models.Track{}).
 			Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
-			Where("playlist_tracks.playlist_id = ?", playlistID).
+			Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ?", playlistID, orgID).
 			Preload("Artist").
 			Preload("Album").
 			Order("playlist_tracks.sort_order ASC").
@@ -283,7 +277,7 @@ func (e *Engine) pickNextFromPlaylist(playlistID uint, lastTrack *models.Track) 
 	return &track, err
 }
 
-func (e *Engine) updateNowPlaying(t *models.Track, showName string) {
+func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName string) {
 	albumName := ""
 	if t.Album.Title != "" {
 		albumName = t.Album.Title
@@ -299,30 +293,19 @@ func (e *Engine) updateNowPlaying(t *models.Track, showName string) {
 
 	data, err := json.Marshal(trackData)
 	if err != nil {
-		log.Printf("Error marshaling now_playing: %v", err)
 		return
 	}
 
-	// Upload to storage so the frontend can poll it
-	err = e.storage.UploadStreamFile("now_playing.json",
-		bytes.NewReader(data),
-		"application/json",
-		"max-age=0, no-cache")
-
-	if err != nil {
-		log.Printf("Error uploading now_playing.json: %v", err)
-	}
+	// ⚡️ Uploads to tenant-specific URL: stream/org-id/now_playing.json
+	destKey := fmt.Sprintf("%s/now_playing.json", orgID.String())
+	e.storage.UploadStreamFile(destKey, bytes.NewReader(data), "application/json", "max-age=0, no-cache")
 }
 
-func (e *Engine) recordTrackPlay(t *models.Track) {
+func (e *Engine) recordTrackPlay(orgID uuid.UUID, t *models.Track) {
 	now := time.Now()
-
-	// 1. Use a Transaction to ensure both update and history are atomic
 	err := e.db.DB.Transaction(func(tx *gorm.DB) error {
-
-		// Update Track stats
 		err := tx.Model(&models.Track{}).
-			Where("id = ?", t.ID).
+			Where("id = ? AND organization_id = ?", t.ID, orgID).
 			Updates(map[string]any{
 				"play_count":     gorm.Expr("play_count + 1"),
 				"last_played_at": now,
@@ -331,20 +314,15 @@ func (e *Engine) recordTrackPlay(t *models.Track) {
 			return err
 		}
 
-		// Insert History Record
 		history := models.PlayHistory{
-			TrackID:  t.ID,
-			PlayedAt: now,
+			OrganizationID: orgID, // ⚡️ Scope History
+			TrackID:        t.ID,
+			PlayedAt:       now,
 		}
-		if err := tx.Create(&history).Error; err != nil {
-			return err
-		}
-
-		return nil
+		return tx.Create(&history).Error
 	})
-
 	if err != nil {
-		log.Printf("Failed to record play for track %d: %v", t.ID, err)
+		log.Printf("[%s] Failed to record play: %v", orgID, err)
 	}
 }
 
@@ -364,21 +342,18 @@ func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
 	return err
 }
 
-func (e *Engine) startStreamUploader() {
+// ⚡️ Isolated Uploader per tenant
+func (e *Engine) startStreamUploader(orgID uuid.UUID, dir string) {
 	ticker := time.NewTicker(800 * time.Millisecond)
 	defer ticker.Stop()
 
 	var lastM3u8Time time.Time
 	uploadedSegments := make(map[string]bool)
-	dir := e.cfg.Radio.SegmentDir
 	seqRegex := regexp.MustCompile(`_(\d+)\.ts$`)
-
-	log.Printf("Uploader started. Monitoring: %s", dir)
 
 	for range ticker.C {
 		files, err := os.ReadDir(dir)
 		if err != nil {
-			log.Printf("[Uploader] ReadDir error: %v", err)
 			continue
 		}
 
@@ -390,50 +365,41 @@ func (e *Engine) startStreamUploader() {
 				continue
 			}
 
-			// Debounce: Wait 1s after file creation to ensure FFmpeg is done writing
 			if time.Since(info.ModTime()) < 1*time.Second {
 				continue
 			}
 
-			// A. Playlist Upload
 			if filename == "stream.m3u8" {
 				if info.ModTime().After(lastM3u8Time) {
-					if err := e.uploadPlaylist(fullPath, filename); err == nil {
-						log.Printf("[Uploader] Master playlist updated")
+					if err := e.uploadPlaylist(orgID, fullPath, filename); err == nil {
 						lastM3u8Time = info.ModTime()
 					}
 				}
 				continue
 			}
 
-			// B. Segment Upload
 			if strings.HasSuffix(filename, ".ts") && !uploadedSegments[filename] {
-				// Update Persistence Sequence
 				matches := seqRegex.FindStringSubmatch(filename)
 				if len(matches) > 1 {
 					if seq, err := strconv.Atoi(matches[1]); err == nil {
-						e.state.IncrementSequence(seq)
+						e.state.IncrementSequence(orgID, seq) // ⚡️ State tracking per tenant
 					}
 				}
 
-				if err := e.uploadSegment(fullPath, filename); err != nil {
-					log.Printf("[Uploader] Segment %s upload failed: %v", filename, err)
-				} else {
-					log.Printf("[Uploader] Segment uploaded: %s", filename)
+				if err := e.uploadSegment(orgID, fullPath, filename); err == nil {
 					uploadedSegments[filename] = true
-					os.Remove(fullPath) // Delete local file after upload
+					os.Remove(fullPath)
 				}
 			}
 		}
 
-		// Housekeeping
 		if len(uploadedSegments) > 100 {
 			e.cleanupUploadedMap(uploadedSegments, dir)
 		}
 	}
 }
 
-func (e *Engine) uploadPlaylist(path, name string) error {
+func (e *Engine) uploadPlaylist(orgID uuid.UUID, path, name string) error {
 	timer := prometheus.NewTimer(uploadDuration.WithLabelValues("playlist"))
 	defer timer.ObserveDuration()
 
@@ -443,14 +409,16 @@ func (e *Engine) uploadPlaylist(path, name string) error {
 	}
 	defer f.Close()
 
-	err = e.storage.UploadStreamFile(name, f, "application/vnd.apple.mpegurl", "max-age=0, no-cache, no-store, must-revalidate")
+	// ⚡️ Route to stream/tenant_id/stream.m3u8
+	destKey := fmt.Sprintf("%s/%s", orgID.String(), name)
+	err = e.storage.UploadStreamFile(destKey, f, "application/vnd.apple.mpegurl", "max-age=0, no-cache, no-store, must-revalidate")
 	if err == nil {
-		uploadsTotal.WithLabelValues("playlist").Inc()
+		uploadsTotal.WithLabelValues("playlist", orgID.String()).Inc()
 	}
 	return err
 }
 
-func (e *Engine) uploadSegment(path, name string) error {
+func (e *Engine) uploadSegment(orgID uuid.UUID, path, name string) error {
 	timer := prometheus.NewTimer(uploadDuration.WithLabelValues("segment"))
 	defer timer.ObserveDuration()
 
@@ -460,38 +428,41 @@ func (e *Engine) uploadSegment(path, name string) error {
 	}
 	defer f.Close()
 
-	err = e.storage.UploadStreamFile(name, f, "video/MP2T", "public, max-age=86400")
+	// ⚡️ Route to stream/tenant_id/segment_xx.ts
+	destKey := fmt.Sprintf("%s/%s", orgID.String(), name)
+	err = e.storage.UploadStreamFile(destKey, f, "video/MP2T", "public, max-age=86400")
 	if err == nil {
-		uploadsTotal.WithLabelValues("segment").Inc()
+		uploadsTotal.WithLabelValues("segment", orgID.String()).Inc()
 	}
 	return err
 }
 
 func (e *Engine) cleanupUploadedMap(m map[string]bool, dir string) {
-	count := 0
 	for k := range m {
 		if _, err := os.Stat(filepath.Join(dir, k)); os.IsNotExist(err) {
 			delete(m, k)
-			count++
 		}
-	}
-	if count > 0 {
-		log.Printf("[Uploader] Cleaned %d entries from tracking map", count)
 	}
 }
 
+// ⚡️ Multi-Tenant Redirect Server
 func (e *Engine) startRedirectServer() {
 	endpoint := strings.TrimRight(e.cfg.Storage.Endpoint, "/")
-
-	publicURL := fmt.Sprintf("%s/%s/stream.m3u8", endpoint, e.cfg.Storage.BucketStream)
 	port := ":8080"
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Momo Radio Live.\nStream URL: %s", publicURL)
-	})
+	// E.g. /listen?org_id=uuid
 	http.HandleFunc("/listen", func(w http.ResponseWriter, r *http.Request) {
+		orgID := r.URL.Query().Get("org_id")
+		if orgID == "" {
+			http.Error(w, "Missing org_id parameter", http.StatusBadRequest)
+			return
+		}
+
+		// Redirect to BunnyCDN path
+		publicURL := fmt.Sprintf("%s/%s/%s/stream.m3u8", endpoint, e.cfg.Storage.BucketStream, orgID)
 		http.Redirect(w, r, publicURL, http.StatusFound)
 	})
+
 	http.Handle("/_metrics", promhttp.Handler())
 
 	log.Printf("Helper Server listening at %s", port)

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"momo-radio/internal/config"
@@ -35,8 +36,8 @@ func StartFFmpeg(input io.Reader, cfg *config.Config) {
 		"-ac", cfg.Radio.AudioChannels,
 
 		"-f", "hls",
-		"-hls_time", cfg.Radio.SegmentTime,
-		"-hls_list_size", cfg.Radio.ListSize,
+		"-hls_time", strconv.Itoa(cfg.Radio.SegmentTime),
+		"-hls_list_size", strconv.Itoa(cfg.Radio.ListSize),
 		"-hls_flags", cfg.Radio.HLSFlags,
 
 		outputFile,
@@ -47,8 +48,8 @@ func StartFFmpeg(input io.Reader, cfg *config.Config) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	log.Printf("🚀 FFmpeg Transcoder Started (Bitrate: %s, Codec: %s, SegTime: %ss, Window: %s segments)",
-		cfg.Radio.Bitrate, cfg.Radio.AudioCodec, cfg.Radio.SegmentTime, cfg.Radio.ListSize)
+	log.Printf("FFmpeg Transcoder Started (Bitrate: %s, Codec: %s, SegTime: %s, Window: %s segments)",
+		cfg.Radio.Bitrate, cfg.Radio.AudioCodec, strconv.Itoa(cfg.Radio.SegmentTime), strconv.Itoa(cfg.Radio.ListSize))
 
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("FFmpeg crashed: %v", err)

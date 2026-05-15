@@ -28,8 +28,9 @@ type Config struct {
 	} `mapstructure:"server"`
 	Radio struct {
 		Bitrate       string `mapstructure:"bitrate"`
-		SegmentTime   string `mapstructure:"segment_time"`
-		ListSize      string `mapstructure:"list_size"`
+		SampleRate    string `mapstructure:"sample_rate"`
+		SegmentTime   int    `mapstructure:"segment_time"`
+		ListSize      int    `mapstructure:"list_size"`
 		SegmentDir    string `mapstructure:"segment_dir"`
 		LogLevel      string `mapstructure:"log_level"`
 		InputFormat   string `mapstructure:"input_format"`
@@ -93,6 +94,7 @@ func Load() *Config {
 
 	// Radio Config Bindings
 	viper.BindEnv("radio.bitrate")
+	viper.BindEnv("radio.sample_rate") // ⚡️ BIND NEW FIELD
 	viper.BindEnv("radio.segment_time")
 	viper.BindEnv("radio.list_size")
 	viper.BindEnv("radio.segment_dir")
@@ -143,8 +145,9 @@ func Load() *Config {
 
 	// Radio Defaults
 	viper.SetDefault("radio.bitrate", "128k")
-	viper.SetDefault("radio.segment_time", "4")
-	viper.SetDefault("radio.list_size", "15")
+	viper.SetDefault("radio.sample_rate", "44100") // ⚡️ NEW DEFAULT
+	viper.SetDefault("radio.segment_time", 4)      // ⚡️ NOW AN INT
+	viper.SetDefault("radio.list_size", 15)        // ⚡️ NOW AN INT
 	viper.SetDefault("radio.segment_dir", "./hls_output")
 	viper.SetDefault("radio.log_level", "error")
 	viper.SetDefault("radio.input_format", "mp3")
@@ -155,6 +158,7 @@ func Load() *Config {
 	viper.SetDefault("radio.hls_flags", "append_list+omit_endlist+temp_file")
 	viper.SetDefault("radio.prefetch_count", 5)
 	viper.SetDefault("radio.provider", "starvation")
+	viper.SetDefault("radio.dry_run", false) // Good practice to default booleans explicitly
 
 	// Worker Defaults
 	viper.SetDefault("worker.concurrency", 6)

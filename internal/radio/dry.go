@@ -7,12 +7,15 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/google/uuid" // ⚡️ REQUIRED FOR MULTI-TENANT
+
 	"momo-radio/internal/dj"
 	"momo-radio/internal/models"
 )
 
-func (e *Engine) runSimulation() {
-	fmt.Printf("\n--- DRY PLAYLIST SIMULATION ---\n")
+// ⚡️ Added orgID to simulate a specific tenant's station
+func (e *Engine) runSimulation(orgID uuid.UUID) {
+	fmt.Printf("\n--- DRY PLAYLIST SIMULATION FOR TENANT: %s ---\n", orgID.String())
 	fmt.Println("Logic: Uses Scheduler + Selector Strategy (No DB updates)")
 	fmt.Println("--------------------------------------------------------------------------------")
 
@@ -22,10 +25,11 @@ func (e *Engine) runSimulation() {
 	fmt.Fprintln(w, "TIME\tMODE\tARTIST\tTITLE\tBPM\tKEY\tPROGRAM")
 	fmt.Fprintln(w, "----\t----\t------\t-----\t---\t---\t-------")
 
+	// ⚡️ Pass orgID into the Selectors
 	selectors := map[string]dj.Selector{
-		"random":     dj.NewSelector("random", e.db.DB),
-		"harmonic":   dj.NewSelector("harmonic", e.db.DB),
-		"starvation": dj.NewSelector("starvation", e.db.DB),
+		"random":     dj.NewSelector("random", e.db.DB, orgID),
+		"harmonic":   dj.NewSelector("harmonic", e.db.DB, orgID),
+		"starvation": dj.NewSelector("starvation", e.db.DB, orgID),
 	}
 
 	const Limit = 20
@@ -33,17 +37,19 @@ func (e *Engine) runSimulation() {
 	var lastTrack *models.Track
 
 	for i := 0; i < Limit; i++ {
-		activeSlot := e.scheduler.GetCurrentSchedule()
+		// ⚡️ Pass orgID into the Scheduler
+		activeSlot := e.scheduler.GetCurrentSchedule(orgID)
 		showName := getShowName(activeSlot)
 
 		var selectedTrack *models.Track
 		var err error
 		currentMode := "Unknown"
 
-		if activeSlot.Playlist != nil {
+		if activeSlot != nil && activeSlot.Playlist != nil {
 			currentMode = "Playlist"
-			selectedTrack, err = e.pickNextFromPlaylist(activeSlot.Playlist.ID, lastTrack)
-		} else if activeSlot.RuleSet != nil {
+			// ⚡️ Pass orgID into the Playlist Picker
+			selectedTrack, err = e.pickNextFromPlaylist(orgID, activeSlot.Playlist.ID, lastTrack)
+		} else if activeSlot != nil && activeSlot.RuleSet != nil {
 			mode := strings.ToLower(activeSlot.RuleSet.Mode)
 			if mode == "" {
 				mode = "random"

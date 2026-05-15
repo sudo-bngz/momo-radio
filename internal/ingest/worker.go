@@ -92,6 +92,14 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	trackIDStr := fmt.Sprintf("%d", payload.TrackID)
 	log.Printf("Starting Job for Track ID %d: %s", payload.TrackID, key)
 
+	// 1. FETCH TRACK EARLY TO GET THE ORGANIZATION ID
+	var track models.Track
+	if err := w.db.DB.First(&track, payload.TrackID).Error; err != nil {
+		log.Printf("Task Failed: Track not found in DB: %v", err)
+		return err
+	}
+	orgID := track.OrganizationID.String()
+
 	// Updates DB and shouts to Frontend via Redis SSE
 	updateStatus := func(status string, progress int) {
 		w.db.DB.Model(&models.Track{}).Where("id = ?", payload.TrackID).Updates(map[string]interface{}{
@@ -101,7 +109,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		w.redis.Publish(ctx, "track_status:"+trackIDStr, status)
 	}
 
-	// 1. Setup Local Temp Files
+	// 2. Setup Local Temp Files
 	baseName := filepath.Base(key)
 	ext := filepath.Ext(baseName)
 	nameWithoutExt := strings.TrimSuffix(baseName, ext)
@@ -118,11 +126,8 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	if payload.IsRetry {
 		updateStatus("downloading (retry)", 10)
 
-		var track models.Track
-		w.db.DB.First(&track, payload.TrackID)
-
 		// Priority 1: Try Master Vault
-		log.Printf("🔍 Retry requested. Looking for Master file: %s", track.MasterKey)
+		log.Printf("Retry requested. Looking for Master file: %s", track.MasterKey)
 		obj, downloadErr = w.storage.DownloadMasterFile(track.MasterKey)
 
 		// Priority 2: Fallback to Stream Asset
@@ -135,7 +140,6 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		obj, downloadErr = w.storage.DownloadIngestFile(key)
 	}
 
-	// Handle Download Failure
 	if downloadErr != nil {
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
@@ -143,19 +147,19 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		return downloadErr
 	}
 
-	// Write the downloaded file to the local disk for processing
 	fRaw, _ := os.Create(rawPath)
 	io.Copy(fRaw, obj.Body)
 	obj.Body.Close()
 	fRaw.Close()
 
-	// ⚡️ 2. IMMEDIATELY SECURE THE MASTER FILE (Only on Fresh Uploads!)
+	// 3. SECURE THE MASTER FILE (SCOPED TO TENANT)
 	if !payload.IsRetry {
 		updateStatus("archiving master", 15)
 		fMaster, err := os.Open(rawPath)
 		if err == nil {
 			safeFilename := strings.ReplaceAll(baseName, " ", "_")
-			masterKey := fmt.Sprintf("%d_%s", payload.TrackID, safeFilename)
+			// Add orgID to the vault path!
+			masterKey := fmt.Sprintf("vault/%s/%d_%s", orgID, payload.TrackID, safeFilename)
 
 			err = w.storage.UploadMasterFile(masterKey, fMaster, "audio/mpeg")
 			fMaster.Close()
@@ -165,15 +169,18 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 			} else {
 				log.Printf("Original file secured in Master Vault: %s", masterKey)
 			}
+
+			// Update the Track record so we remember the new scoped MasterKey
+			w.db.DB.Model(&track).Update("MasterKey", masterKey)
 		} else {
 			log.Printf("Warning: Could not open local raw file for Master upload: %v", err)
 		}
 	}
 
-	// 3. Audio Validation
+	// 4. Audio Validation
 	if err := audio.Validate(rawPath); err != nil {
 		if !payload.IsRetry {
-			w.storage.DeleteIngestFile(key) // Only clean dropzone if it was a fresh upload
+			w.storage.DeleteIngestFile(key)
 		}
 		updateStatus("failed", 0)
 		jobs.WithLabelValues("failure").Inc()
@@ -181,7 +188,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("invalid audio file format")
 	}
 
-	// 4. Local Metadata & Deep Acoustic Analysis
+	// 5. Local Metadata & Deep Acoustic Analysis
 	updateStatus("analyzing", 30)
 	meta, _ := metadata.GetLocal(rawPath)
 
@@ -199,7 +206,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		meta.Duration = analysis.Duration
 	}
 
-	// 5. Metadata Enrichment (Discogs/iTunes)
+	// 6. Metadata Enrichment
 	updateStatus("enriching", 60)
 
 	searchArtist := meta.Artist
@@ -277,7 +284,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		artistOrigin = "Unknown"
 	}
 
-	// 6. Normalize Audio
+	// 7. Normalize Audio
 	updateStatus("normalizing", 80)
 	if err := audio.Normalize(rawPath, cleanPath); err != nil {
 		updateStatus("failed", 0)
@@ -286,14 +293,15 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	// 7. Upload Final Playable Audio to Asset Bucket
+	// ⚡️ 8. Final Playable Audio Destination (SCOPED TO TENANT)
 	updateStatus("uploading", 90)
 
-	// Get the base path from your metadata logic
 	baseDestinationKey := BuildPath(meta, key)
 	finalExt := filepath.Ext(baseDestinationKey)
 	pathWithoutExt := strings.TrimSuffix(baseDestinationKey, finalExt)
-	destinationKey := fmt.Sprintf("%s_%d%s", pathWithoutExt, payload.TrackID, finalExt)
+
+	// Add orgID so playable library assets are isolated
+	destinationKey := fmt.Sprintf("library/%s/%s_%d%s", orgID, pathWithoutExt, payload.TrackID, finalExt)
 
 	fClean, err := os.Open(cleanPath)
 	if err != nil {
@@ -310,9 +318,11 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	// 8. Database Relations
+	// ⚡️ 9. Database Relations (SCOPED TO TENANT)
 	var artist models.Artist
-	w.db.DB.Where(models.Artist{Name: meta.Artist}).FirstOrCreate(&artist)
+	w.db.DB.Where(models.Artist{Name: meta.Artist, OrganizationID: track.OrganizationID}).
+		FirstOrCreate(&artist, models.Artist{Name: meta.Artist, OrganizationID: track.OrganizationID})
+
 	if artist.ArtistCountry == "" && artistOrigin != "Unknown" {
 		w.db.DB.Model(&artist).Update("ArtistCountry", artistOrigin)
 	}
@@ -320,12 +330,13 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	var album models.Album
 	var albumID *uint
 	if meta.Album != "" {
-		err := w.db.DB.Where(models.Album{Title: meta.Album, ArtistID: artist.ID}).First(&album).Error
+		err := w.db.DB.Where(models.Album{Title: meta.Album, ArtistID: artist.ID, OrganizationID: track.OrganizationID}).First(&album).Error
 
 		if err == gorm.ErrRecordNotFound || err != nil {
 			album = models.Album{
 				Title:          meta.Album,
 				ArtistID:       artist.ID,
+				OrganizationID: track.OrganizationID, // Bind to Tenant
 				Year:           meta.Year,
 				Publisher:      meta.Publisher,
 				CatalogNumber:  meta.CatalogNumber,
@@ -334,7 +345,6 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 			w.db.DB.Create(&album)
 		} else {
 			albumUpdates := map[string]any{}
-
 			if album.Year == "" && meta.Year != "" {
 				albumUpdates["year"] = meta.Year
 			}
@@ -355,7 +365,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		albumID = &album.ID
 	}
 
-	// 9. Cover Art Pipeline
+	// ⚡️ 10. Cover Art Pipeline (SCOPED TO TENANT)
 	if albumID != nil && album.CoverKey == "" {
 		var rawImage []byte
 		var errImg error
@@ -369,7 +379,8 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		if len(rawImage) > 0 && errImg == nil {
 			processedImg, errProc := metadata.ProcessCover(rawImage)
 			if errProc == nil {
-				coverKey := fmt.Sprintf("covers/album_%d.jpg", album.ID)
+				// Add orgID to the cover art path!
+				coverKey := fmt.Sprintf("covers/%s/album_%d.jpg", orgID, album.ID)
 				errUpload := w.storage.UploadAssetFile(coverKey, bytes.NewReader(processedImg), "image/jpeg", "public, max-age=31536000")
 				if errUpload == nil {
 					w.db.DB.Model(&album).Update("CoverKey", coverKey)
@@ -378,9 +389,9 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	// 10. Finalize Track record
+	// 11. Finalize Track record
 	w.db.DB.Model(&models.Track{}).Where("id = ?", payload.TrackID).Updates(map[string]interface{}{
-		"key":                 destinationKey, // Points to the public playable asset
+		"key":                 destinationKey,
 		"title":               meta.Title,
 		"artist_id":           artist.ID,
 		"album_id":            albumID,
@@ -404,7 +415,6 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		w.cleanupFolders([]string{key})
 	}
 
-	// Signal the frontend to close the stream
 	w.redis.Publish(ctx, "track_status:"+trackIDStr, "completed")
 	jobs.WithLabelValues("success").Inc()
 	log.Printf("Job Completed: Track ID %d", payload.TrackID)
