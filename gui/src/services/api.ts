@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { useAuthStore } from '../store/useAuthStore';
+import { useAuthStore, type Organization } from '../store/useAuthStore';
+import { supabase } from './../services/client';
 import type { 
   AnalyzeResponse, 
   TrackMetadata, 
@@ -15,10 +16,7 @@ export const apiClient = axios.create({
   baseURL: API_URL,
 });
 
-/**
- * ⚡️ MULTI-TENANT REQUEST INTERCEPTOR
- * Aggressively attaches the Organization ID to Headers, Query Params, JSON Bodies, and FormData.
- */
+
 apiClient.interceptors.request.use((config) => {
   const state = useAuthStore.getState();
   const token = state.session?.access_token;
@@ -65,15 +63,20 @@ apiClient.interceptors.request.use((config) => {
 });
 
 /**
- * RESPONSE INTERCEPTOR
- * Intercepts 401 Unauthorized errors to trigger the modal.
+ * STRICT RESPONSE INTERCEPTOR
+ * Intercepts 401 Unauthorized errors, triggers the modal, and explicitly kills the session.
  */
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.response && error.response.status === 401) {
-      console.warn('Session expired or unauthorized. Triggering re-login.');
+      console.warn('Session expired or unauthorized. Triggering manual re-login.');
+      
+      // 1. Trigger the un-closable blurred modal
       useAuthStore.getState().setSessionExpired(true);
+      
+      // 2. Kill the Supabase session locally so it cannot auto-reconnect
+      await supabase.auth.signOut();
     }
     return Promise.reject(error);
   }
@@ -198,5 +201,22 @@ export const api = {
   getDashboardStats: async (): Promise<DashboardData> => {
     const response = await apiClient.get<DashboardData>('/stats');
     return response.data;
+  },
+
+  // --- ORGANIZATIONS ---
+  getOrganizations: async (): Promise<Organization[]> => {
+    // Assuming your Go backend returns an array of orgs or { data: orgs }
+    const response = await apiClient.get('/organizations');
+    // Adjust this depending on if your Go backend wraps lists in a 'data' object
+    return response.data.data || response.data; 
+  },
+
+  createOrganization: async (data: { name: string; activity: string }): Promise<Organization> => {
+    const response = await apiClient.post('/organizations', data);
+    return response.data;
+  },
+
+  inviteUser: async (data: { email: string; role: string }): Promise<void> => {
+    await apiClient.post('/organizations/invites', data);
   },
 };

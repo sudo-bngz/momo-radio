@@ -192,7 +192,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	updateStatus("analyzing", 30)
 	meta, _ := metadata.GetLocal(rawPath)
 
-	log.Printf("   🎼 Performing Deep Acoustic Analysis for %s...", baseName)
+	log.Printf("Performing Deep Acoustic Analysis for %s...", baseName)
 	w.analysisSem <- struct{}{}
 	analysis, err := audio.AnalyzeDeep(rawPath)
 	<-w.analysisSem
