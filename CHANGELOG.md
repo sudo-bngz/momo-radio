@@ -1,3 +1,12 @@
+## [0.6.0-alpha.1] - 2026-05-15
+
+### 🐛 Bug Fixes
+
+- *(release)* Fix pipeline
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Prepare v0.6.0-alpha
 ## [0.6.0-alpha] - 2026-05-15
 
 ### 🚀 Features
