@@ -17,9 +17,10 @@ type AlbumHandler struct {
 }
 
 // NewAlbumHandler creates a new AlbumHandler instance
-func NewAlbumHandler(db *gorm.DB) *AlbumHandler {
+func NewAlbumHandler(db *gorm.DB, st *storage.Client) *AlbumHandler {
 	return &AlbumHandler{
-		db: db,
+		db:      db,
+		storage: st,
 	}
 }
 
@@ -50,10 +51,16 @@ func (h *AlbumHandler) GetAlbums(c *gin.Context) {
 		return
 	}
 
+	for i := range albums {
+		if albums[i].CoverKey != "" {
+			albums[i].CoverURL = h.storage.GetPublicURL(albums[i].CoverKey)
+		}
+	}
+
 	c.JSON(http.StatusOK, albums)
 }
 
-// GetAlbumByID returns an album, its artist, and its tracklist scoped by Tenant
+// GetAlbumByID returns an album, its artists, and its tracklist scoped by Tenant
 func (h *AlbumHandler) GetAlbumByID(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -78,6 +85,10 @@ func (h *AlbumHandler) GetAlbumByID(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
+	}
+
+	if album.CoverKey != "" {
+		album.CoverURL = h.storage.GetPublicURL(album.CoverKey)
 	}
 
 	c.JSON(http.StatusOK, album)

@@ -18,7 +18,6 @@ export const AlbumGridView: React.FC = () => {
     const fetchAlbums = async () => {
       setIsLoading(true);
       try {
-        // Ensure you add getAlbums() to your api.ts service!
         const response = await api.getAlbums(); 
         setAlbums(response.data || response || []);
       } catch (error) {
@@ -31,10 +30,13 @@ export const AlbumGridView: React.FC = () => {
     fetchAlbums();
   }, []);
 
-  const filteredAlbums = albums.filter(a => 
-    (a.title && a.title.toLowerCase().includes(globalSearch.toLowerCase())) || 
-    (a.artist && a.artist.toLowerCase().includes(globalSearch.toLowerCase()))
-  );
+  const filteredAlbums = albums.filter(a => {
+    const matchesTitle = a.title && a.title.toLowerCase().includes(globalSearch.toLowerCase());
+    const matchesArtist = a.artists && a.artists.some((artist: any) => 
+      artist.name && artist.name.toLowerCase().includes(globalSearch.toLowerCase())
+    );
+    return matchesTitle || matchesArtist;
+  });
 
   return (
     <Box w="full" h="100%" overflowY="auto" pt={2} pb={10} animation="fade-in 0.4s ease-out"
@@ -63,9 +65,13 @@ export const AlbumGridView: React.FC = () => {
         <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5, xl: 6, "2xl": 7 }} gap={6} px={1}>
           {filteredAlbums.map((album) => {
             const coverUrl = album.cover_url || album.artwork_url;
-            const artistName = album.artist || "Unknown Artist";
+            
+            const artistName = album.artists && album.artists.length > 0 
+              ? album.artists.map((a: any) => a.name).join(', ') 
+              : "Unknown Artist";
+
             const year = album.year ? ` • ${album.year}` : "";
-            const type = album.type || "Album"; // E.g., "Album" or "EP"
+            const type = album.type || "Album";
 
             return (
               <Box 

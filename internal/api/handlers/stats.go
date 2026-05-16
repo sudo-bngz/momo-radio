@@ -24,12 +24,10 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 	// 1. Extract the Organization ID securely from the Gin Context
 	orgIDRaw, exists := c.Get("organizationID")
 	if !exists {
-		// If this triggers, it means the route isn't protected by the middleware!
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing."})
 		return
 	}
 
-	// ⚡️ Safely cast to UUID (Our middleware stores it as a uuid.UUID, not a string)
 	orgID, ok := orgIDRaw.(uuid.UUID)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid organization ID format"})
@@ -51,7 +49,6 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 	currentWeekday := now.Weekday().String()[0:3]
 
 	var schedules []models.Schedule
-	// Filter schedules by Tenant
 	h.db.Preload("Playlist").Preload("RuleSet").Where("organization_id = ? AND is_active = ?", orgID, true).Find(&schedules)
 
 	activeShowName := "General Rotation"
@@ -68,8 +65,16 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 
 	// Filter stream state by Tenant
 	if err := h.db.Where("organization_id = ?", orgID).Order("updated_at DESC").First(&streamState).Error; err == nil {
-		// CHANGED: Preload "Artists" instead of "Artist"
-		h.db.Preload("Artists").Preload("Album").Where("organization_id = ?", orgID).First(&currentTrack, streamState.TrackID)
+		// ⚡️ FIXED: Using Find() into a slice prevents the "record not found" log spam for deleted tracks
+		var foundTracks []models.Track
+		h.db.Preload("Artists").Preload("Album").
+			Where("organization_id = ? AND id = ?", orgID, streamState.TrackID).
+			Limit(1).
+			Find(&foundTracks)
+
+		if len(foundTracks) > 0 {
+			currentTrack = foundTracks[0]
+		}
 	}
 
 	// ⚡️ Format the multiple artists into a single string for the Dashboard UI
@@ -84,7 +89,6 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 
 	// 5. Fetch Recent Tracks (History)
 	var recentTracks []models.Track
-	// ⚡️ CHANGED: Use Model() and Preload("Artists") so history items contain the new artist arrays
 	h.db.Model(&models.Track{}).
 		Preload("Artists").
 		Joins("JOIN play_histories ON play_histories.track_id = tracks.id").
@@ -103,7 +107,7 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 		},
 		"now_playing": gin.H{
 			"title":         currentTrack.Title,
-			"artist":        artistStr, // ⚡️ Pushed the joined string here
+			"artist":        artistStr,
 			"playlist_name": activeShowName,
 			"starts_at":     streamState.UpdatedAt,
 			"ends_at":       streamState.UpdatedAt.Add(time.Duration(currentTrack.Duration) * time.Second),
