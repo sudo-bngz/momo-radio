@@ -18,7 +18,7 @@ type Artist struct {
 
 	// Relationships
 	Albums []Album `json:"albums,omitempty"`
-	Tracks []Track `json:"tracks,omitempty"`
+	Tracks []Track `gorm:"many2many:track_artists;" json:"tracks,omitempty"`
 }
 
 // 2. Album represents a collection of tracks or a release
@@ -28,6 +28,7 @@ type Album struct {
 
 	OrganizationID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_org_album_title" json:"organization_id"`
 	ArtistID       uint      `gorm:"not null;uniqueIndex:idx_org_album_title" json:"artist_id"`
+	Artist         Artist    `json:"artist,omitempty"`
 	Title          string    `gorm:"not null;uniqueIndex:idx_org_album_title" json:"title"`
 
 	Year           string `json:"year"`
@@ -38,7 +39,6 @@ type Album struct {
 	CoverURL       string `gorm:"-" json:"cover_url"`
 
 	// Relationships
-	Artist Artist  `json:"artist,omitempty"`
 	Tracks []Track `json:"tracks,omitempty"`
 }
 
@@ -56,8 +56,7 @@ type Track struct {
 	ProcessingStatus   string `gorm:"default:'pending';index" json:"processing_status"`
 	ProcessingProgress int    `gorm:"default:0" json:"processing_progress"`
 
-	ArtistID uint   `gorm:"index;not null" json:"artist_id"`
-	Artist   Artist `json:"artist,omitempty"`
+	Artists []Artist `gorm:"many2many:track_artists;" json:"artists,omitempty"`
 
 	AlbumID *uint `gorm:"index" json:"album_id"`
 	Album   Album `json:"album,omitempty"`

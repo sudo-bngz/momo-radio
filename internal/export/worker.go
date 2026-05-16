@@ -18,7 +18,7 @@ import (
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/models"
-	"momo-radio/internal/service/rekordbox"
+	"momo-radio/internal/service/m3u"
 	"momo-radio/internal/storage"
 )
 
@@ -45,11 +45,12 @@ func RegisterMetrics() {
 }
 
 // --- ASYNQ DEFINITIONS ---
-const TypeExportRekordbox = "playlist:export:rekordbox"
+const TypeExportPlaylist = "playlist:export:m3u"
 
-type RekordboxExportPayload struct {
-	PlaylistID uint `json:"playlist_id"`
-	UserID     uint `json:"user_id"`
+type PlaylistExportPayload struct {
+	PlaylistID     uint   `json:"playlist_id"`
+	UserID         uint   `json:"user_id"`
+	OrganizationID string `json:"organization_id"`
 }
 
 // --- WORKER ---
@@ -69,22 +70,22 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client, redisCl
 	}
 }
 
-// HandleRekordboxTask executes the zip building pipeline
-func (w *Worker) HandleRekordboxTask(ctx context.Context, t *asynq.Task) error {
+// HandlePlaylistExportTask executes the zip building pipeline
+func (w *Worker) HandlePlaylistExportTask(ctx context.Context, t *asynq.Task) error {
 	timer := prometheus.NewTimer(duration)
 	defer timer.ObserveDuration()
 
-	var payload RekordboxExportPayload
+	var payload PlaylistExportPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		log.Printf("Task Failed: Failed to parse payload: %v", err)
 		return fmt.Errorf("failed to parse payload: %v", err)
 	}
 
-	log.Printf("📦 Starting Rekordbox Export for Playlist %d", payload.PlaylistID)
+	log.Printf("Starting M3U Export for Playlist %d", payload.PlaylistID)
 
 	// Updates Frontend via Redis SSE
 	updateStatus := func(status string, progress int, downloadURL string) {
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"status":       status,
 			"progress":     progress,
 			"download_url": downloadURL,
@@ -98,17 +99,20 @@ func (w *Worker) HandleRekordboxTask(ctx context.Context, t *asynq.Task) error {
 
 	// 1. Fetch Data
 	var playlist models.Playlist
-	err := w.db.DB.Preload("Tracks.Artist").Preload("Tracks.Album").First(&playlist, payload.PlaylistID).Error
+	err := w.db.DB.Preload("Tracks.Artists").Preload("Tracks.Album").
+		Where("id = ? AND organization_id = ?", payload.PlaylistID, payload.OrganizationID).
+		First(&playlist).Error
+
 	if err != nil {
 		updateStatus("failed", 0, "")
-		jobs.WithLabelValues("failure", "rekordbox").Inc()
-		return fmt.Errorf("failed to fetch playlist: %v", err)
+		jobs.WithLabelValues("failure", "m3u").Inc()
+		return fmt.Errorf("failed to fetch playlist or unauthorized: %v", err)
 	}
 
 	// 2. Setup Staging Directory
-	tempDir := filepath.Join(w.cfg.Server.TempDir, fmt.Sprintf("rbx_export_%d_%d", payload.PlaylistID, time.Now().Unix()))
+	tempDir := filepath.Join(w.cfg.Server.TempDir, fmt.Sprintf("m3u_export_%d_%d", payload.PlaylistID, time.Now().Unix()))
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		jobs.WithLabelValues("failure", "rekordbox").Inc()
+		jobs.WithLabelValues("failure", "m3u").Inc()
 		return fmt.Errorf("failed to create temp directory: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
@@ -137,21 +141,27 @@ func (w *Worker) HandleRekordboxTask(ctx context.Context, t *asynq.Task) error {
 		obj.Body.Close()
 	}
 
-	// 4. Generate XML
-	updateStatus("generating_xml", 70, "")
-	xmlBytes, err := rekordbox.GenerateXML(playlist.Name, playlist.Tracks)
+	// 4. Generate M3U File
+	updateStatus("generating_playlist", 70, "")
+	m3uBytes := m3u.Generate(playlist.Tracks) // ⚡️ Generates the EXTM3U format
+
+	// Ensure safe filename for the playlist
+	safePlaylistName := filepath.Base(playlist.Name)
+	if safePlaylistName == "." || safePlaylistName == "/" {
+		safePlaylistName = fmt.Sprintf("Playlist_%d", playlist.ID)
+	}
+	m3uPath := filepath.Join(tempDir, safePlaylistName+".m3u")
+
+	err = os.WriteFile(m3uPath, m3uBytes, 0644)
 	if err != nil {
 		updateStatus("failed", 0, "")
-		jobs.WithLabelValues("failure", "rekordbox").Inc()
-		return fmt.Errorf("failed to generate XML: %v", err)
+		jobs.WithLabelValues("failure", "m3u").Inc()
+		return fmt.Errorf("failed to save M3U file: %v", err)
 	}
-
-	xmlPath := filepath.Join(tempDir, "rekordbox.xml")
-	os.WriteFile(xmlPath, xmlBytes, 0644)
 
 	// 5. Zip Everything Up
 	updateStatus("compressing", 80, "")
-	zipFileName := fmt.Sprintf("%s_Rekordbox.zip", playlist.Name)
+	zipFileName := fmt.Sprintf("%s.zip", safePlaylistName)
 	zipPath := filepath.Join(w.cfg.Server.TempDir, fmt.Sprintf("final_export_%d.zip", payload.PlaylistID))
 	defer os.Remove(zipPath)
 
@@ -180,19 +190,19 @@ func (w *Worker) HandleRekordboxTask(ctx context.Context, t *asynq.Task) error {
 	finalZipReader, _ := os.Open(zipPath)
 	defer finalZipReader.Close()
 
-	b2ExportKey := fmt.Sprintf("exports/playlist_%d/%s", payload.PlaylistID, zipFileName)
+	b2ExportKey := fmt.Sprintf("exports/%s/playlist_%d/%s", payload.OrganizationID, payload.PlaylistID, zipFileName)
 	err = w.storage.UploadAssetFile(b2ExportKey, finalZipReader, "application/zip", "public, max-age=86400")
 	if err != nil {
 		updateStatus("failed", 0, "")
-		jobs.WithLabelValues("failure", "rekordbox").Inc()
+		jobs.WithLabelValues("failure", "m3u").Inc()
 		return fmt.Errorf("failed to upload zip: %v", err)
 	}
 
 	// 7. Complete
 	downloadURL := w.storage.GetPublicURL(b2ExportKey)
 	updateStatus("completed", 100, downloadURL)
-	jobs.WithLabelValues("success", "rekordbox").Inc()
-	log.Printf("Job Completed: Rekordbox Export %s", downloadURL)
+	jobs.WithLabelValues("success", "m3u").Inc()
+	log.Printf("Job Completed: M3U Export %s", downloadURL)
 
 	return nil
 }

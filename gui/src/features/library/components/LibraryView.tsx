@@ -46,9 +46,8 @@ export const LibraryView: React.FC = () => {
     }
   };
 
-  // ⚡️ NEW: Handler to retry stuck analysis jobs
   const handleRetry = async (e: React.MouseEvent, trackId: number) => {
-    e.stopPropagation(); // Prevents the row click from firing
+    e.stopPropagation();
     try {
       await api.analysis(trackId);
       toaster.create({
@@ -57,7 +56,6 @@ export const LibraryView: React.FC = () => {
         type: "info",
         duration: 3000,
       });
-      // Optionally reset the local UI state so they see an immediate update
       setTracks(prev => prev.map(t => t.id === trackId ? { ...t, processing_status: 'pending' } : t));
     } catch (error) {
       console.error("Failed to retry analysis", error);
@@ -227,7 +225,6 @@ export const LibraryView: React.FC = () => {
                         </Box>
                       </Table.Cell>
 
-                      {/* ⚡️ UPDATED: Added Retry Button logic inside the title cell */}
                       <Table.Cell 
                         fontWeight={isThisTrackPlaying ? "bold" : "500"} 
                         color={isPending ? "blue.500" : (isThisTrackPlaying ? "blue.600" : "gray.900")} 
@@ -256,9 +253,35 @@ export const LibraryView: React.FC = () => {
                           )}
                         </HStack>
                       </Table.Cell>
-                      
-                      <Table.Cell color={isThisTrackPlaying ? "blue.500" : "gray.600"} _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }} onClick={(e) => { if(!isPending) { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(track.artist)}`); } }}>
-                        {track.artist}
+
+                      <Table.Cell>
+                        <HStack gap={1} flexWrap="wrap">
+                          {track.artist ? (
+                            track.artist.split(',').map((artistName: string, index: number, arr: string[]) => {
+                              const cleanArtist = artistName.trim();
+                              return (
+                                <React.Fragment key={index}>
+                                  <Text 
+                                    as="span"
+                                    color={isThisTrackPlaying ? "blue.500" : "gray.600"} 
+                                    _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }} 
+                                    onClick={(e) => { 
+                                      if(!isPending) { 
+                                        e.stopPropagation(); 
+                                        navigate(`/artists/${encodeURIComponent(cleanArtist)}`); 
+                                      } 
+                                    }}
+                                  >
+                                    {cleanArtist}
+                                  </Text>
+                                  {index < arr.length - 1 && <Text as="span" color="gray.500">, </Text>}
+                                </React.Fragment>
+                              );
+                            })
+                          ) : (
+                            <Text color="gray.500">-</Text>
+                          )}
+                        </HStack>
                       </Table.Cell>
 
                       <Table.Cell color="gray.500">

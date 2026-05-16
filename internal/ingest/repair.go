@@ -3,13 +3,15 @@ package ingest
 import (
 	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
 	"momo-radio/internal/audio"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 	"momo-radio/internal/utils"
-	"os"
-	"path/filepath"
-	"time"
 )
 
 // RepairMetadata updates existing records that are missing new fields
@@ -18,31 +20,36 @@ func (w *Worker) RepairMetadata() {
 
 	var tracks []models.Track
 
-	// 1. Fetch tracks with linked Artist/Album data
-	// Note: We check if the linked Artist or Album is missing metadata
-	err := w.db.DB.Preload("Artist").Preload("Album").
-		Joins("JOIN artists ON artists.id = tracks.artist_id").
+	// 1. Fetch tracks using the new Many-to-Many Join
+	err := w.db.DB.Preload("Artists").Preload("Album").
+		Joins("LEFT JOIN track_artists ON track_artists.track_id = tracks.id").
+		Joins("LEFT JOIN artists ON artists.id = track_artists.artist_id").
 		Where("artists.artist_country = '' OR tracks.genre = '' OR tracks.style = ''").
+		Group("tracks.id").
 		Find(&tracks).Error
 
 	if err != nil {
-		log.Printf("❌ Failed to fetch tracks: %v", err)
+		log.Printf("Failed to fetch tracks: %v", err)
 		return
 	}
 
 	count := len(tracks)
-	log.Printf("🧐 Found %d legacy tracks needing metadata repair.", count)
+	log.Printf("Found %d legacy tracks needing metadata repair.", count)
 
 	for i, track := range tracks {
 		if i > 0 && i%10 == 0 {
 			log.Printf("⏳ Repair Progress: %d/%d tracks...", i, count)
 		}
 
-		// Use related objects for searching
-		searchArtist := track.Artist.Name
+		// Combine all artist names for the search query
+		var artistNames []string
+		for _, a := range track.Artists {
+			artistNames = append(artistNames, a.Name)
+		}
+		searchArtist := strings.Join(artistNames, " ")
 		searchTitle := track.Title
 
-		if searchArtist == "" || searchArtist == "Unknown Artist" || searchTitle == "" {
+		if searchArtist == "" || searchTitle == "" {
 			log.Printf("   🔍 Bad DB metadata for [%s], re-parsing filename...", track.Key)
 			cleanA, cleanT := utils.SanitizeFilename(filepath.Base(track.Key))
 			searchArtist = cleanA
@@ -56,12 +63,20 @@ func (w *Worker) RepairMetadata() {
 			continue
 		}
 
-		// 1. Update Artist
-		if enriched.Artist != "" {
-			w.db.DB.Model(&track.Artist).Updates(models.Artist{
-				Name:          enriched.Artist,
-				ArtistCountry: enriched.Country,
-			})
+		// 1. Update Artists (Clear old, insert new)
+		if len(enriched.Artists) > 0 {
+			w.db.DB.Model(&track).Association("Artists").Clear()
+			for _, name := range enriched.Artists {
+				var artist models.Artist
+				w.db.DB.Where(models.Artist{Name: name, OrganizationID: track.OrganizationID}).
+					FirstOrCreate(&artist, models.Artist{Name: name, OrganizationID: track.OrganizationID})
+
+				// Update country if we found a new one
+				if artist.ArtistCountry == "" && enriched.Country != "" {
+					w.db.DB.Model(&artist).Update("ArtistCountry", enriched.Country)
+				}
+				track.Artists = append(track.Artists, artist)
+			}
 		}
 
 		// 2. Update Album (if linked)
@@ -83,15 +98,16 @@ func (w *Worker) RepairMetadata() {
 		}
 		w.db.DB.Model(&track).Updates(trackUpdates)
 
-		log.Printf("   Repaired: %s | Artist: %s", enriched.Title, enriched.Artist)
+		log.Printf("   Repaired: %s | Artists: %s", enriched.Title, strings.Join(enriched.Artists, ", "))
 		time.Sleep(2 * time.Second)
 	}
 	log.Println("✨ Metadata Repair complete!")
 }
 
 // RepairAudio finds tracks with missing BPM/Key data and re-runs Essentia analysis.
+// (No changes needed for the Many-to-Many update)
 func (w *Worker) RepairAudio() {
-	log.Println("🛠️ Starting Audio Repair (Deep Analysis)...")
+	log.Println("Starting Audio Repair (Deep Analysis)...")
 
 	var tracks []models.Track
 	if err := w.db.DB.Where("bpm = 0 OR bpm IS NULL").Find(&tracks).Error; err != nil {
@@ -109,16 +125,13 @@ func (w *Worker) RepairAudio() {
 
 		tempPath := filepath.Join(w.cfg.Server.TempDir, "repair_audio_"+filepath.Base(track.Key))
 
-		// Assume DownloadFile is part of your storage client
 		obj, err := w.storage.DownloadFile(track.Key)
 		if err != nil {
-			log.Printf("   ❌ Download failed: %v", err)
 			continue
 		}
 
 		f, err := os.Create(tempPath)
 		if err != nil {
-			log.Printf("   ❌ File creation failed: %v", err)
 			obj.Body.Close()
 			continue
 		}
@@ -141,7 +154,6 @@ func (w *Worker) RepairAudio() {
 			continue
 		}
 
-		// Save acoustic fields
 		updates := map[string]interface{}{
 			"bpm":          analysis.BPM,
 			"musical_key":  analysis.MusicalKey,
@@ -153,83 +165,73 @@ func (w *Worker) RepairAudio() {
 		}
 
 		w.db.DB.Model(&track).Updates(updates)
-		log.Printf("   ✅ Analyzed: %.2f BPM", analysis.BPM)
+		log.Printf("Analyzed: %.2f BPM", analysis.BPM)
 	}
 	log.Println("✨ Audio Repair Complete!")
 }
 
 // RepairCountry surgically updates ReleaseCountry and ArtistCountry.
+// ⚡️ OPTIMIZED: Now queries the Artists table directly!
 func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider string) {
-	log.Printf("🌍 Starting targeted Country Repair (Provider: %s)...", provider)
+	log.Printf("Starting targeted Country Repair (Provider: %s)...", provider)
 
-	var tracks []models.Track
-	query := w.db.DB.Preload("Artist").Preload("Album")
+	var artists []models.Artist
+	query := w.db.DB.Model(&models.Artist{})
 
 	if len(targetArtists) > 0 {
-		query = query.Joins("JOIN artists ON artists.id = tracks.artist_id").Where("artists.name IN ?", targetArtists)
+		query = query.Where("name IN ?", targetArtists)
 	} else {
-		// Only tracks where the linked artist is missing a country
-		query = query.Joins("JOIN artists ON artists.id = tracks.artist_id").Where("artists.artist_country = '' OR artists.artist_country IS NULL")
+		query = query.Where("artist_country = '' OR artist_country IS NULL")
 	}
 
-	if err := query.Find(&tracks).Error; err != nil {
-		log.Printf("❌ DB Error: %v", err)
+	if err := query.Find(&artists).Error; err != nil {
+		log.Printf("DB Error: %v", err)
 		return
 	}
 
-	artistCache := make(map[string]string)
-
-	for _, track := range tracks {
-		artistName := track.Artist.Name
+	for _, artist := range artists {
+		artistName := artist.Name
 		if artistName == "" || artistName == "Unknown Artist" {
 			continue
 		}
 
+		log.Printf("%s Search: %s", provider, artistName)
+
 		var resultStr string
-		var found bool
+		var err error
 
-		if resultStr, found = artistCache[artistName]; !found {
-			log.Printf("🛰️  %s Search: %s", provider, artistName)
-
-			var err error
-			if provider == "discogs" {
-				resultStr, err = metadata.GetArtistCountryViaDiscogs(artistName, w.cfg.Services.DiscogsToken)
-				time.Sleep(2 * time.Second)
-			} else {
-				resultStr, err = metadata.GetArtistCountryViaMusicBrainz(artistName, w.cfg.Services.ContactEmail)
-				time.Sleep(1 * time.Second)
-			}
-
-			if err != nil {
-				artistCache[artistName] = ""
-				continue
-			}
-
-			if len(resultStr) != 2 {
-				geoCode, err := utils.GetCountryFromArea(resultStr)
-				if err == nil {
-					resultStr = geoCode
-				}
-				time.Sleep(1 * time.Second)
-			}
-			artistCache[artistName] = resultStr
+		if provider == "discogs" {
+			resultStr, err = metadata.GetArtistCountryViaDiscogs(artistName, w.cfg.Services.DiscogsToken)
+			time.Sleep(2 * time.Second)
+		} else {
+			resultStr, err = metadata.GetArtistCountryViaMusicBrainz(artistName, w.cfg.Services.ContactEmail)
+			time.Sleep(1 * time.Second)
 		}
 
-		if resultStr == "" {
+		if err != nil || resultStr == "" {
 			continue
 		}
 
-		if dryRun {
-			log.Printf("🧪 [DRY RUN] Would update Artist %s to %s", artistName, resultStr)
-		} else {
-			// ⚡️ Update the linked Artist record
-			w.db.DB.Model(&track.Artist).Update("ArtistCountry", resultStr)
-
-			// ⚡️ If album exists and has no country, update it too
-			if track.AlbumID != nil && track.Album.ReleaseCountry == "" {
-				w.db.DB.Model(track.Album).Update("ReleaseCountry", resultStr)
+		if len(resultStr) != 2 {
+			geoCode, err := utils.GetCountryFromArea(resultStr)
+			if err == nil {
+				resultStr = geoCode
 			}
-			log.Printf("   ✅ Updated Artist %s to %s", artistName, resultStr)
+			time.Sleep(1 * time.Second)
+		}
+
+		if dryRun {
+			log.Printf("[DRY RUN] Would update Artist %s to %s", artistName, resultStr)
+		} else {
+			// 1. Update Artist
+			w.db.DB.Model(&artist).Update("ArtistCountry", resultStr)
+
+			// 2. Update all Albums linked to this Primary Artist
+			w.db.DB.Model(&models.Album{}).
+				Where("artist_id = ? AND (release_country = '' OR release_country IS NULL)", artist.ID).
+				Update("release_country", resultStr)
+
+			log.Printf("Updated Artist %s to %s", artistName, resultStr)
 		}
 	}
 }

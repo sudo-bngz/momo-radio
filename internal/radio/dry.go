@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/google/uuid" // ⚡️ REQUIRED FOR MULTI-TENANT
+	"github.com/google/uuid"
 
 	"momo-radio/internal/dj"
 	"momo-radio/internal/models"
@@ -70,10 +70,20 @@ func (e *Engine) runSimulation(orgID uuid.UUID) {
 			break
 		}
 
+		// ⚡️ NEW: Join multiple artists for the CLI output
+		var artistNames []string
+		for _, a := range selectedTrack.Artists {
+			artistNames = append(artistNames, a.Name)
+		}
+		artistStr := "Unknown Artist"
+		if len(artistNames) > 0 {
+			artistStr = strings.Join(artistNames, ", ")
+		}
+
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%.0f\t%s\t%s\n",
 			simulatedTime.Format("15:04:05"),
 			currentMode,
-			truncate(selectedTrack.Artist.Name, 20),
+			truncate(artistStr, 20), // ⚡️ Pass the joined string here
 			truncate(selectedTrack.Title, 25),
 			selectedTrack.BPM,
 			selectedTrack.MusicalKey,

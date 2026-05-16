@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 
 	"momo-radio/internal/export"
@@ -21,11 +22,23 @@ func NewExportHandler(client *asynq.Client) *ExportHandler {
 	}
 }
 
-func (h *ExportHandler) ExportToRekordbox(c *gin.Context) {
+// ExportToM3u triggers the backend processing job to package a tenant playlist
+func (h *ExportHandler) ExportToM3u(c *gin.Context) {
 	idStr := c.Param("id")
 	playlistID, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid playlist ID"})
+		return
+	}
+
+	orgIDRaw, exists := c.Get("organizationID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+	orgID, ok := orgIDRaw.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid organization ID format"})
 		return
 	}
 
@@ -54,10 +67,11 @@ func (h *ExportHandler) ExportToRekordbox(c *gin.Context) {
 		return
 	}
 
-	// 1. Construct the payload
-	payload := export.RekordboxExportPayload{
-		PlaylistID: uint(playlistID),
-		UserID:     userID,
+	// 1. Construct the payload matching our new worker definitions
+	payload := export.PlaylistExportPayload{
+		PlaylistID:     uint(playlistID),
+		UserID:         userID,
+		OrganizationID: orgID.String(), // ⚡️ Passed to secure worker query
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -66,8 +80,8 @@ func (h *ExportHandler) ExportToRekordbox(c *gin.Context) {
 		return
 	}
 
-	// 2. Enqueue the Asynq task
-	task := asynq.NewTask(export.TypeExportRekordbox, payloadBytes)
+	// 2. Enqueue the Asynq task using the updated M3U type constants
+	task := asynq.NewTask(export.TypeExportPlaylist, payloadBytes)
 	info, err := h.asynqClient.Enqueue(task, asynq.Queue("exports"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enqueue export task"})
@@ -76,7 +90,7 @@ func (h *ExportHandler) ExportToRekordbox(c *gin.Context) {
 
 	// 3. Return an immediate 202 Accepted response
 	c.JSON(http.StatusAccepted, gin.H{
-		"message": "Rekordbox export started",
+		"message": "Playlist M3U zip export started",
 		"task_id": info.ID,
 		"queue":   info.Queue,
 	})

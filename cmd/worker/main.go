@@ -124,7 +124,7 @@ func main() {
 	// 11. Wire the tasks to their respective handlers!
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(ingest.TypeTrackProcess, ingestWorker.HandleProcessTask)
-	mux.HandleFunc(export.TypeExportRekordbox, exportWorker.HandleRekordboxTask)
+	mux.HandleFunc(export.TypeExportPlaylist, exportWorker.HandlePlaylistExportTask)
 
 	log.Println("Asynq Multiplexer listening for jobs...")
 	if err := srv.Run(mux); err != nil {

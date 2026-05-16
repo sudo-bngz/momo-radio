@@ -1,6 +1,6 @@
 export interface TrackMetadata {
   title: string;
-  artist: string;
+  artists: string[];
   album: string;
   genre: string;
   year: string;
@@ -15,7 +15,7 @@ export interface AnalyzeResponse {
   filename: string;
   format: string;
   title: string;
-  artist: string;
+  artists?: string[];
   album: string;
   genre: string;
   year: string;

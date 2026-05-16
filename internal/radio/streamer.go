@@ -194,7 +194,8 @@ func (e *Engine) runOrchestrator(orgID uuid.UUID, output *io.PipeWriter, resumeI
 		var err error
 
 		if firstRun && resumeID != 0 {
-			if dbErr := e.db.DB.Where("organization_id = ?", orgID).First(&selectedTrack, resumeID).Error; dbErr == nil {
+			// ⚡️ Preload Artists to avoid empty slice when resuming
+			if dbErr := e.db.DB.Preload("Artists").Where("organization_id = ?", orgID).First(&selectedTrack, resumeID).Error; dbErr == nil {
 				lastTrack = selectedTrack
 			}
 			firstRun = false
@@ -259,7 +260,7 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 	err := e.db.DB.Model(&models.Track{}).
 		Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 		Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ? AND playlist_tracks.sort_order > ?", playlistID, orgID, currentSortOrder).
-		Preload("Artist").
+		Preload("Artists"). // ⚡️ Updated to Artists
 		Preload("Album").
 		Order("playlist_tracks.sort_order ASC").
 		First(&track).Error
@@ -268,7 +269,7 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 		err = e.db.DB.Model(&models.Track{}).
 			Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 			Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ?", playlistID, orgID).
-			Preload("Artist").
+			Preload("Artists"). // ⚡️ Updated to Artists
 			Preload("Album").
 			Order("playlist_tracks.sort_order ASC").
 			First(&track).Error
@@ -283,9 +284,19 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 		albumName = t.Album.Title
 	}
 
+	// Format the array of artists into a display string
+	var artistNames []string
+	for _, a := range t.Artists {
+		artistNames = append(artistNames, a.Name)
+	}
+	artistStr := "Unknown Artist"
+	if len(artistNames) > 0 {
+		artistStr = strings.Join(artistNames, ", ")
+	}
+
 	trackData := CurrentTrack{
 		Title:     t.Title,
-		Artist:    t.Artist.Name,
+		Artist:    artistStr, // ⚡️ Uses the joined string now
 		Album:     albumName,
 		Show:      showName,
 		StartedAt: time.Now().Unix(),
@@ -342,7 +353,7 @@ func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
 	return err
 }
 
-// ⚡️ Isolated Uploader per tenant
+// Isolated Uploader per tenant
 func (e *Engine) startStreamUploader(orgID uuid.UUID, dir string) {
 	ticker := time.NewTicker(800 * time.Millisecond)
 	defer ticker.Stop()
@@ -445,7 +456,7 @@ func (e *Engine) cleanupUploadedMap(m map[string]bool, dir string) {
 	}
 }
 
-// ⚡️ Multi-Tenant Redirect Server
+// Multi-Tenant Redirect Server
 func (e *Engine) startRedirectServer() {
 	endpoint := strings.TrimRight(e.cfg.Storage.Endpoint, "/")
 	port := ":8080"

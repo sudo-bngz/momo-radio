@@ -6,9 +6,17 @@ import { useAuthStore } from '../../../store/useAuthStore';
 
 export type UploadStatus = 'idle' | 'analyzing' | 'review' | 'uploading' | 'processing' | 'success' | 'error';
 
+
 const INITIAL_META: TrackMetadata = {
-  title: '', artist: '', album: '', genre: '', year: '', 
-  label: '', catalog_number: '', country: '', style: '', 
+  title: '', 
+  artists: [], // ⚡️ Changed from artist string to artists array
+  album: '', 
+  genre: '', 
+  year: '', 
+  label: '', 
+  catalog_number: '', 
+  country: '', 
+  style: '', 
   cover_base64: '' 
 };
 
@@ -21,7 +29,7 @@ export interface UseIngestReturn {
   processStep: string;
   setErrorMsg: React.Dispatch<React.SetStateAction<string>>;
   onDrop: (acceptedFiles: File[], fileRejections: FileRejection[]) => void;
-  handleMetaChange: (name: string, value: string) => void;
+  handleMetaChange: (name: string, value: any) => void; // ⚡️ Changed to any to accept string[]
   handleUpload: () => Promise<void>;
   reset: () => void;
 }
@@ -54,7 +62,7 @@ export const useIngest = (): UseIngestReturn => {
 
         setMeta({
           title: data.title || '',
-          artist: data.artist || '',
+          artists: data.artists || [],
           album: data.album || '',
           genre: data.genre || '',
           year: data.year || '',
@@ -77,7 +85,7 @@ export const useIngest = (): UseIngestReturn => {
     analyze();
   }, []);
 
-  const handleMetaChange = (name: string, value: string) => {
+  const handleMetaChange = (name: string, value: any) => {
     setMeta((prev) => ({ 
       ...prev, 
       [name]: value 
@@ -95,7 +103,13 @@ export const useIngest = (): UseIngestReturn => {
         setUploadProgress((prev) => Math.min(prev + 15, 90));
       }, 300);
 
-      const response = await api.uploadTrack(file, meta) as any; 
+      // ⚡️ Convert the artists array into a comma-separated string for the Go API
+      const uploadPayload = {
+        ...meta,
+        artist: (meta.artists || []).join(', ')
+      };
+
+      const response = await api.uploadTrack(file, uploadPayload) as any; 
       
       clearInterval(progressInterval);
       setUploadProgress(100);

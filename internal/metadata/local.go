@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"momo-radio/internal/utils"
+
 	"github.com/bogem/id3v2"
 	"github.com/go-flac/go-flac"
 	"golang.org/x/image/draw"
@@ -44,8 +46,10 @@ func GetLocal(path string) (Track, error) {
 		return ""
 	}
 
+	rawArtist := getTag("artist", "albumartist", "TPE1", "TPE2")
+
 	return Track{
-		Artist:    getTag("artist", "albumartist", "TPE1", "TPE2"),
+		Artists:   utils.SplitArtistFallback(rawArtist),
 		Title:     getTag("title", "TIT2"),
 		Album:     getTag("album", "TALB"),
 		Genre:     getTag("genre", "TCON"),

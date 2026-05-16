@@ -107,7 +107,7 @@ export const IngestView: React.FC = () => {
                 </Button>
               </HStack>
 
-              {/* ⚡️ NEW: Split Layout for Artwork + Main Info */}
+              {/* ⚡️ Split Layout for Artwork + Main Info */}
               <HStack align="start" gap={8} w="100%">
                 
                 {/* Artwork Preview Box */}
@@ -139,10 +139,54 @@ export const IngestView: React.FC = () => {
                       <Field.Label fontWeight="bold" color="gray.700">Track Title</Field.Label>
                       <Input size="lg" value={meta.title} onChange={(e) => handleMetaChange('title', e.target.value)} color="gray.800" />
                     </Field.Root>
+
+                    {/* ⚡️ NEW: Interactive Tag/Chip Input for Artists Array */}
                     <Field.Root>
-                      <Field.Label fontWeight="bold" color="gray.700">Artist</Field.Label>
-                      <Input value={meta.artist} onChange={(e) => handleMetaChange('artist', e.target.value)} color="gray.800" />
+                      <Field.Label fontWeight="bold" color="gray.700">Artists</Field.Label>
+                      <Flex 
+                        wrap="wrap" gap={2} p={2} w="100%" minH="40px"
+                        borderWidth="1px" borderRadius="md" borderColor="gray.200" 
+                        bg="white" alignItems="center"
+                        _focusWithin={{ borderColor: "blue.500", boxShadow: "0 0 0 1px var(--chakra-colors-blue-500)" }}
+                      >
+                        {(meta.artists || []).map((artist: string, idx: number) => (
+                          <Badge key={idx} colorPalette="blue" variant="subtle" size="md" display="flex" alignItems="center" gap={1}>
+                            {artist}
+                            <Icon 
+                              as={XCircle} boxSize="14px" cursor="pointer" 
+                              onClick={() => {
+                                const newArtists = [...(meta.artists || [])];
+                                newArtists.splice(idx, 1);
+                                handleMetaChange('artists', newArtists);
+                              }} 
+                            />
+                          </Badge>
+                        ))}
+                      <Input
+                          border="none"
+                          bg="transparent"
+                          _focus={{ outline: "none", boxShadow: "none" }}
+                          
+                          placeholder={meta.artists?.length ? "" : "Add artist..."}
+                          minW="100px"
+                          flex="1"
+                          color="gray.800"
+                          px={1}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ',') {
+                              e.preventDefault();
+                              const val = e.currentTarget.value.trim();
+                              if (val) {
+                                const newArtists = [...(meta.artists || []), val];
+                                handleMetaChange('artists', newArtists);
+                                e.currentTarget.value = '';
+                              }
+                            }
+                          }}
+                        />
+                      </Flex>
                     </Field.Root>
+
                     <Field.Root>
                       <Field.Label fontWeight="bold" color="gray.700">Album</Field.Label>
                       <Input value={meta.album} onChange={(e) => handleMetaChange('album', e.target.value)} color="gray.800" />

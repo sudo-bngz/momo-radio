@@ -21,7 +21,7 @@ func NewStatsHandler(db *gorm.DB) *StatsHandler {
 }
 
 func (h *StatsHandler) GetStats(c *gin.Context) {
-	// ⚡️ 1. Extract the Organization ID securely from the Gin Context
+	// 1. Extract the Organization ID securely from the Gin Context
 	orgIDRaw, exists := c.Get("organizationID")
 	if !exists {
 		// If this triggers, it means the route isn't protected by the middleware!
@@ -68,12 +68,25 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 
 	// Filter stream state by Tenant
 	if err := h.db.Where("organization_id = ?", orgID).Order("updated_at DESC").First(&streamState).Error; err == nil {
-		h.db.Preload("Artist").Preload("Album").Where("organization_id = ?", orgID).First(&currentTrack, streamState.TrackID)
+		// CHANGED: Preload "Artists" instead of "Artist"
+		h.db.Preload("Artists").Preload("Album").Where("organization_id = ?", orgID).First(&currentTrack, streamState.TrackID)
+	}
+
+	// ⚡️ Format the multiple artists into a single string for the Dashboard UI
+	var artistNames []string
+	for _, a := range currentTrack.Artists {
+		artistNames = append(artistNames, a.Name)
+	}
+	artistStr := "Unknown Artist"
+	if len(artistNames) > 0 {
+		artistStr = strings.Join(artistNames, ", ")
 	}
 
 	// 5. Fetch Recent Tracks (History)
 	var recentTracks []models.Track
-	h.db.Table("tracks").
+	// ⚡️ CHANGED: Use Model() and Preload("Artists") so history items contain the new artist arrays
+	h.db.Model(&models.Track{}).
+		Preload("Artists").
 		Joins("JOIN play_histories ON play_histories.track_id = tracks.id").
 		Where("tracks.organization_id = ?", orgID). // Filter history by Tenant
 		Order("play_histories.played_at DESC").
@@ -90,7 +103,7 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 		},
 		"now_playing": gin.H{
 			"title":         currentTrack.Title,
-			"artist":        currentTrack.Artist,
+			"artist":        artistStr, // ⚡️ Pushed the joined string here
 			"playlist_name": activeShowName,
 			"starts_at":     streamState.UpdatedAt,
 			"ends_at":       streamState.UpdatedAt.Add(time.Duration(currentTrack.Duration) * time.Second),

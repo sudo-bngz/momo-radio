@@ -19,6 +19,7 @@ import (
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
 
 	"github.com/dhowden/tag"
 	"github.com/gin-gonic/gin"
@@ -89,17 +90,20 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 	}
 
 	// 1. Build the base query, PRELOAD, and ⚡️ SCOPE TO TENANT
+	// Changed "Artist" to "Artists" for Many-to-Many
 	query := h.db.Model(&models.Track{}).
-		Preload("Artist").
+		Preload("Artists").
 		Preload("Album").
 		Where("tracks.organization_id = ?", orgID)
 
 	// 2. Apply Search
+	// Safely search Many-to-Many using EXISTS to prevent duplicate row counts
 	if search != "" {
 		searchTerm := "%" + search + "%"
-		query = query.
-			Joins("LEFT JOIN artists ON artists.id = tracks.artist_id").
-			Where("(artists.name ILIKE ? OR tracks.title ILIKE ?)", searchTerm, searchTerm)
+		query = query.Where(
+			"tracks.title ILIKE ? OR EXISTS (SELECT 1 FROM track_artists ta JOIN artists a ON a.id = ta.artist_id WHERE ta.track_id = tracks.id AND a.name ILIKE ?)",
+			searchTerm, searchTerm,
+		)
 	}
 
 	// 3. Get Total Count
@@ -128,9 +132,14 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 
 	var libraryTracks []LibraryTrack
 	for _, t := range tracks {
-		artistName := "Unknown Artist"
-		if t.Artist.Name != "" {
-			artistName = t.Artist.Name
+		// Join multiple artists together into a single string for the UI
+		var artistNames []string
+		for _, a := range t.Artists {
+			artistNames = append(artistNames, a.Name)
+		}
+		artistStr := "Unknown Artist"
+		if len(artistNames) > 0 {
+			artistStr = strings.Join(artistNames, ", ")
 		}
 
 		var coverURL string
@@ -141,7 +150,7 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		libraryTracks = append(libraryTracks, LibraryTrack{
 			ID:         t.ID,
 			Title:      t.Title,
-			Artist:     artistName,
+			Artist:     artistStr, // Pushed the joined string here
 			Album:      t.Album.Title,
 			Duration:   t.Duration,
 			CoverURL:   coverURL,
@@ -178,8 +187,8 @@ func (h *TrackHandler) GetTrack(c *gin.Context) {
 	id := c.Param("id")
 	var track models.Track
 
-	// ⚡️ Scope to Tenant
-	if err := h.db.Preload("Artist").Preload("Album").Where("organization_id = ?", orgID).First(&track, id).Error; err != nil {
+	// Scope to Tenant and Preload Artists array
+	if err := h.db.Preload("Artists").Preload("Album").Where("organization_id = ?", orgID).First(&track, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
 			return
@@ -227,7 +236,7 @@ func (h *TrackHandler) UpdateTrack(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Track updated successfully"})
 }
 
-// PreAnalyzeFile (No changes needed here as it doesn't touch the DB)
+// PreAnalyzeFile extracts local ID3 tags and splits the artist string
 func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -247,13 +256,13 @@ func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"filename": fileHeader.Filename,
 			"title":    fileHeader.Filename,
+			"artists":  []string{"Unknown Artist"},
 		})
 		return
 	}
 
 	var coverBase64 string
 	if pic := metadata.Picture(); pic != nil {
-		fmt.Println("titi")
 		coverBase64 = fmt.Sprintf("data:%s;base64,%s", pic.MIMEType, base64.StdEncoding.EncodeToString(pic.Data))
 	}
 
@@ -266,7 +275,7 @@ func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 		"filename":     fileHeader.Filename,
 		"format":       string(metadata.Format()),
 		"title":        metadata.Title(),
-		"artist":       metadata.Artist(),
+		"artists":      utils.SplitArtistFallback(metadata.Artist()),
 		"album":        metadata.Album(),
 		"genre":        metadata.Genre(),
 		"year":         yearStr,
@@ -349,7 +358,8 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		return
 	}
 
-	// 6. ⚡️ Resolve Artist (Scoped to Organization)
+	// 6. ⚡️ Resolve Initial Artist (Scoped to Organization)
+	// The pipeline worker will refine this later, but we need an initial record
 	artistName := strings.TrimSpace(c.PostForm("artist"))
 	if artistName == "" {
 		artistName = "Unknown Artist"
@@ -358,7 +368,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	h.db.Where("name = ? AND organization_id = ?", artistName, orgID).
 		FirstOrCreate(&artist, models.Artist{Name: artistName, OrganizationID: orgID})
 
-	// 7. ⚡️ Resolve Album (Scoped to Organization)
+	// 7. Resolve Album (Scoped to Organization)
 	albumTitle := strings.TrimSpace(c.PostForm("album"))
 	var album models.Album
 	var albumIDPtr *uint
@@ -408,11 +418,11 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		albumIDPtr = &album.ID
 	}
 
-	// 8. ⚡️ Create Track DB Row (Scoped to Organization)
+	// 8. Create Track DB Row using Many-to-Many Array
 	newTrack := models.Track{
-		OrganizationID:     orgID, // Bind it to the tenant!
+		OrganizationID:     orgID,
 		Title:              c.PostForm("title"),
-		ArtistID:           artist.ID,
+		Artists:            []models.Artist{artist}, // Assigned via array now!
 		AlbumID:            albumIDPtr,
 		Genre:              c.PostForm("genre"),
 		Key:                b2Key,

@@ -146,8 +146,16 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 
   if (!isOpen && !track) return null;
 
-  // SAFELY RESOLVE RELATIONAL DATA
-  const artistName = fullTrack?.artist?.name || (typeof fullTrack?.artist === 'string' ? fullTrack.artist : track?.artist) || '';
+  // ⚡️ SAFELY EXTRACT MULTIPLE ARTISTS
+  let artistList: string[] = [];
+  if (fullTrack?.artists && Array.isArray(fullTrack.artists)) {
+    artistList = fullTrack.artists.map((a: any) => a.name);
+  } else if (typeof fullTrack?.artist === 'string' && fullTrack.artist) {
+    artistList = fullTrack.artist.split(',').map((s: string) => s.trim());
+  } else if (typeof track?.artist === 'string' && track.artist) {
+    artistList = track.artist.split(',').map((s: string) => s.trim());
+  }
+
   const albumTitle = fullTrack?.album?.title || (typeof fullTrack?.album === 'string' ? fullTrack.album : track?.album) || '';
   const coverURL = fullTrack?.cover_url || fullTrack?.album?.cover_url || track?.cover_url;
 
@@ -189,40 +197,42 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
           <Flex justify="space-between" align="start" mb={6}>
             <HStack gap={4}>
               <Flex 
-                align="center" 
-                justify="center" 
-                w="56px" 
-                h="56px" 
-                bg="gray.100" 
-                borderRadius="md" 
-                overflow="hidden" 
-                border="1px solid" 
-                borderColor="gray.200"
-                flexShrink={0}
+                align="center" justify="center" w="56px" h="56px" 
+                bg="gray.100" borderRadius="md" overflow="hidden" 
+                border="1px solid" borderColor="gray.200" flexShrink={0}
               >
                 {coverURL ? (
-                  <img 
-                    src={coverURL} 
-                    alt="Cover" 
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                  />
+                  <img src={coverURL} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <Icon as={Music} boxSize={6} color="gray.400" />
                 )}
               </Flex>
               <VStack align="start" gap={0}>
                 <Text fontSize="lg" fontWeight="bold" color="gray.900">{fullTrack?.title || track?.title}</Text>
-                <Text 
-                  fontSize="sm" 
-                  color="blue.600" 
-                  cursor={artistName ? "pointer" : "default"}
-                  _hover={artistName ? { textDecoration: "underline" } : {}}
-                  onClick={() => {
-                    if (artistName) handleNavigate(`/artists/${encodeURIComponent(artistName)}`);
-                  }}
-                >
-                  {artistName}
-              </Text>
+                
+                {/* ⚡️ MULTI-ARTIST HEADER LINKS */}
+                <HStack gap={1} flexWrap="wrap">
+                  {artistList.length > 0 ? (
+                    artistList.map((artist, idx) => (
+                      <React.Fragment key={idx}>
+                        <Text 
+                          fontSize="sm" color="blue.600" cursor="pointer"
+                          _hover={{ textDecoration: "underline" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNavigate(`/artists/${encodeURIComponent(artist)}`);
+                          }}
+                        >
+                          {artist}
+                        </Text>
+                        {idx < artistList.length - 1 && <Text fontSize="sm" color="gray.500">, </Text>}
+                      </React.Fragment>
+                    ))
+                  ) : (
+                    <Text fontSize="sm" color="gray.400">Unknown Artist</Text>
+                  )}
+                </HStack>
+
               </VStack>
             </HStack>
             <IconButton aria-label="Close" variant="ghost" size="sm" color="gray.500" onClick={onClose}>
@@ -257,13 +267,15 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
               <Box display={activeTab === 'Details' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <EditableField label="Title" name="title" value={fullTrack?.title} isEditing={isEditing} />
-                  <EditableField 
+                  
+                  {/* ⚡️ MULTI-ARTIST DETAIL COMPONENT */}
+                  <MultiArtistEditableField 
                     label="Artist(s)" 
-                    name="artist" 
-                    value={artistName} 
+                    artists={artistList} 
                     isEditing={isEditing} 
-                    onLinkClick={() => handleNavigate(`/artists/${encodeURIComponent(artistName)}`)}
+                    onNavigate={(artist: string) => handleNavigate(`/artists/${encodeURIComponent(artist)}`)}
                   />
+
                   <EditableField label="Recording Year" name="year" value={fullTrack?.album?.year || fullTrack?.year} isEditing={isEditing} />
                 </VStack>
               </Box>
@@ -272,18 +284,12 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
               <Box display={activeTab === 'Album' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <EditableField 
-                    label="Album Name" 
-                    name="album" 
-                    value={albumTitle} 
-                    isEditing={isEditing} 
+                    label="Album Name" name="album" value={albumTitle} isEditing={isEditing} 
                     placeholder="Original Mix / EP Name" 
                     onLinkClick={() => handleNavigate(`/albums/${encodeURIComponent(albumTitle)}`)}
                   />
                   <EditableField 
-                    label="Publisher/Label" 
-                    name="publisher" 
-                    value={fullTrack?.album?.publisher} 
-                    isEditing={isEditing} 
+                    label="Publisher/Label" name="publisher" value={fullTrack?.album?.publisher} isEditing={isEditing} 
                     placeholder="e.g. Warp Records" 
                     onLinkClick={() => handleNavigate(`/labels/${encodeURIComponent(fullTrack?.album?.publisher)}`)}
                   />
@@ -301,10 +307,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                         <StyledInput name="genre" value={genreInput} onChange={(e: any) => setGenreInput(e.target.value)} placeholder="Comma separated genres" />
                       )}
                       {!isEditing && <input type="hidden" name="genre" value={genreInput} />}
-                      <TagDisplay 
-                        rawString={genreInput} 
-                        onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)}
-                      />
+                      <TagDisplay rawString={genreInput} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
                     </Box>
                   </FormRow>
 
@@ -314,10 +317,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                         <StyledInput name="style" value={styleInput} onChange={(e: any) => setStyleInput(e.target.value)} placeholder="e.g. Minimal, Deep Tech" />
                       )}
                       {!isEditing && <input type="hidden" name="style" value={styleInput} />}
-                      <TagDisplay 
-                        rawString={styleInput} 
-                        onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)}
-                      />
+                      <TagDisplay rawString={styleInput} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
                     </Box>
                   </FormRow>
                 </VStack>
@@ -327,40 +327,21 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
               <Box display={activeTab === 'Acoustics' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
-                    <Flex bg="blue.100" p={3} borderRadius="full">
-                      <Icon as={Activity} boxSize={5} color="blue.600" />
-                    </Flex>
+                    <Flex bg="blue.100" p={3} borderRadius="full"><Icon as={Activity} boxSize={5} color="blue.600" /></Flex>
                     <VStack align="start" gap={0}>
                       <Text fontSize="sm" fontWeight="600" color="gray.900">Acoustic Analysis</Text>
                       <Text fontSize="xs" color="gray.500">Calculated during ingestion.</Text>
                     </VStack>
                   </HStack>
 
-                  <FormRow label="BPM">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">{displayBPM}</Text>
-                  </FormRow>
-
-                  <FormRow label="Musical Key">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">{displayKey}</Text>
-                  </FormRow>
-
-                  <FormRow label="Duration">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">{displayDuration}</Text>
-                  </FormRow>
+                  <FormRow label="BPM"><Text fontSize="sm" fontWeight="600" color="gray.900">{displayBPM}</Text></FormRow>
+                  <FormRow label="Musical Key"><Text fontSize="sm" fontWeight="600" color="gray.900">{displayKey}</Text></FormRow>
+                  <FormRow label="Duration"><Text fontSize="sm" fontWeight="600" color="gray.900">{displayDuration}</Text></FormRow>
 
                   <Box borderTop="1px dashed" borderColor="gray.200" my={2} />
 
-                  <FormRow label="Danceability">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">
-                      {fullTrack?.danceability ? fullTrack.danceability.toFixed(2) : '-'}
-                    </Text>
-                  </FormRow>
-
-                  <FormRow label="Loudness">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">
-                      {fullTrack?.loudness ? `${fullTrack.loudness.toFixed(1)} dB` : '-'}
-                    </Text>
-                  </FormRow>
+                  <FormRow label="Danceability"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.danceability ? fullTrack.danceability.toFixed(2) : '-'}</Text></FormRow>
+                  <FormRow label="Loudness"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.loudness ? `${fullTrack.loudness.toFixed(1)} dB` : '-'}</Text></FormRow>
                 </VStack>
               </Box>
 
@@ -368,28 +349,16 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
               <Box display={activeTab === 'File' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
-                    <Flex bg="blue.100" p={3} borderRadius="full">
-                      <Icon as={HardDrive} boxSize={5} color="blue.600" />
-                    </Flex>
+                    <Flex bg="blue.100" p={3} borderRadius="full"><Icon as={HardDrive} boxSize={5} color="blue.600" /></Flex>
                     <VStack align="start" gap={0}>
                       <Text fontSize="sm" fontWeight="600" color="gray.900">Audio File Specs</Text>
                       <Text fontSize="xs" color="gray.500">Extracted securely during ingestion.</Text>
                     </VStack>
                   </HStack>
                   
-                  <FormRow label="Format">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900" textTransform="uppercase">{fullTrack?.format || '-'}</Text>
-                  </FormRow>
-
-                  <FormRow label="File Size">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">{formatBytes(fullTrack?.file_size)}</Text>
-                  </FormRow>
-
-                  <FormRow label="Bitrate">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">
-                      {fullTrack?.bitrate ? `${Math.round(fullTrack.bitrate / 1000)} kbps` : '-'}
-                    </Text>
-                  </FormRow>
+                  <FormRow label="Format"><Text fontSize="sm" fontWeight="600" color="gray.900" textTransform="uppercase">{fullTrack?.format || '-'}</Text></FormRow>
+                  <FormRow label="File Size"><Text fontSize="sm" fontWeight="600" color="gray.900">{formatBytes(fullTrack?.file_size)}</Text></FormRow>
+                  <FormRow label="Bitrate"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.bitrate ? `${Math.round(fullTrack.bitrate / 1000)} kbps` : '-'}</Text></FormRow>
                 </VStack>
               </Box>
 
@@ -397,22 +366,15 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
               <Box display={activeTab === 'Radio' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
-                    <Flex bg="blue.100" p={3} borderRadius="full">
-                      <Icon as={Radio} boxSize={5} color="blue.600" />
-                    </Flex>
+                    <Flex bg="blue.100" p={3} borderRadius="full"><Icon as={Radio} boxSize={5} color="blue.600" /></Flex>
                     <VStack align="start" gap={0}>
                       <Text fontSize="sm" fontWeight="600" color="gray.900">Broadcasting Stats</Text>
                       <Text fontSize="xs" color="gray.500">Auto-generated by the radio engine.</Text>
                     </VStack>
                   </HStack>
                   
-                  <FormRow label="Play Count">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.play_count || 0}</Text>
-                  </FormRow>
-                  
-                  <FormRow label="Last Played">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900">{lastPlayedDate}</Text>
-                  </FormRow>
+                  <FormRow label="Play Count"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.play_count || 0}</Text></FormRow>
+                  <FormRow label="Last Played"><Text fontSize="sm" fontWeight="600" color="gray.900">{lastPlayedDate}</Text></FormRow>
                 </VStack>
               </Box>
             </>
@@ -429,14 +391,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
             {!isEditing ? (
               <>
                 <Button variant="ghost" color="gray.600" onClick={onClose}>Close</Button>
-                <Button 
-                  bg="white" 
-                  color="gray.900" 
-                  border="1px solid" 
-                  borderColor="gray.200" 
-                  _hover={{ bg: "gray.50" }} 
-                  onClick={(e) => { e.preventDefault(); setIsEditing(true); }} 
-                >
+                <Button bg="white" color="gray.900" border="1px solid" borderColor="gray.200" _hover={{ bg: "gray.50" }} onClick={(e) => { e.preventDefault(); setIsEditing(true); }}>
                   <Icon as={Edit2} boxSize={4} mr={2} />
                   Edit Metadata
                 </Button>
@@ -477,28 +432,58 @@ const StyledInput = (props: any) => (
 
 const EditableField = ({ label, name, value, isEditing, placeholder = '', onLinkClick }: any) => {
   const isClickable = !isEditing && onLinkClick && value;
-
   return (
     <FormRow label={label}>
       {isEditing ? (
         <StyledInput name={name} defaultValue={value || ''} placeholder={placeholder} />
       ) : (
         <Text 
-          fontSize="sm" 
-          fontWeight="600" 
+          fontSize="sm" fontWeight="600" h="38px" display="flex" alignItems="center"
           color={value ? (isClickable ? "blue.600" : "gray.900") : "gray.400"} 
-          h="38px" 
-          display="flex" 
-          alignItems="center"
           cursor={isClickable ? "pointer" : "default"}
           _hover={isClickable ? { textDecoration: "underline" } : {}}
-          onClick={() => {
-            if (isClickable) onLinkClick();
-          }}
+          onClick={() => { if (isClickable) onLinkClick(); }}
         >
           {value || '-'}
           <input type="hidden" name={name} value={value || ''} />
         </Text>
+      )}
+    </FormRow>
+  );
+};
+
+const MultiArtistEditableField = ({ label, artists, isEditing, onNavigate }: any) => {
+  return (
+    <FormRow label={label}>
+      {isEditing ? (
+        // Disabled during edit mode because the backend requires an array upload for Artists
+        <StyledInput 
+          name="artist_placeholder" 
+          defaultValue={artists.join(', ')} 
+          readOnly 
+          bg="gray.50" 
+          color="gray.500" 
+          title="Artist relationships must be edited via the Re-Ingest flow." 
+        />
+      ) : (
+        <HStack gap={1} flexWrap="wrap" minH="38px" alignItems="center">
+          {artists.length > 0 ? (
+            artists.map((artist: string, idx: number) => (
+              <React.Fragment key={idx}>
+                <Text
+                  fontSize="sm" fontWeight="600" color="blue.600" cursor="pointer"
+                  _hover={{ textDecoration: "underline" }}
+                  onClick={() => onNavigate(artist)}
+                >
+                  {artist}
+                </Text>
+                {idx < artists.length - 1 && <Text fontSize="sm" fontWeight="600" color="gray.900">, </Text>}
+              </React.Fragment>
+            ))
+          ) : (
+            <Text fontSize="sm" fontWeight="600" color="gray.400">-</Text>
+          )}
+        </HStack>
       )}
     </FormRow>
   );
@@ -516,13 +501,9 @@ const TagDisplay = ({ rawString, colorScheme = "blue", onTagClick }: any) => {
     <HStack flexWrap="wrap" gap={2} my={2}>
       {tags.map((tag: string, index: number) => (
         <Box 
-          key={index} 
-          px={2.5} py={1} 
-          bg={bg} color={color} 
-          fontSize="xs" fontWeight="600" 
-          borderRadius="md" border="1px solid" borderColor={border}
-          cursor={onTagClick ? "pointer" : "default"}
-          transition="all 0.2s"
+          key={index} px={2.5} py={1} bg={bg} color={color} 
+          fontSize="xs" fontWeight="600" borderRadius="md" border="1px solid" borderColor={border}
+          cursor={onTagClick ? "pointer" : "default"} transition="all 0.2s"
           _hover={onTagClick ? { transform: "translateY(-1px)", shadow: "sm", opacity: 0.8 } : {}}
           onClick={() => onTagClick && onTagClick(tag)}
         >

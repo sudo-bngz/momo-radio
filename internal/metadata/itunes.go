@@ -3,10 +3,11 @@ package metadata
 import (
 	"encoding/json"
 	"fmt"
-	"momo-radio/internal/utils"
 	"net/http"
 	"net/url"
 	"time"
+
+	"momo-radio/internal/utils"
 )
 
 // EnrichViaITunes fetches metadata from iTunes (Good for Artist/Title/Year)
@@ -59,10 +60,10 @@ func EnrichViaITunes(filename string) (Track, error) {
 	}
 
 	return Track{
-		Artist: item.ArtistName,
-		Title:  item.TrackName,
-		Album:  item.CollectionName,
-		Genre:  item.PrimaryGenreName,
-		Year:   year,
+		Artists: utils.SplitArtistFallback(item.ArtistName),
+		Title:   item.TrackName,
+		Album:   item.CollectionName,
+		Genre:   item.PrimaryGenreName,
+		Year:    year,
 	}, nil
 }

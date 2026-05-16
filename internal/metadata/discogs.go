@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"momo-radio/internal/utils"
 )
 
 func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) {
@@ -79,7 +81,6 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		Artists []struct {
 			Name string `json:"name"`
 		} `json:"artists"`
-		// ⚡️ ADDED ONLY THIS:
 		Images []struct {
 			ResourceURL string `json:"resource_url"`
 			Type        string `json:"type"`
@@ -109,13 +110,24 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		yearStr = v
 	}
 
-	finalArtist := artist
+	var finalArtists []string
 	if len(release.Artists) > 0 {
-		name := release.Artists[0].Name
-		if idx := strings.Index(name, " ("); idx != -1 {
-			name = name[:idx]
+		for _, a := range release.Artists {
+			name := a.Name
+			// Discogs often appends " (1)" to artist names to resolve duplicates. We strip it.
+			if idx := strings.Index(name, " ("); idx != -1 {
+				name = name[:idx]
+			}
+			name = strings.TrimSpace(name)
+			if name != "" {
+				finalArtists = append(finalArtists, name)
+			}
 		}
-		finalArtist = name
+	}
+
+	// Fallback to our Regex split if Discogs didn't return artist data
+	if len(finalArtists) == 0 {
+		finalArtists = utils.SplitArtistFallback(artist)
 	}
 
 	publisher := ""
@@ -125,11 +137,16 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		catNo = release.Labels[0].Catno
 	}
 
+	genre := ""
+	if len(release.Genres) > 0 {
+		genre = release.Genres[0]
+	}
+
 	return Track{
-		Artist:        finalArtist,
+		Artists:       finalArtists, // ⚡️ Now maps to the array!
 		Title:         release.Title,
 		Year:          yearStr,
-		Genre:         release.Genres[0],
+		Genre:         genre,
 		Style:         strings.Join(release.Styles, ", "),
 		Publisher:     publisher,
 		Country:       release.Country,
