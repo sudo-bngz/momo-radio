@@ -16,7 +16,6 @@ import (
 type DatabaseSaveStep struct{}
 
 func (s *DatabaseSaveStep) Name() string { return "saving" }
-
 func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	db := ctx.Worker.db.DB
 	track := ctx.Track
@@ -31,6 +30,7 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	db.Model(track).Association("Artists").Clear()
 
 	// 2. Find/Create & Append Multiple Artists
+	var trackArtists []models.Artist // Keep track of the resolved artist structs
 	for _, name := range meta.Artists {
 		var artist models.Artist
 		db.Where(models.Artist{Name: name, OrganizationID: track.OrganizationID}).
@@ -41,21 +41,21 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 			db.Model(&artist).Update("ArtistCountry", meta.Country)
 		}
 
+		trackArtists = append(trackArtists, artist)
 		track.Artists = append(track.Artists, artist)
 	}
 
-	// 3. Setup Album using the Primary Artist (first artist in array)
+	// 3. Setup Album using the newly resolved Artists
 	var albumID *uint
-	if meta.Album != "" && len(track.Artists) > 0 {
+	if meta.Album != "" && len(trackArtists) > 0 {
 		var album models.Album
-		primaryArtistID := track.Artists[0].ID
 
-		err := db.Where(models.Album{Title: meta.Album, ArtistID: primaryArtistID, OrganizationID: track.OrganizationID}).First(&album).Error
+		// ⚡️ FIXED: Removed ArtistID. Query by Title and Organization only.
+		err := db.Where(models.Album{Title: meta.Album, OrganizationID: track.OrganizationID}).First(&album).Error
 
 		if err == gorm.ErrRecordNotFound {
 			album = models.Album{
 				Title:          meta.Album,
-				ArtistID:       primaryArtistID,
 				OrganizationID: track.OrganizationID,
 				Year:           meta.Year,
 				Publisher:      meta.Publisher,
@@ -79,6 +79,9 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 				db.Model(&album).Updates(updates)
 			}
 		}
+
+		db.Model(&album).Association("Artists").Append(trackArtists)
+
 		albumID = &album.ID
 
 		// 4. Handle Cover Art

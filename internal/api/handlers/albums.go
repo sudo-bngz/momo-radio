@@ -13,10 +13,10 @@ import (
 // AlbumHandler handles album-related requests
 type AlbumHandler struct {
 	db      *gorm.DB
-	storage *storage.Client // Keep storage in case you add album cover art later!
+	storage *storage.Client
 }
 
-// NewAlbumHandler creates a new AlbumHandler instance with its required dependencies
+// NewAlbumHandler creates a new AlbumHandler instance
 func NewAlbumHandler(db *gorm.DB) *AlbumHandler {
 	return &AlbumHandler{
 		db: db,
@@ -36,7 +36,6 @@ type LibraryAlbum struct {
 
 // GetAlbums returns a list of all albums scoped by Tenant
 func (h *AlbumHandler) GetAlbums(c *gin.Context) {
-	// 1. Extract Tenant ID using the helper from track.go
 	orgID, ok := getOrgID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
@@ -45,8 +44,7 @@ func (h *AlbumHandler) GetAlbums(c *gin.Context) {
 
 	var albums []models.Album
 
-	// ⚡️ 2. Scope to Tenant
-	if err := h.db.Preload("Artist").Where("organization_id = ?", orgID).Order("title ASC").Find(&albums).Error; err != nil {
+	if err := h.db.Preload("Artists").Where("organization_id = ?", orgID).Order("title ASC").Find(&albums).Error; err != nil {
 		slog.Error("Failed to fetch albums", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
@@ -57,7 +55,6 @@ func (h *AlbumHandler) GetAlbums(c *gin.Context) {
 
 // GetAlbumByID returns an album, its artist, and its tracklist scoped by Tenant
 func (h *AlbumHandler) GetAlbumByID(c *gin.Context) {
-	// ⚡️ 1. Extract Tenant ID
 	orgID, ok := getOrgID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
@@ -67,10 +64,10 @@ func (h *AlbumHandler) GetAlbumByID(c *gin.Context) {
 	albumID := c.Param("id")
 	var album models.Album
 
-	// 2. Scope to Tenant
 	err := h.db.
-		Preload("Artist").
+		Preload("Artists").
 		Preload("Tracks").
+		Preload("Tracks.Artists").
 		Where("organization_id = ?", orgID).
 		First(&album, albumID).Error
 

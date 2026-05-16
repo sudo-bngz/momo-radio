@@ -81,12 +81,11 @@ func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
 	h.db.Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 		Where("playlist_tracks.playlist_id = ?", id).
 		Order("playlist_tracks.sort_order ASC").
-		Preload("Artist").
+		Preload("Artists"). // ⚡️ FIXED: Pluralized to match new Many2Many relation
 		Preload("Album").
 		Find(&orderedTracks)
 
 	for i := range orderedTracks {
-		// ⚡️ FIXED: Check if the Album ID is not 0 (meaning an album actually exists)
 		if orderedTracks[i].Album.ID != 0 && orderedTracks[i].Album.CoverKey != "" {
 			orderedTracks[i].Album.CoverURL = h.storage.GetPublicURL(orderedTracks[i].Album.CoverKey)
 		}
@@ -109,7 +108,7 @@ func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	// ⚡️ Scope to Tenant
 	result := h.db.
 		Preload("Tracks").
-		Preload("Tracks.Artist").
+		Preload("Tracks.Artists"). // ⚡️ FIXED: Pluralized to match new Many2Many relation
 		Preload("Tracks.Album").
 		Where("organization_id = ?", orgID).
 		Order("name asc").
@@ -131,7 +130,6 @@ func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 		}
 	}
 
-	// Ensure we don't return null
 	if playlists == nil {
 		playlists = []models.Playlist{}
 	}
@@ -168,7 +166,6 @@ func (h *PlaylistHandler) UpdatePlaylist(c *gin.Context) {
 
 	var playlist models.Playlist
 
-	// ⚡️ Scope to Tenant
 	if err := h.db.Where("organization_id = ?", orgID).First(&playlist, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
 		return
@@ -214,7 +211,6 @@ func (h *PlaylistHandler) UpdatePlaylistTracks(c *gin.Context) {
 		return
 	}
 
-	// Verify the playlist actually belongs to this Tenant before modifying it
 	var playlist models.Playlist
 	if err := h.db.Where("id = ? AND organization_id = ?", playlistID, orgID).First(&playlist).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
@@ -224,17 +220,14 @@ func (h *PlaylistHandler) UpdatePlaylistTracks(c *gin.Context) {
 	var totalDuration int
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		// 1. Remove existing associations
 		if err := tx.Where("playlist_id = ?", playlistID).Delete(&models.PlaylistTrack{}).Error; err != nil {
 			return err
 		}
 
-		// 2. Insert new associations and calculate duration
 		for i, trackID := range input.TrackIDs {
-			// Verify the track belongs to this Tenant so users can't inject other stations' tracks
 			var t models.Track
 			if err := tx.Where("id = ? AND organization_id = ?", trackID, orgID).First(&t).Error; err != nil {
-				return err // Rollback if an invalid/unowned track is found
+				return err
 			}
 
 			assoc := models.PlaylistTrack{
@@ -249,7 +242,6 @@ func (h *PlaylistHandler) UpdatePlaylistTracks(c *gin.Context) {
 			totalDuration += int(t.Duration)
 		}
 
-		// 3. Update Playlist metadata
 		return tx.Model(&models.Playlist{}).Where("id = ?", playlistID).Update("total_duration", totalDuration).Error
 	})
 
@@ -279,7 +271,6 @@ func (h *PlaylistHandler) DeletePlaylist(c *gin.Context) {
 		return
 	}
 
-	// ⚡️ Verify the playlist belongs to the Tenant
 	var playlist models.Playlist
 	if err := h.db.Where("id = ? AND organization_id = ?", id, orgID).First(&playlist).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})

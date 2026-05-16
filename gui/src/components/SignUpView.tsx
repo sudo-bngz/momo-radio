@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { Box, Button, Flex, Input, Text, VStack, Heading, Separator, AbsoluteCenter, Image } from '@chakra-ui/react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { supabase } from '../services/client';
 
 // SVG Assets for the Social Buttons
 import googleLogo from '../assets/google-logo.svg';
 
 export const SignupView = () => {
-  const navigate = useNavigate();
   
   // Form State
   const [email, setEmail] = useState('');

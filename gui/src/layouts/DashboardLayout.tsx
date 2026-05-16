@@ -2,6 +2,7 @@ import { Flex, Box } from "@chakra-ui/react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/hydra/Sidebar";
 import { TopNav } from "../components/TopNavbar";
+import { TopSearchBar } from "../layouts/TopSearchBar"
 import { GlobalPlayer } from "../features/player/GlobalPlayer";
 
 export const DashboardLayout = () => {
@@ -12,6 +13,7 @@ export const DashboardLayout = () => {
         <Sidebar /> 
         
         <Flex direction="column" flex="1" overflow="hidden" position="relative">
+          <TopSearchBar />
           <TopNav />
           <Box flex="1" px={8} pt={8} pb={0} overflowY="auto">
             <Outlet />

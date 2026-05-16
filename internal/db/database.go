@@ -57,6 +57,8 @@ func (c *Client) AutoMigrate() {
 		&models.Schedule{},
 		&models.ScheduleSlot{},
 		&models.StreamState{},
+		&models.Album{},
+		&models.Artist{},
 		&models.Track{},
 	)
 	if err != nil {

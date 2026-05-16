@@ -358,15 +358,34 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		return
 	}
 
-	// 6. ⚡️ Resolve Initial Artist (Scoped to Organization)
-	// The pipeline worker will refine this later, but we need an initial record
-	artistName := strings.TrimSpace(c.PostForm("artist"))
-	if artistName == "" {
-		artistName = "Unknown Artist"
+	// 6. Resolve MULTIPLE Artists (Scoped to Organization)
+	rawArtistStr := strings.TrimSpace(c.PostForm("artist"))
+	if rawArtistStr == "" {
+		rawArtistStr = "Unknown Artist"
 	}
-	var artist models.Artist
-	h.db.Where("name = ? AND organization_id = ?", artistName, orgID).
-		FirstOrCreate(&artist, models.Artist{Name: artistName, OrganizationID: orgID})
+
+	var trackArtists []models.Artist
+	artistNames := strings.Split(rawArtistStr, ",")
+
+	for _, name := range artistNames {
+		cleanName := strings.TrimSpace(name)
+		if cleanName == "" {
+			continue
+		}
+		var artist models.Artist
+		h.db.Where("name = ? AND organization_id = ?", cleanName, orgID).
+			FirstOrCreate(&artist, models.Artist{Name: cleanName, OrganizationID: orgID})
+
+		trackArtists = append(trackArtists, artist)
+	}
+
+	// Fallback if split was entirely empty
+	if len(trackArtists) == 0 {
+		var defaultArtist models.Artist
+		h.db.Where("name = ? AND organization_id = ?", "Unknown Artist", orgID).
+			FirstOrCreate(&defaultArtist, models.Artist{Name: "Unknown Artist", OrganizationID: orgID})
+		trackArtists = append(trackArtists, defaultArtist)
+	}
 
 	// 7. Resolve Album (Scoped to Organization)
 	albumTitle := strings.TrimSpace(c.PostForm("album"))
@@ -374,8 +393,10 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	var albumIDPtr *uint
 
 	if albumTitle != "" {
-		h.db.Where("title = ? AND artist_id = ? AND organization_id = ?", albumTitle, artist.ID, orgID).
-			FirstOrCreate(&album, models.Album{Title: albumTitle, ArtistID: artist.ID, OrganizationID: orgID})
+		h.db.Where("title = ? AND organization_id = ?", albumTitle, orgID).
+			FirstOrCreate(&album, models.Album{Title: albumTitle, OrganizationID: orgID})
+
+		h.db.Model(&album).Association("Artists").Append(trackArtists)
 
 		albumUpdates := map[string]any{}
 		if label := strings.TrimSpace(c.PostForm("label")); label != "" {
@@ -422,7 +443,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	newTrack := models.Track{
 		OrganizationID:     orgID,
 		Title:              c.PostForm("title"),
-		Artists:            []models.Artist{artist}, // Assigned via array now!
+		Artists:            trackArtists, // ⚡️ Passed the full array!
 		AlbumID:            albumIDPtr,
 		Genre:              c.PostForm("genre"),
 		Key:                b2Key,

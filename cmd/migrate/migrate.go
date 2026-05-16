@@ -2,9 +2,13 @@ package main
 
 import (
 	"log"
+	"strings"
+
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/models"
+
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -12,16 +16,15 @@ func main() {
 	dbClient := database.New(cfg)
 	db := dbClient.DB
 
-	log.Println("🚀 Starting Data Migration (Metadata Pass)...")
+	log.Println("🚀 Starting Data Migration (Many-to-Many Pass)...")
 
-	// 1. Ensure columns and tables exist
-	db.Exec("ALTER TABLE tracks ADD COLUMN IF NOT EXISTS artist_id bigint")
-	db.Exec("ALTER TABLE tracks ADD COLUMN IF NOT EXISTS album_id bigint")
-	db.AutoMigrate(&models.Artist{}, &models.Album{})
+	// 1. AutoMigrate will automatically build the new album_artists and track_artists join tables
+	db.AutoMigrate(&models.Artist{}, &models.Album{}, &models.Track{})
 
-	// 2. THE DATA TRANSFER (Fixed to include ALL metadata)
+	// 2. THE DATA TRANSFER
 	type LegacyTrack struct {
 		ID             uint
+		OrganizationID uuid.UUID // ⚡️ Required to scope entities properly
 		Artist         string
 		ArtistCountry  string
 		Album          string
@@ -32,32 +35,46 @@ func main() {
 	}
 
 	var legacyTracks []LegacyTrack
-	// ⚡️ FIXED: Selecting all the extended metadata fields
-	db.Raw("SELECT id, artist, artist_country, album, year, publisher, catalog_number, release_country FROM tracks").Scan(&legacyTracks)
+	// Fetch legacy data (ensure organization_id is included!)
+	db.Raw("SELECT id, organization_id, artist, artist_country, album, year, publisher, catalog_number, release_country FROM tracks").Scan(&legacyTracks)
 
 	log.Printf("Step 3: Processing %d tracks to populate extended metadata...", len(legacyTracks))
 
 	for _, lt := range legacyTracks {
-		if lt.Artist == "" {
-			lt.Artist = "Unknown Artist"
+		rawArtist := strings.TrimSpace(lt.Artist)
+		if rawArtist == "" {
+			rawArtist = "Unknown Artist"
 		}
 
-		// A. Find or Create the Artist
-		var artist models.Artist
-		db.Where(models.Artist{Name: lt.Artist}).FirstOrCreate(&artist)
+		// A. Split and Resolve Multiple Artists
+		artistNames := strings.Split(rawArtist, ",")
+		var resolvedArtists []models.Artist
 
-		// ⚡️ Safely update Artist Country (only if it's currently empty and we have new data)
-		if artist.ArtistCountry == "" && lt.ArtistCountry != "" {
-			db.Model(&artist).Update("artist_country", lt.ArtistCountry)
+		for _, name := range artistNames {
+			cleanName := strings.TrimSpace(name)
+			if cleanName == "" {
+				continue
+			}
+
+			var artist models.Artist
+			db.Where(models.Artist{Name: cleanName, OrganizationID: lt.OrganizationID}).
+				FirstOrCreate(&artist, models.Artist{Name: cleanName, OrganizationID: lt.OrganizationID})
+
+			// Safely update Artist Country
+			if artist.ArtistCountry == "" && lt.ArtistCountry != "" {
+				db.Model(&artist).Update("artist_country", lt.ArtistCountry)
+			}
+			resolvedArtists = append(resolvedArtists, artist)
 		}
 
-		// B. Find or Create the Album (if it exists)
+		// B. Find or Create the Album
 		var albumID *uint
 		if lt.Album != "" {
 			var album models.Album
-			db.Where(models.Album{Title: lt.Album, ArtistID: artist.ID}).FirstOrCreate(&album)
+			// Match on Title + Org (No ArtistID)
+			db.Where(models.Album{Title: lt.Album, OrganizationID: lt.OrganizationID}).
+				FirstOrCreate(&album, models.Album{Title: lt.Album, OrganizationID: lt.OrganizationID})
 
-			// ⚡️ Safely update Album metadata
 			albumUpdates := map[string]interface{}{}
 			if album.Year == "" && lt.Year != "" {
 				albumUpdates["year"] = lt.Year
@@ -76,19 +93,28 @@ func main() {
 				db.Model(&album).Updates(albumUpdates)
 			}
 
+			// ⚡️ Append Artists to the Album's Many-to-Many relation
+			db.Model(&album).Association("Artists").Append(resolvedArtists)
+
 			albumID = &album.ID
 		}
 
-		// C. Ensure the Track is linked
-		db.Table("tracks").Where("id = ?", lt.ID).Updates(map[string]interface{}{
-			"artist_id": artist.ID,
-			"album_id":  albumID,
-		})
+		// C. Link Everything to the Track
+		var track models.Track
+		if err := db.First(&track, lt.ID).Error; err == nil {
+			// ⚡️ Append Artists to Track Many-to-Many
+			db.Model(&track).Association("Artists").Append(resolvedArtists)
+
+			// ⚡️ Set the Album ID
+			db.Model(&track).Update("album_id", albumID)
+		}
 	}
 
-	// 4. Finalize the constraints
-	log.Println("Step 4: Enforcing NOT NULL constraints...")
-	db.Exec("ALTER TABLE tracks ALTER COLUMN artist_id SET NOT NULL")
+	// 4. CLEANUP (Optional but recommended)
+	log.Println("Step 4: Cleaning up legacy columns...")
+	// These drop the old singular artist_id columns so your schema matches your Go structs perfectly
+	db.Exec("ALTER TABLE tracks DROP COLUMN IF EXISTS artist_id")
+	db.Exec("ALTER TABLE albums DROP COLUMN IF EXISTS artist_id")
 
-	log.Println("✨ Metadata Migration Successful! All fields are now populated.")
+	log.Println("✨ Metadata Migration Successful! All fields are now using Many-to-Many relations.")
 }

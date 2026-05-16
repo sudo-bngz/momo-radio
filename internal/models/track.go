@@ -17,7 +17,7 @@ type Artist struct {
 	ArtistCountry string `gorm:"size:100" json:"artist_country"`
 
 	// Relationships
-	Albums []Album `json:"albums,omitempty"`
+	Albums []Album `gorm:"many2many:album_artists;" json:"albums,omitempty"`
 	Tracks []Track `gorm:"many2many:track_artists;" json:"tracks,omitempty"`
 }
 
@@ -27,8 +27,6 @@ type Album struct {
 	ID         uint `gorm:"primarykey" json:"id"`
 
 	OrganizationID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_org_album_title" json:"organization_id"`
-	ArtistID       uint      `gorm:"not null;uniqueIndex:idx_org_album_title" json:"artist_id"`
-	Artist         Artist    `json:"artist,omitempty"`
 	Title          string    `gorm:"not null;uniqueIndex:idx_org_album_title" json:"title"`
 
 	Year           string `json:"year"`
@@ -39,7 +37,8 @@ type Album struct {
 	CoverURL       string `gorm:"-" json:"cover_url"`
 
 	// Relationships
-	Tracks []Track `json:"tracks,omitempty"`
+	Artists []Artist `gorm:"many2many:album_artists;" json:"artists,omitempty"`
+	Tracks  []Track  `json:"tracks,omitempty"`
 }
 
 // 3. Track represents a single audio file

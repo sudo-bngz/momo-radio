@@ -16,7 +16,6 @@ export const apiClient = axios.create({
   baseURL: API_URL,
 });
 
-
 apiClient.interceptors.request.use((config) => {
   const state = useAuthStore.getState();
   const token = state.session?.access_token;
@@ -84,7 +83,6 @@ apiClient.interceptors.response.use(
 
 /**
  * GLOBAL API METHODS
- * (Notice how clean these stay! The interceptor does all the heavy lifting.)
  */
 export const api = {
   // 1. INGESTION & UPLOAD
@@ -141,6 +139,12 @@ export const api = {
     await apiClient.post(`/tracks/${id}/analysis`);
   },
 
+  // ⚡️ NEW: Get Albums for the Album Grid View
+  getAlbums: async (): Promise<any> => {
+    const response = await apiClient.get('/albums');
+    return response.data;
+  },
+
   // 3. PLAYLIST BUILDER
   createPlaylist: async (data: { name: string; description: string, color?: string }): Promise<Playlist> => {
     const response = await apiClient.post<Playlist>('/playlists', data);
@@ -148,6 +152,11 @@ export const api = {
   },
 
   getPlaylists: async (): Promise<{ data: Playlist[] }> => {
+    const response = await apiClient.get<{ data: Playlist[] }>('/playlists');
+    return response.data;
+  },
+
+  get: async (): Promise<{ data: Playlist[] }> => {
     const response = await apiClient.get<{ data: Playlist[] }>('/playlists');
     return response.data;
   },
@@ -172,10 +181,12 @@ export const api = {
     await apiClient.delete(`/playlists/${playlistId}`);
   },
 
-  exportToRekordbox: async (playlistId: number): Promise<{ message: string, task_id: string }> => {
-    const response = await apiClient.post(`/playlists/${playlistId}/export/rekordbox`);
+  // ⚡️ UPDATED: Changed from Rekordbox to M3U to match our backend refactor
+  exportToM3u: async (playlistId: number): Promise<{ message: string, task_id: string }> => {
+    const response = await apiClient.post(`/playlists/${playlistId}/export/m3u`);
     return response.data;
   },
+  
 
   // 4. SCHEDULER
   getSchedule: async (start: string, end: string): Promise<ScheduleSlot[]> => {
@@ -205,9 +216,7 @@ export const api = {
 
   // --- ORGANIZATIONS ---
   getOrganizations: async (): Promise<Organization[]> => {
-    // Assuming your Go backend returns an array of orgs or { data: orgs }
     const response = await apiClient.get('/organizations');
-    // Adjust this depending on if your Go backend wraps lists in a 'data' object
     return response.data.data || response.data; 
   },
 

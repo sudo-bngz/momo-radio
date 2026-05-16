@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { VStack, Text, Icon, HStack, Flex, Box, Image } from '@chakra-ui/react'; // ⚡️ Imported Image
 import { NavLink } from 'react-router-dom';
 import { 
-  Activity, Library, ListMusic, // ⚡️ Removed Radio import
-  Calendar, Settings, PanelLeftClose, PanelLeftOpen 
+  Activity, Library, Radio,
+  Settings, PanelLeftClose, PanelLeftOpen 
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -12,8 +12,7 @@ const Sidebar = () => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity, path: '/dashboard' },
     { id: 'library', label: 'Music Library', icon: Library, path: '/library' },
-    { id: 'playlists', label: 'Playlists', icon: ListMusic, path: '/playlists' },
-    { id: 'schedule', label: 'Timetable', icon: Calendar, path: '/schedule' },
+    { id: 'broadcast', label: 'Broadcast', icon: Radio, path: '/broadcast' }
   ];
 
   return (
