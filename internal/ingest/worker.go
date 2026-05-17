@@ -23,6 +23,7 @@ import (
 // ============================================================================
 
 const TypeTrackProcess = "track:process"
+const TypeArtistEnrich = "artist:enrich"
 
 var (
 	jobs = prometheus.NewCounterVec(
@@ -59,6 +60,10 @@ func (p TrackProcessPayload) TrackIDStr() string {
 	return fmt.Sprintf("%d", p.TrackID)
 }
 
+type ArtistEnrichPayload struct {
+	ArtistID uint `json:"artist_id"`
+}
+
 // ============================================================================
 //  WORKER ENGINE
 // ============================================================================
@@ -69,15 +74,17 @@ type Worker struct {
 	db          *database.Client
 	redis       *redis.Client
 	analysisSem chan struct{}
+	asynqClient *asynq.Client // ⚡️ ADDED: Gives the worker the ability to enqueue new jobs
 }
 
-func New(cfg *config.Config, store *storage.Client, db *database.Client, redisClient *redis.Client) *Worker {
+func New(cfg *config.Config, store *storage.Client, db *database.Client, redisClient *redis.Client, asynqClient *asynq.Client) *Worker {
 	return &Worker{
 		cfg:         cfg,
 		storage:     store,
 		db:          db,
 		redis:       redisClient,
-		analysisSem: make(chan struct{}, 2), // Limits concurrent heavy CPU tasks (Essentia)
+		analysisSem: make(chan struct{}, 2),
+		asynqClient: asynqClient,
 	}
 }
 
@@ -85,8 +92,6 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client, redisCl
 // THE ORCHESTRATOR
 // ============================================================================
 
-// HandleProcessTask executes the pipeline. The actual step implementations
-// (like SetupStep, DownloadStep) live in the other step_*.go files.
 func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	timer := prometheus.NewTimer(duration)
 	defer timer.ObserveDuration()
@@ -99,15 +104,12 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 
 	log.Printf("Starting Job for Track ID %d: %s", payload.TrackID, payload.FileKey)
 
-	// 1. Initialize the Shared Context
 	pCtx := &ProcessingContext{
 		Worker:  w,
 		Ctx:     ctx,
 		Payload: payload,
 	}
 
-	// 2. Define the execution order
-	// These structs are automatically available because they are in the 'ingest' package.
 	steps := []Step{
 		&SetupStep{},
 		&DownloadStep{},
@@ -116,11 +118,10 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		&NormalizeStep{},
 		&UploadStep{},
 		&DatabaseSaveStep{},
+		&EnrichStep{},
 	}
 
-	// 3. Run the Pipeline
 	for _, step := range steps {
-		// Calculate a faux progress percentage based on the current step
 		progress := (indexOf(steps, step) * 100) / len(steps)
 		w.updateStatus(ctx, payload.TrackIDStr(), step.Name(), progress)
 
@@ -130,7 +131,6 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	// 4. Cleanup on successful ingest (Skip if this was just a metadata retry)
 	if !payload.IsRetry {
 		w.storage.DeleteIngestFile(payload.FileKey)
 		w.cleanupFolders([]string{payload.FileKey})
@@ -147,7 +147,6 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 // SHARED UTILITIES
 // ============================================================================
 
-// updateStatus writes the current step to Postgres and shouts to the React UI via Redis SSE
 func (w *Worker) updateStatus(ctx context.Context, trackIDStr, status string, progress int) {
 	w.db.DB.Model(&models.Track{}).Where("id = ?", trackIDStr).Updates(map[string]any{
 		"processing_status":   status,
@@ -162,7 +161,6 @@ func (w *Worker) failTask(ctx context.Context, payload TrackProcessPayload, err 
 	log.Printf("Task Failed (Track %d): %v", payload.TrackID, err)
 }
 
-// cleanupFolders removes empty directories in the S3 ingest bucket
 func (w *Worker) cleanupFolders(allKeys []string) {
 	var dirs []string
 	for _, k := range allKeys {
@@ -172,7 +170,6 @@ func (w *Worker) cleanupFolders(allKeys []string) {
 		}
 	}
 
-	// Sort so we delete the deepest folders first
 	sort.Slice(dirs, func(i, j int) bool {
 		return len(dirs[i]) > len(dirs[j])
 	})
@@ -184,7 +181,6 @@ func (w *Worker) cleanupFolders(allKeys []string) {
 	}
 }
 
-// indexOf is a simple helper to calculate UI progress percentages
 func indexOf(steps []Step, step Step) int {
 	for i, s := range steps {
 		if s.Name() == step.Name() {

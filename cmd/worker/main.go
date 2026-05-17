@@ -54,6 +54,14 @@ func main() {
 		DB:       cfg.Redis.DB,
 	})
 
+	redisOpt := asynq.RedisClientOpt{
+		Addr:     redisAddr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	}
+	asynqClient := asynq.NewClient(redisOpt)
+	defer asynqClient.Close()
+
 	// 5. Run Database Migrations
 	db.AutoMigrate()
 
@@ -63,7 +71,7 @@ func main() {
 	}
 
 	// 6. Instantiate the Domain Workers
-	ingestWorker := ingest.New(cfg, store, db, redisClient)
+	ingestWorker := ingest.New(cfg, store, db, redisClient, asynqClient)
 	exportWorker := export.New(cfg, store, db, redisClient)
 
 	// 7. MODE SELECTION (CLI Maintenance)
@@ -124,6 +132,7 @@ func main() {
 	// 11. Wire the tasks to their respective handlers!
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(ingest.TypeTrackProcess, ingestWorker.HandleProcessTask)
+	mux.HandleFunc(ingest.TypeArtistEnrich, ingestWorker.HandleArtistEnrichTask)
 	mux.HandleFunc(export.TypeExportPlaylist, exportWorker.HandlePlaylistExportTask)
 
 	log.Println("Asynq Multiplexer listening for jobs...")

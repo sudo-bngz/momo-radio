@@ -7,16 +7,31 @@ import (
 	"gorm.io/gorm"
 )
 
-// 1. Artist represents a music creator
+// Artist represents a music creator
 type Artist struct {
 	gorm.Model     `json:"-"`
 	ID             uint      `gorm:"primarykey" json:"id"`
 	OrganizationID uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_org_artist_name" json:"organization_id"`
 	Name           string    `gorm:"not null;uniqueIndex:idx_org_artist_name" json:"name"`
 
+	// --- Visuals & Biography ---
 	ArtistCountry string `gorm:"size:100" json:"artist_country"`
+	Bio           string `gorm:"type:text" json:"bio"`
+	AvatarURL     string `gorm:"size:512" json:"avatar_url"` // Main profile picture
+	HeaderURL     string `gorm:"size:512" json:"header_url"` // Background banner for the detail view
 
-	// Relationships
+	// --- Extended Profile ---
+	Type          string            `gorm:"size:50" json:"type"`            // e.g., "Person", "Group", "Orchestra"
+	Aliases       []string          `gorm:"serializer:json" json:"aliases"` // Alternative names/monikers
+	ExternalLinks map[string]string `gorm:"serializer:json" json:"links"`   // e.g., {"instagram": "...", "website": "..."}
+
+	// --- External API Integrations ---
+	// Indexes added here because we will frequently query: "Do we already have Discogs ID 12345?"
+	DiscogsID    string `gorm:"size:100;index" json:"discogs_id"`
+	SpotifyID    string `gorm:"size:100;index" json:"spotify_id"`
+	AppleMusicID string `gorm:"size:100;index" json:"apple_music_id"`
+
+	// --- Relationships ---
 	Albums []Album `gorm:"many2many:album_artists;" json:"albums,omitempty"`
 	Tracks []Track `gorm:"many2many:track_artists;" json:"tracks,omitempty"`
 }

@@ -12,6 +12,128 @@ import (
 	"momo-radio/internal/utils"
 )
 
+// ============================================================================
+// DATA STRUCTURES
+// ============================================================================
+
+type DiscogsArtistResult struct {
+	ID       string
+	Name     string
+	Profile  string
+	ImageURL string
+	Country  string
+}
+
+// ============================================================================
+// ARTIST ENRICHMENT
+// ============================================================================
+
+// FetchArtistFromDiscogs orchestrates finding an artist, grabbing their bio/images,
+// and inferring their country using your release-tally method.
+func FetchArtistFromDiscogs(artistName, token string) (*DiscogsArtistResult, error) {
+	if token == "" {
+		return nil, fmt.Errorf("no discogs token provided")
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// --- STEP 1: SEARCH FOR ARTIST ---
+	searchURL := "https://api.discogs.com/database/search"
+	u, _ := url.Parse(searchURL)
+	q := u.Query()
+	q.Set("q", artistName)
+	q.Set("type", "artist")
+	q.Set("token", token)
+	u.RawQuery = q.Encode()
+
+	req, _ := http.NewRequest("GET", u.String(), nil)
+	req.Header.Set("User-Agent", "MomoRadioIngester/0.2")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return nil, fmt.Errorf("RATE_LIMIT_EXCEEDED")
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("discogs search returned status %d", resp.StatusCode)
+	}
+
+	var searchResult struct {
+		Results []struct {
+			ID    int    `json:"id"`
+			Title string `json:"title"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&searchResult); err != nil {
+		return nil, err
+	}
+
+	if len(searchResult.Results) == 0 {
+		return nil, fmt.Errorf("no artist found matching: %s", artistName)
+	}
+
+	artistID := searchResult.Results[0].ID
+
+	// --- STEP 2: FETCH FULL PROFILE ---
+	artistURL := fmt.Sprintf("https://api.discogs.com/artists/%d?token=%s", artistID, token)
+	reqArtist, _ := http.NewRequest("GET", artistURL, nil)
+	reqArtist.Header.Set("User-Agent", "MomoRadioIngester/0.2")
+
+	respArtist, err := client.Do(reqArtist)
+	if err != nil {
+		return nil, err
+	}
+	defer respArtist.Body.Close()
+
+	if respArtist.StatusCode == 429 {
+		return nil, fmt.Errorf("RATE_LIMIT_EXCEEDED")
+	}
+
+	var artistResp struct {
+		ID      int    `json:"id"`
+		Name    string `json:"name"`
+		Profile string `json:"profile"`
+		Images  []struct {
+			ResourceURL string `json:"resource_url"`
+			Type        string `json:"type"`
+		} `json:"images"`
+	}
+	if err := json.NewDecoder(respArtist.Body).Decode(&artistResp); err != nil {
+		return nil, err
+	}
+
+	result := &DiscogsArtistResult{
+		ID:      fmt.Sprintf("%d", artistResp.ID),
+		Name:    artistResp.Name,
+		Profile: artistResp.Profile,
+	}
+
+	for _, img := range artistResp.Images {
+		if img.Type == "primary" {
+			result.ImageURL = img.ResourceURL
+			break
+		}
+	}
+	if result.ImageURL == "" && len(artistResp.Images) > 0 {
+		result.ImageURL = artistResp.Images[0].ResourceURL
+	}
+
+	// --- STEP 3: INFER COUNTRY ---
+	// Using your existing clever tally logic! We ignore the error so it doesn't fail the whole job if country is missing.
+	if country, err := GetArtistCountryViaDiscogs(artistName, token); err == nil {
+		result.Country = country
+	}
+
+	return result, nil
+}
+
+// ============================================================================
+// TRACK & RELEASE ENRICHMENT
+// ============================================================================
 func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) {
 	if token == "" {
 		return Track{}, fmt.Errorf("no discogs token provided")
@@ -36,6 +158,10 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		return Track{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return Track{}, fmt.Errorf("RATE_LIMIT_EXCEEDED")
+	}
 
 	var searchResult struct {
 		Results []struct {
@@ -67,7 +193,10 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 	}
 	defer respDetails.Body.Close()
 
-	// Struct for the detailed release data
+	if respDetails.StatusCode == 429 {
+		return Track{}, fmt.Errorf("RATE_LIMIT_EXCEEDED")
+	}
+
 	var release struct {
 		Title   string   `json:"title"`
 		Year    any      `json:"year"`
@@ -114,18 +243,20 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 	if len(release.Artists) > 0 {
 		for _, a := range release.Artists {
 			name := a.Name
-			// Discogs often appends " (1)" to artist names to resolve duplicates. We strip it.
 			if idx := strings.Index(name, " ("); idx != -1 {
 				name = name[:idx]
 			}
 			name = strings.TrimSpace(name)
-			if name != "" {
+
+			// ⚡️ ANTI-VARIOUS PROTECTION
+			// Prevent generic compilation artists from destroying local metadata
+			if name != "" && strings.ToLower(name) != "various" && strings.ToLower(name) != "various artists" {
 				finalArtists = append(finalArtists, name)
 			}
 		}
 	}
 
-	// Fallback to our Regex split if Discogs didn't return artist data
+	// ⚡️ Fallback to the original local artist if Discogs ruined it
 	if len(finalArtists) == 0 {
 		finalArtists = utils.SplitArtistFallback(artist)
 	}
@@ -137,17 +268,29 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 		catNo = release.Labels[0].Catno
 	}
 
-	genre := ""
-	if len(release.Genres) > 0 {
-		genre = release.Genres[0]
+	// Limit Genres to 2, Styles to 5
+	var safeGenres []string
+	for i, g := range release.Genres {
+		if i >= 2 {
+			break
+		}
+		safeGenres = append(safeGenres, g)
+	}
+
+	var safeStyles []string
+	for i, s := range release.Styles {
+		if i >= 5 {
+			break
+		}
+		safeStyles = append(safeStyles, s)
 	}
 
 	return Track{
-		Artists:       finalArtists, // ⚡️ Now maps to the array!
-		Title:         release.Title,
+		Artists:       finalArtists,
+		Title:         title, // ⚡️ KEEP ORIGINAL TRACK TITLE (Discogs release.Title is the Album Name!)
 		Year:          yearStr,
-		Genre:         genre,
-		Style:         strings.Join(release.Styles, ", "),
+		Genre:         strings.Join(safeGenres, ", "),
+		Style:         strings.Join(safeStyles, ", "),
 		Publisher:     publisher,
 		Country:       release.Country,
 		CatalogNumber: strings.ToUpper(catNo),
@@ -157,7 +300,6 @@ func EnrichViaDiscogs(artist, title, token string, email string) (Track, error) 
 
 // GetArtistCountryViaDiscogs tries to infer an artist's country from their Discogs profile/releases.
 func GetArtistCountryViaDiscogs(artistName, token string) (string, error) {
-	// 1. Search for the Artist to get their ID
 	searchURL := "https://api.discogs.com/database/search"
 	u, _ := url.Parse(searchURL)
 	q := u.Query()
@@ -167,14 +309,18 @@ func GetArtistCountryViaDiscogs(artistName, token string) (string, error) {
 	u.RawQuery = q.Encode()
 
 	req, _ := http.NewRequest("GET", u.String(), nil)
-	req.Header.Set("User-Agent", "MomoRadio/1.0")
+	req.Header.Set("User-Agent", "MomoRadioIngester/0.2")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil {
 		return "", fmt.Errorf("discogs search failed")
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return "", fmt.Errorf("RATE_LIMIT_EXCEEDED")
+	}
 
 	var searchResult struct {
 		Results []struct {
@@ -189,18 +335,19 @@ func GetArtistCountryViaDiscogs(artistName, token string) (string, error) {
 
 	artistID := searchResult.Results[0].ID
 
-	// 2. Fetch Artist's Releases to find the dominant country
-	// Discogs "Release" objects have a 'country' field.
-	// Most artists release primarily in their home market or 'Europe/US'.
 	releaseURL := fmt.Sprintf("https://api.discogs.com/artists/%d/releases", artistID)
 	req, _ = http.NewRequest("GET", releaseURL+"?sort=year&sort_order=asc&token="+token, nil)
-	req.Header.Set("User-Agent", "MomoRadio/1.0")
+	req.Header.Set("User-Agent", "MomoRadioIngester/0.2")
 
 	resp, err = client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil {
 		return "", fmt.Errorf("could not fetch artist releases")
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return "", fmt.Errorf("RATE_LIMIT_EXCEEDED")
+	}
 
 	var relResult struct {
 		Releases []struct {
@@ -210,10 +357,11 @@ func GetArtistCountryViaDiscogs(artistName, token string) (string, error) {
 	}
 	json.NewDecoder(resp.Body).Decode(&relResult)
 
-	// Tally countries to find the most common one (excluding 'Worldwide' or 'Europe' if possible)
 	counts := make(map[string]int)
 	for _, r := range relResult.Releases {
-		counts[r.Country]++
+		if r.Country != "" && r.Country != "Unknown" && r.Country != "Worldwide" {
+			counts[r.Country]++
+		}
 	}
 
 	bestCountry := ""
@@ -255,6 +403,10 @@ func DownloadImage(imageUrl, token string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return nil, fmt.Errorf("RATE_LIMIT_EXCEEDED")
+	}
 
 	return io.ReadAll(resp.Body)
 }
