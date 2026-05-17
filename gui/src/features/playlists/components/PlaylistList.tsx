@@ -104,7 +104,7 @@ export const PlaylistList: React.FC = () => {
     
     try {
       // Assumes you add this route to your api.ts frontend service
-      await api.exportToRekordbox(playlist.id); 
+      await api.exportToM3u(playlist.id); 
     } catch (error) {
       toaster.create({
         title: "Export Failed",

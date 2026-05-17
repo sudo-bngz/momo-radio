@@ -3,12 +3,17 @@ import {
   Box, VStack, HStack, Heading, Text, Button, Icon, Select, createListCollection, Flex 
 } from '@chakra-ui/react';
 import { Plus, Music, ChevronDown } from 'lucide-react';
-// ⚡️ FIXED: Imported useLocation
 import { useNavigate, useMatch, useLocation } from 'react-router-dom'; 
+
+// Import all your grid and list views
 import { TrackListView } from './TrackListView';
 import { PlaylistGridView } from './PlaylistGridView';
 import { AlbumGridView } from './AlbumGridView';
+import { ArtistGridView } from './ArtistGridView';
+
+// Import your detail views
 import { AlbumDetailView } from './AlbumDetailView';
+import { ArtistDetailView } from './ArtistDetailView';
 
 type LibraryTab = 'playlists' | 'tracks' | 'albums' | 'artists';
 
@@ -29,18 +34,23 @@ const sortOptions = createListCollection({
 
 export const LibraryView: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation(); // ⚡️ FIXED: Added location hook
-  const albumDetailMatch = useMatch('/library/albums/:id');
+  const location = useLocation(); 
   
-  // ⚡️ FIXED: Tell state to read from React Router's memory first, default to tracks
+  // ⚡️ Matchers to detect if we are viewing a specific Album or Artist
+  const albumDetailMatch = useMatch('/library/albums/:id');
+  const artistDetailMatch = useMatch('/library/artists/:id');
+  
+  // ⚡️ Initialize active tab from React Router's memory (fallback to 'tracks')
   const [activeTab, setActiveTab] = useState<LibraryTab>(
     (location.state as any)?.activeTab || 'tracks'
   );
   
   const [sortBy, setSortBy] = useState('newest');
-  const [albumTitle, setAlbumTitle] = useState<string>('');
+  
+  // ⚡️ Single state to hold the title of whatever detail view is currently open
+  const [dynamicTitle, setDynamicTitle] = useState<string>('');
 
-  // ⚡️ FIXED: Listen for changes (like the browser Back button) to keep the tab in sync
+  // Keep the tab in sync if the user uses browser back/forward buttons
   useEffect(() => {
     if ((location.state as any)?.activeTab) {
       setActiveTab((location.state as any).activeTab);
@@ -58,6 +68,9 @@ export const LibraryView: React.FC = () => {
       default: navigate('/ingest'); break;
     }
   };
+
+  // Boolean helper to know if ANY detail view is active
+  const isDetailViewActive = !!albumDetailMatch || !!artistDetailMatch;
 
   return (
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
@@ -81,7 +94,6 @@ export const LibraryView: React.FC = () => {
           
           {albumDetailMatch ? (
             <>
-              {/* ⚡️ FIXED: Force React Router to remember we want the 'albums' tab! */}
               <Text 
                 cursor="pointer" 
                 _hover={{ textDecoration: "underline", color: "gray.900" }} 
@@ -93,14 +105,30 @@ export const LibraryView: React.FC = () => {
                 Albums
               </Text>
               <Text color="gray.300">/</Text>
-              <Text color="gray.900" fontWeight="600">{albumTitle || 'Loading...'}</Text>
+              <Text color="gray.900" fontWeight="600">{dynamicTitle || 'Loading...'}</Text>
+            </>
+          ) : artistDetailMatch ? (
+            <>
+              <Text 
+                cursor="pointer" 
+                _hover={{ textDecoration: "underline", color: "gray.900" }} 
+                onClick={() => {
+                  setActiveTab('artists');
+                  navigate('/library', { state: { activeTab: 'artists' } });
+                }}
+              >
+                Artists
+              </Text>
+              <Text color="gray.300">/</Text>
+              <Text color="gray.900" fontWeight="600">{dynamicTitle || 'Loading...'}</Text>
             </>
           ) : (
             <Text color="gray.900" fontWeight="500">{currentTabLabel}</Text>
           )}
         </HStack>
 
-        {!albumDetailMatch && (
+        {/* ⚡️ Hide the giant heading when viewing details */}
+        {!isDetailViewActive && (
           <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
             Music Library
           </Heading>
@@ -108,9 +136,9 @@ export const LibraryView: React.FC = () => {
       </VStack>
 
       {/* =========================================
-          2. CONTROLS (Hidden during Album View)
+          2. CONTROLS (Hidden during Detail Views)
           ========================================= */}
-      {!albumDetailMatch && (
+      {!isDetailViewActive && (
         <Flex justify="space-between" align="center" pb={2}>
           <HStack gap={4} overflowX="auto" css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
             <Button bg="gray.900" color="white" borderRadius="full" w="48px" h="48px" p={0} _hover={{ bg: "black" }} onClick={handleAddClick} flexShrink={0}>
@@ -156,13 +184,15 @@ export const LibraryView: React.FC = () => {
           ========================================= */}
       <Box flex="1" overflow="hidden" display="flex" flexDirection="column">
         {albumDetailMatch ? (
-          <AlbumDetailView id={albumDetailMatch.params.id} onAlbumLoad={setAlbumTitle} />
+          <AlbumDetailView id={albumDetailMatch.params.id} onAlbumLoad={setDynamicTitle} />
+        ) : artistDetailMatch ? (
+          <ArtistDetailView id={artistDetailMatch.params.id} onArtistLoad={setDynamicTitle} />
         ) : (
           <>
             {activeTab === 'tracks' && <TrackListView sortBy={sortBy} />}
             {activeTab === 'playlists' && <PlaylistGridView />}
             {activeTab === 'albums' && <AlbumGridView />}
-            {activeTab === 'artists' && <Box p={10} textAlign="center" color="gray.500">Artists Grid Coming Soon...</Box>}
+            {activeTab === 'artists' && <ArtistGridView />}
           </>
         )}
       </Box>

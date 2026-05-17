@@ -81,3 +81,33 @@ func (h *ArtistHandler) GetArtistByName(c *gin.Context) {
 
 	c.JSON(http.StatusOK, artist)
 }
+
+func (h *ArtistHandler) GetArtistByID(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization missing"})
+		return
+	}
+
+	artistID := c.Param("id")
+	var artist models.Artist
+
+	// Preload all the tracks and albums this artist is linked to!
+	err := h.db.
+		Preload("Tracks").
+		Preload("Tracks.Album"). // Load the album info for the tracklist
+		Preload("Albums").
+		Where("organization_id = ?", orgID).
+		First(&artist, artistID).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Artist not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, artist)
+}
