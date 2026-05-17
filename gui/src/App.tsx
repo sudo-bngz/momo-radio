@@ -26,8 +26,13 @@ import { ScheduleFeature } from './features/schedule';
 import { SettingsFeature } from './features/settings';
 import { ArtistView } from './features/library/components/ArtistView';
 import { LibraryView } from './features/library/components/LibraryView';
+import { useNetworkStore } from './store/useNetworkStore';
+import { ApiDownScreen } from './layouts/ApiDownScreen';
 
 export const App = () => {
+
+  // 1. CALL ALL HOOKS FIRST
+  const isApiDown = useNetworkStore((state) => state.isApiDown);
   
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -45,47 +50,54 @@ export const App = () => {
     };
   }, []);
 
+  // 2. RENDER (Safely handle the API Down state inside the Provider)
   return (
     <ChakraProvider value={defaultSystem}>
-      <BrowserRouter>
-        <Routes>
-          {/* Public Path */}
-          <Route path="/login" element={<LoginView />} />
-          <Route path="/signup" element={<SignupView />} />
+      {isApiDown ? (
+        // IF API IS DOWN: Completely block the router and show the error screen
+        <ApiDownScreen />
+      ) : (
+        // IF API IS UP: Render the normal application router
+        <BrowserRouter>
+          <Routes>
+            {/* Public Path */}
+            <Route path="/login" element={<LoginView />} />
+            <Route path="/signup" element={<SignupView />} />
 
-          {/* Private Paths: Protected by Auth Guard */}
-          <Route element={<ProtectedRoute />}>
-            
-            {/* ONBOARDING: No sidebar, pure focus mode */}
-            <Route path="/onboarding" element={<OnboardingView />} />
-
-            {/* DASHBOARD: Wrapped in Sidebar/TopNav Layout */}
-            <Route element={<DashboardLayout />}>
-              <Route path="/dashboard" element={<DashboardFeature />} />
+            {/* Private Paths: Protected by Auth Guard */}
+            <Route element={<ProtectedRoute />}>
               
-              <Route path="/playlists" element={<PlaylistsFeature />}>
-                <Route index element={<PlaylistList />} />
-                <Route path="new" element={<PlaylistBuilder />} />
-                <Route path="edit/:id" element={<PlaylistBuilder />} />
+              {/* ONBOARDING: No sidebar, pure focus mode */}
+              <Route path="/onboarding" element={<OnboardingView />} />
+
+              {/* DASHBOARD: Wrapped in Sidebar/TopNav Layout */}
+              <Route element={<DashboardLayout />}>
+                <Route path="/dashboard" element={<DashboardFeature />} />
+                
+                <Route path="/playlists" element={<PlaylistsFeature />}>
+                  <Route index element={<PlaylistList />} />
+                  <Route path="new" element={<PlaylistBuilder />} />
+                  <Route path="edit/:id" element={<PlaylistBuilder />} />
+                </Route>
+                
+                <Route path="/library" element={<LibraryFeature />} />
+                <Route path="/library/*" element={<LibraryView />} />
+                <Route path="/artists/:artistName" element={<ArtistView />} />
+                <Route path="/ingest" element={<IngestFeature />} />
+                <Route path="/schedule" element={<ScheduleFeature />} />
               </Route>
               
-              <Route path="/library" element={<LibraryFeature />} />
-              <Route path="/library/*" element={<LibraryView />} />
-              <Route path="/artists/:artistName" element={<ArtistView />} />
-              <Route path="/ingest" element={<IngestFeature />} />
-              <Route path="/schedule" element={<ScheduleFeature />} />
+              {/* Keeping settings outside DashboardLayout if intended, or move it inside! */}
+              <Route path="/settings" element={<SettingsFeature />} />
             </Route>
-            
-            {/* Keeping settings outside DashboardLayout if intended, or move it inside! */}
-            <Route path="/settings" element={<SettingsFeature />} />
-          </Route>
 
-          {/* Catch-all Redirect */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Catch-all Redirect */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      )}
       
-      {/* GLOBAL OVERLAYS GO HERE */}
+      {/* GLOBAL OVERLAYS GO HERE (Always rendered so Modals/Toasts still work) */}
       <Toaster />
       <SessionExpiredModal />
       

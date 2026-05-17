@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { useAuthStore, type Organization } from '../store/useAuthStore';
+// ⚡️ ADDED: Import the network store
+import { useNetworkStore } from '../store/useNetworkStore';
 import { supabase } from './../services/client';
 import type { 
   AnalyzeResponse, 
@@ -63,11 +65,27 @@ apiClient.interceptors.request.use((config) => {
 
 /**
  * STRICT RESPONSE INTERCEPTOR
- * Intercepts 401 Unauthorized errors, triggers the modal, and explicitly kills the session.
+ * Intercepts Network errors (5xx/Timeout) AND 401 Unauthorized errors.
  */
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // ⚡️ NEW: If a request succeeds, ensure the "API Down" lock is lifted
+    if (useNetworkStore.getState().isApiDown) {
+      useNetworkStore.getState().setApiDown(false);
+    }
+    return response;
+  },
   async (error) => {
+    // Catch Network Errors (Connection refused/timeout) OR Server crashes (502, 503, 504)
+    if (
+      error.code === 'ERR_NETWORK' ||
+      error.message === 'Network Error' ||
+      (error.response && error.response.status >= 500)
+    ) {
+      useNetworkStore.getState().setApiDown(true);
+    }
+
+    // Existing Logic: Catch 401 Unauthorized
     if (error.response && error.response.status === 401) {
       console.warn('Session expired or unauthorized. Triggering manual re-login.');
       
@@ -189,6 +207,7 @@ export const api = {
     const response = await apiClient.get('/artists');
     return response.data;
   },
+  
   getArtist: async (id: string | number): Promise<any> => {
     const response = await apiClient.get(`/artists/${id}`);
     return response.data;
