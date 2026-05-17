@@ -25,6 +25,7 @@ import { IngestFeature } from './features/ingest';
 import { ScheduleFeature } from './features/schedule';
 import { SettingsFeature } from './features/settings';
 import { ArtistView } from './features/library/components/ArtistView';
+import { LibraryView } from './features/library/components/LibraryView';
 
 export const App = () => {
   
@@ -69,6 +70,7 @@ export const App = () => {
               </Route>
               
               <Route path="/library" element={<LibraryFeature />} />
+              <Route path="/library/*" element={<LibraryView />} />
               <Route path="/artists/:artistName" element={<ArtistView />} />
               <Route path="/ingest" element={<IngestFeature />} />
               <Route path="/schedule" element={<ScheduleFeature />} />

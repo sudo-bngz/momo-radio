@@ -78,7 +78,7 @@ export const AlbumGridView: React.FC = () => {
                 key={album.id} 
                 className="group" 
                 cursor="pointer" 
-                onClick={() => navigate(`/albums/${encodeURIComponent(album.title)}`)}
+                onClick={() => navigate(`/library/albums/${album.id}`)}
               >
                 {/* Square Image Container */}
                 <Box position="relative" w="100%" pb="100%" mb={3} borderRadius="md" overflow="hidden" shadow="sm" bg="gray.100">

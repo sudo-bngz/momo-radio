@@ -102,7 +102,7 @@ export const PlaylistGridView: React.FC = () => {
     
     try {
       // ⚡️ Assumes you updated this function name in api.ts to exportToM3u
-      await api.exportToRekordbox(playlist.id); 
+      await api.exportToM3u(playlist.id); 
     } catch (error) {
       toaster.create({
         title: "Export Failed",

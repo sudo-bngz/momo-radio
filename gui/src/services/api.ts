@@ -139,9 +139,13 @@ export const api = {
     await apiClient.post(`/tracks/${id}/analysis`);
   },
 
-  // ⚡️ NEW: Get Albums for the Album Grid View
   getAlbums: async (): Promise<any> => {
     const response = await apiClient.get('/albums');
+    return response.data;
+  },
+
+  getAlbum: async (id: string | number): Promise<any> => {
+    const response = await apiClient.get(`/albums/${id}`);
     return response.data;
   },
 

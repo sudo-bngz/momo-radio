@@ -129,6 +129,7 @@ func (s *Server) setupRoutes() {
 			// --- ARTISTS & ALBUMS ---
 			protected.GET("/artists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), artistHandler.GetArtists)
 			protected.GET("/albums", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbums)
+			protected.GET("/albums/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbumByID)
 
 			// --- PLAYLISTS ---
 			protected.GET("/playlists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylists)
