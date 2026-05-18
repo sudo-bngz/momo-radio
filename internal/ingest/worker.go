@@ -115,6 +115,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		&DownloadStep{},
 		&VaultStep{},
 		&AnalysisStep{},
+		&WaveformStep{},
 		&NormalizeStep{},
 		&UploadStep{},
 		&DatabaseSaveStep{},

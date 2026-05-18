@@ -38,15 +38,26 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 
 # --- Stage 3: Final Runtime ---
 FROM debian:bookworm-slim
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Combine updates, installations, and cleanup into one optimized layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     ca-certificates \
+    wget \
     libfftw3-single3 \
     libfftw3-double3 \
     libtag1v5 \
     libsamplerate0 \
     libyaml-0-2 \
     libchromaprint1 \
+    # ⚡️ 1. Fetch the '-12' binary which matches Debian Bookworm (Debian 12)
+    && if [ "$TARGETARCH" = "arm64" ]; then export AW_ARCH="arm64"; else export AW_ARCH="amd64"; fi \
+    && wget https://github.com/bbc/audiowaveform/releases/download/1.10.2/audiowaveform_1.10.2-1-12_${AW_ARCH}.deb \
+    # ⚡️ 2. Use apt-get to install the local file directly. It will auto-fetch the correct Boost 1.74 libs!
+    && apt-get install -y ./audiowaveform_1.10.2-1-12_${AW_ARCH}.deb \
+    && rm audiowaveform_1.10.2-1-12_${AW_ARCH}.deb \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -56,6 +67,5 @@ COPY --from=go-builder /bin/worker /usr/local/bin/worker
 COPY --from=go-builder /bin/migrate /usr/local/bin/migrate
 
 RUN mkdir -p ./temp_processing
-
 
 CMD ["worker"]

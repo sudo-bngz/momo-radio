@@ -93,6 +93,7 @@ type Track struct {
 	Danceability float64 `json:"danceability"`
 	Loudness     float64 `json:"loudness"`
 	Energy       float64 `json:"energy"`
+	WaveformKey  string  `gorm:"size:512" json:"waveform_key"`
 
 	// Radio Logic
 	PlayCount  int        `gorm:"default:0" json:"play_count"`
