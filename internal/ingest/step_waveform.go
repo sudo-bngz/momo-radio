@@ -25,7 +25,7 @@ func (s *WaveformStep) Execute(ctx *ProcessingContext) error {
 	cmd := exec.CommandContext(ctx.Ctx, "audiowaveform",
 		"-i", ctx.RawPath,
 		"-o", jsonOutputPath,
-		"-z", "256",
+		"-z", "64",
 		"-b", "8",
 	)
 

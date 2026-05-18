@@ -32,6 +32,7 @@ export type UploadStatus = 'idle' | 'analyzing' | 'review' | 'uploading' | 'proc
 export interface Track {
   // --- Base / GORM Fields ---
   id: number;
+  organization_id: string;
   created_at?: string;
   updated_at?: string;
 
@@ -63,6 +64,7 @@ export interface Track {
   danceability?: number;
   loudness?: number;
   energy?: number;
+  waveform_key?: string;
 
   // --- Extended Tags ---
   catalog_number?: string;

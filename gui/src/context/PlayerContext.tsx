@@ -8,7 +8,6 @@ interface PlayerContextType {
   currentTrack: Track | null;
   isPlaying: boolean;
   progress: number;
-  // Updated: Now accepts an optional playlist (queue)
   playTrack: (track: Track, playlist?: Track[]) => void;
   playNext: () => void;
   playPrevious: () => void;
@@ -24,16 +23,18 @@ const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-  const [queue, setQueue] = useState<Track[]>([]); // NEW: Holds the list of songs
+  const [queue, setQueue] = useState<Track[]>([]); 
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(0.7);
   const [isPlayerVisible, setPlayerVisible] = useState(false);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // ⚡️ Grab both the token AND the active organization ID from your Zustand store
   const token = useAuthStore((state) => state.session?.access_token);
+  const activeOrgId = useAuthStore((state) => state.activeOrganizationId);
 
-  // Updated playTrack: accepts the list of tracks context
   const playTrack = (track: Track, playlist: Track[] = []) => {
     if (currentTrack?.id === track.id) {
       togglePlayPause();
@@ -41,8 +42,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setCurrentTrack(track);
       setIsPlaying(true);
       setPlayerVisible(true);
-      // If a playlist is passed, update the queue. 
-      // If not, keep the existing queue (or create a queue of 1).
+      
       if (playlist.length > 0) {
         setQueue(playlist);
       } else if (queue.length === 0) {
@@ -56,25 +56,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsPlaying(!isPlaying);
   };
 
-  // NEW: Next Track Logic
   const playNext = () => {
     if (!currentTrack || queue.length === 0) return;
     
     const currentIndex = queue.findIndex(t => t.id === currentTrack.id);
-    // If there is a next song, play it
     if (currentIndex !== -1 && currentIndex < queue.length - 1) {
       playTrack(queue[currentIndex + 1]);
     } else {
-      // Optional: Loop back to start? Or stop.
       setIsPlaying(false);
     }
   };
 
-  // NEW: Previous Track Logic
   const playPrevious = () => {
     if (!currentTrack || queue.length === 0) return;
     
-    // If we are more than 2 seconds in, just restart the song (Spotify behavior)
     if (audioRef.current && audioRef.current.currentTime > 2) {
       audioRef.current.currentTime = 0;
       return;
@@ -86,7 +81,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Sync Play/Pause
   useEffect(() => {
     if (!audioRef.current) return;
     if (isPlaying) {
@@ -95,13 +89,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } else {
       audioRef.current.pause();
     }
-  }, [isPlaying, currentTrack]); // Added currentTrack dependency
+  }, [isPlaying, currentTrack]); 
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
 
-  // Handle auto-play next track when song ends
   const handleEnded = () => {
     playNext();
   };
@@ -111,7 +104,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   return (
     <PlayerContext.Provider value={{ 
       currentTrack, isPlaying, progress, playTrack, togglePlayPause, 
-      playNext, playPrevious, // Export these
+      playNext, playPrevious, 
       audioRef, isPlayerVisible, setPlayerVisible, volume, setVolume
     }}>
       {children}
@@ -120,10 +113,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         <audio 
           key={trackId}
           ref={audioRef}
-          src={`${API_BASE_URL}/tracks/${trackId}/stream?token=${token}`}
+          src={`${API_BASE_URL}/tracks/${trackId}/stream?token=${token}&org_id=${activeOrgId}`}
           crossOrigin="anonymous"
           autoPlay 
-          onEnded={handleEnded} // Auto-play next
+          onEnded={handleEnded} 
           onTimeUpdate={() => {
             if (audioRef.current) {
               const p = (audioRef.current.currentTime / audioRef.current.duration) * 100;

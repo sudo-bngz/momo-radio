@@ -85,7 +85,7 @@ func Validate(path string) error {
 	// 1. Check File Size (e.g., must be > 500KB to be a valid track)
 	info, err := os.Stat(path)
 	if err != nil {
-		log.Printf("❌ File system error: %v", err)
+		log.Printf("File system error: %v", err)
 		return err
 	}
 
@@ -95,7 +95,7 @@ func Validate(path string) error {
 	}
 
 	if strings.HasSuffix(strings.ToLower(path), ".flac") {
-		log.Printf("   🧹 Cleaning FLAC headers...")
+		log.Printf("Cleaning FLAC headers...")
 		clean := path + ".tmp"
 		// Strip non-native ID3 blocks from FLAC without re-encoding
 		cmd := exec.Command("ffmpeg", "-y", "-i", path, "-c", "copy", "-map_metadata", "0", clean)
@@ -108,7 +108,7 @@ func Validate(path string) error {
 	// We try to read the duration; if the file is truncated, this returns an error status
 	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
 	if err := cmd.Run(); err != nil {
-		log.Printf("❌ Integrity check failed (corrupt stream): %v", err)
+		log.Printf("Integrity check failed (corrupt stream): %v", err)
 		return err
 	}
 

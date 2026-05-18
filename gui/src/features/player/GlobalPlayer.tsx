@@ -5,14 +5,16 @@ import { usePlayer } from '../../context/PlayerContext';
 import { TrackInfo } from './components/TrackInfo';
 import { PlaybackControls } from './components/PlaybackControls';
 import { VolumeControl } from './components/VolumeControl';
-import { WaveSurferPlayer } from './WaveSurferPlayer'; // Keep this here or move to features/ too
+import { WaveSurferPlayer } from './WaveSurferPlayer';
 
 export const GlobalPlayer = () => {
   const { 
     currentTrack, isPlaying, isPlayerVisible, setPlayerVisible, audioRef 
   } = usePlayer();
 
-  useEffect(() => { if (isPlaying) setPlayerVisible(true); }, [isPlaying, setPlayerVisible]);
+  useEffect(() => { 
+    if (isPlaying) setPlayerVisible(true); 
+  }, [isPlaying, setPlayerVisible]);
 
   const isOffScreen = !isPlayerVisible || !currentTrack;
   const currentTime = audioRef.current?.currentTime || 0;
@@ -32,7 +34,6 @@ export const GlobalPlayer = () => {
         position="fixed" bottom={0} left={0} right={0} h="76px" 
         bg="gray.50" borderTop="1px solid" borderColor="gray.200"
         zIndex={9999} px={6}
-        // Slide Animation
         transform={isOffScreen ? "translateY(100%)" : "translateY(0)"}
         transition="transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
       >
@@ -52,12 +53,15 @@ export const GlobalPlayer = () => {
             </Text>
             
             <Box flex="1" h="40px">
+              {/* ⚡️ Only render WaveSurfer if we have a track and an audioRef */}
               {currentTrack && audioRef.current && (
                 <WaveSurferPlayer 
                   key={currentTrack.id}
                   audioRef={audioRef}
                   trackId={currentTrack.id}
                   isPlaying={isPlaying}
+                  waveformKey={currentTrack.waveform_key} 
+                  orgId={currentTrack.organization_id} 
                 />
               )}
             </Box>
@@ -75,13 +79,9 @@ export const GlobalPlayer = () => {
       </Box>
 
       {/* 2. THE INVISIBLE SPACER (Layout Push) */}
-      {/* This box sits in the normal document flow and expands/collapses 
-          to physically push content up when the player appears. */}
       <Box 
         w="100%" 
-        // If player is visible, reserve 90px space. If not, 0px.
         h={!isOffScreen ? "76px" : "0px"} 
-        // Matches the slide animation speed exactly
         transition="height 0.4s cubic-bezier(0.4, 0, 0.2, 1)" 
         flexShrink={0}
       />
