@@ -23,7 +23,16 @@ import (
 // ============================================================================
 
 const TypeTrackProcess = "track:process"
+const TypeTrackEnrich = "track:enrich"
 const TypeArtistEnrich = "artist:enrich"
+
+// ⚡️ FIXED: Added MusicBrainzID to payload so the background worker receives it
+type TrackEnrichPayload struct {
+	TrackID       uint   `json:"track_id"`
+	ArtistName    string `json:"artist_name"`
+	TrackTitle    string `json:"track_title"`
+	MusicBrainzID string `json:"musicbrainz_id"`
+}
 
 var (
 	jobs = prometheus.NewCounterVec(
@@ -74,7 +83,7 @@ type Worker struct {
 	db          *database.Client
 	redis       *redis.Client
 	analysisSem chan struct{}
-	asynqClient *asynq.Client // ⚡️ ADDED: Gives the worker the ability to enqueue new jobs
+	asynqClient *asynq.Client
 }
 
 func New(cfg *config.Config, store *storage.Client, db *database.Client, redisClient *redis.Client, asynqClient *asynq.Client) *Worker {

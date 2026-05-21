@@ -2,8 +2,8 @@ package ingest
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
-	"strings"
 
 	"momo-radio/internal/audio"
 	"momo-radio/internal/metadata"
@@ -11,7 +11,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// ANALYSIS & ENRICHMENT STEP
+// ANALYSIS STEP (Acoustic, Local Metadata, and Fingerprinting ONLY)
 // -----------------------------------------------------------------------------
 type AnalysisStep struct{}
 
@@ -22,10 +22,21 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		return fmt.Errorf("invalid audio file format")
 	}
 
-	// 1. Local ID3 Parsing
+	// 1. Local ID3/FLAC Parsing ONLY (No APIs)
 	meta, err := metadata.GetLocal(ctx.RawPath)
 	if err != nil {
-		meta = metadata.Track{} // Safe fallback
+		meta = metadata.Track{}
+	}
+
+	// Fallback to filename parsing ONLY if the file has zero embedded tags
+	if len(meta.Artists) == 0 || meta.Title == "" {
+		cleanA, cleanT := utils.SanitizeFilename(filepath.Base(ctx.Payload.FileKey))
+		if len(meta.Artists) == 0 {
+			meta.Artists = []string{cleanA}
+		}
+		if meta.Title == "" {
+			meta.Title = cleanT
+		}
 	}
 
 	// 2. Deep Acoustic Analysis (Essentia)
@@ -42,61 +53,15 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		meta.Duration = analysis.Duration
 	}
 
-	// 3. API Enrichment (Discogs / iTunes)
-	ctx.Worker.updateStatus(ctx.Ctx, ctx.Payload.TrackIDStr(), "enriching", 60)
+	// 3. Deterministic Acoustic Fingerprinting (Chromaprint / AcoustID)
+	ctx.Worker.updateStatus(ctx.Ctx, ctx.Payload.TrackIDStr(), "fingerprinting", 50)
 
-	searchArtist := "Unknown"
-	if len(meta.Artists) > 0 {
-		searchArtist = strings.Join(meta.Artists, " ")
-	}
-	searchTitle := meta.Title
-
-	if searchArtist == "Unknown" || searchTitle == "" {
-		cleanA, cleanT := utils.SanitizeFilename(filepath.Base(ctx.Payload.FileKey))
-		searchArtist, searchTitle = cleanA, cleanT
-	}
-
-	if ctx.Worker.cfg.Services.DiscogsToken != "" {
-		enriched, err := metadata.EnrichViaDiscogs(searchArtist, searchTitle, ctx.Worker.cfg.Services.DiscogsToken, ctx.Worker.cfg.Services.ContactEmail)
-		if err == nil {
-			meta.Genre = enriched.Genre
-			meta.Style = enriched.Style
-			meta.Publisher = enriched.Publisher
-			meta.CatalogNumber = enriched.CatalogNumber
-			meta.Country = enriched.Country
-			meta.CoverURL = enriched.CoverURL
-			if meta.Year == "" {
-				meta.Year = enriched.Year
-			}
-			if meta.Album == "" {
-				meta.Album = enriched.Album
-			}
-			if meta.Title == "" {
-				meta.Title = enriched.Title
-			}
-			if len(enriched.Artists) > 0 {
-				meta.Artists = enriched.Artists
-			}
-		}
+	mbid, err := audio.GetMusicBrainzID(ctx.RawPath, ctx.Worker.cfg.Services.AcoustIDKey)
+	if err != nil {
+		log.Printf("Acoustic fingerprinting skipped/failed for track %d: %v", ctx.Payload.TrackID, err)
 	} else {
-		itunesMeta, err := metadata.EnrichViaITunes(searchArtist + " " + searchTitle)
-		if err == nil {
-			if meta.Title == "" {
-				meta.Title = itunesMeta.Title
-			}
-			if meta.Album == "" {
-				meta.Album = itunesMeta.Album
-			}
-			if meta.Genre == "" {
-				meta.Genre = itunesMeta.Genre
-			}
-			if meta.Year == "" {
-				meta.Year = itunesMeta.Year
-			}
-			if len(itunesMeta.Artists) > 0 {
-				meta.Artists = itunesMeta.Artists
-			}
-		}
+		log.Printf("Successfully fingerprinted Track %d: MusicBrainz ID [%s]", ctx.Payload.TrackID, mbid)
+		ctx.MusicBrainzID = mbid // Save it securely to the context pipeline
 	}
 
 	ctx.Meta = &meta

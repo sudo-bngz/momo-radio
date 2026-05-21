@@ -133,6 +133,8 @@ func main() {
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(ingest.TypeTrackProcess, ingestWorker.HandleProcessTask)
 	mux.HandleFunc(ingest.TypeArtistEnrich, ingestWorker.HandleArtistEnrichTask)
+	mux.HandleFunc(ingest.TypeTrackEnrich, ingestWorker.HandleTrackEnrichTask)
+
 	mux.HandleFunc(export.TypeExportPlaylist, exportWorker.HandlePlaylistExportTask)
 
 	log.Println("Asynq Multiplexer listening for jobs...")

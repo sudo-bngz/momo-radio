@@ -3,6 +3,8 @@ package ingest
 import (
 	"bytes"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -29,22 +31,52 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	// 1. Clear old artists (crucial for retries/repairs)
 	db.Model(track).Association("Artists").Clear()
 
-	// 2. Find/Create & Append Multiple Artists
-	var trackArtists []models.Artist // Keep track of the resolved artist structs
-	for _, name := range meta.Artists {
-		var artist models.Artist
-		db.Where(models.Artist{Name: name, OrganizationID: track.OrganizationID}).
-			FirstOrCreate(&artist, models.Artist{Name: name, OrganizationID: track.OrganizationID})
+	// 2. Sanitize & Split Artists before DB Insertion
+	var trackArtists []models.Artist
 
-		// Map country from Discogs if missing
-		if artist.ArtistCountry == "" && meta.Country != "" {
-			db.Model(&artist).Update("ArtistCountry", meta.Country)
+	// Regex to remove noise like "(ES)", "(2)", or "[Live]"
+	rxNoise := regexp.MustCompile(`\s*\([^)]*\)|\s*\[[^]]*\]`)
+	// Regex to split collaborations like "feat.", "vs.", or "&"
+	rxSplit := regexp.MustCompile(`(?i)\s+(feat\.?|ft\.?|pres\.?|vs\.?|&)\s+`)
+
+	for _, rawName := range meta.Artists {
+		// 1. Strip the Discogs/Spotify noise
+		cleanName := rxNoise.ReplaceAllString(rawName, "")
+
+		// 2. Split collaborations into individual artists
+		parts := rxSplit.Split(cleanName, -1)
+
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+
+			// 3. Save the pristine artist name to the database
+			var artist models.Artist
+			db.Where("name = ? AND organization_id = ?", p, track.OrganizationID).
+				FirstOrCreate(&artist, models.Artist{Name: p, OrganizationID: track.OrganizationID})
+
+			if artist.ArtistCountry == "" && meta.Country != "" {
+				db.Model(&artist).Update("ArtistCountry", meta.Country)
+			}
+
+			trackArtists = append(trackArtists, artist)
 		}
-
-		trackArtists = append(trackArtists, artist)
-		track.Artists = append(track.Artists, artist)
 	}
 
+	// Fallback if the file had literally no usable artist tags
+	if len(trackArtists) == 0 {
+		var artist models.Artist
+		db.Where("name = ? AND organization_id = ?", "Unknown Artist", track.OrganizationID).
+			FirstOrCreate(&artist, models.Artist{Name: "Unknown Artist", OrganizationID: track.OrganizationID})
+		trackArtists = append(trackArtists, artist)
+	}
+
+	// ⚡️ EXPLICITLY save the Many-to-Many relationship directly to the DB!
+	db.Model(track).Association("Artists").Append(trackArtists)
+
+	// ... (The rest of the file continues with File Size & Bitrate) ...
 	// 3. Setup Album using the newly resolved Artists
 	var albumID *uint
 	if meta.Album != "" && len(trackArtists) > 0 {

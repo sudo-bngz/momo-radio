@@ -6,20 +6,20 @@ import (
 	"momo-radio/internal/models"
 )
 
-// ProcessingContext holds all state shared across the pipeline steps
+// ⚡️ FIXED: Added the pipeline context structs here so they are globally available
 type ProcessingContext struct {
-	Worker    *Worker
-	Ctx       context.Context
-	Payload   TrackProcessPayload
-	Track     *models.Track
-	OrgID     string
-	RawPath   string
-	CleanPath string
-	Meta      *metadata.Track
-	DestKey   string
+	Worker        *Worker
+	Ctx           context.Context
+	Payload       TrackProcessPayload
+	RawPath       string
+	CleanPath     string
+	DestKey       string
+	OrgID         string
+	Track         *models.Track
+	Meta          *metadata.Track
+	MusicBrainzID string
 }
 
-// Step defines a single, isolated piece of the processing pipeline
 type Step interface {
 	Name() string
 	Execute(ctx *ProcessingContext) error

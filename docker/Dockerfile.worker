@@ -52,10 +52,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsamplerate0 \
     libyaml-0-2 \
     libchromaprint1 \
-    # ⚡️ 1. Fetch the '-12' binary which matches Debian Bookworm (Debian 12)
+    libchromaprint-tools \
     && if [ "$TARGETARCH" = "arm64" ]; then export AW_ARCH="arm64"; else export AW_ARCH="amd64"; fi \
     && wget https://github.com/bbc/audiowaveform/releases/download/1.10.2/audiowaveform_1.10.2-1-12_${AW_ARCH}.deb \
-    # ⚡️ 2. Use apt-get to install the local file directly. It will auto-fetch the correct Boost 1.74 libs!
     && apt-get install -y ./audiowaveform_1.10.2-1-12_${AW_ARCH}.deb \
     && rm audiowaveform_1.10.2-1-12_${AW_ARCH}.deb \
     && rm -rf /var/lib/apt/lists/*

@@ -59,6 +59,7 @@ type Config struct {
 	Services struct {
 		DiscogsToken string `mapstructure:"discogs_token"`
 		ContactEmail string `mapstructure:"contact_email"`
+		AcoustIDKey  string `mapstructure:"acoustid_key"`
 	} `mapstructure:"services"`
 	Worker struct {
 		Concurrency int            `mapstructure:"concurrency"`
@@ -124,6 +125,7 @@ func Load() *Config {
 	// Services
 	viper.BindEnv("services.discogs_token")
 	viper.BindEnv("services.contact_email")
+	viper.BindEnv("services.acoustid_key")
 
 	// Worker Bindings
 	viper.BindEnv("worker.concurrency")
