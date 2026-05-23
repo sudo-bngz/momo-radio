@@ -16,7 +16,7 @@ interface TrackListViewProps {
 export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   const navigate = useNavigate();
   const { globalSearch } = useSearchStore();
-const { 
+  const { 
     tracks, setTracks, globalTotal, isLoading, 
     isFetchingMore, setSearchQuery, setSortBy, loadMore, hasMore
   } = useLibrary();
@@ -57,8 +57,6 @@ const {
 
 return (
     <VStack align="stretch" h="100%" gap={0}>
-      {/* ⚡️ Standalone text removed from here! */}
-
       <Box flex="1" overflowY="auto" onScroll={handleScroll}
         css={{
           '&::-webkit-scrollbar': { width: '8px' },
@@ -77,7 +75,6 @@ return (
                 <Table.Row>
                   <Table.ColumnHeader w="50px"></Table.ColumnHeader>
                   <Table.ColumnHeader w="64px">Artwork</Table.ColumnHeader>
-                  {/* ⚡️ The count is now cleanly tucked into the header! */}
                   <Table.ColumnHeader>Track ({globalTotal})</Table.ColumnHeader>
                   <Table.ColumnHeader>Artist</Table.ColumnHeader>
                   <Table.ColumnHeader>Album</Table.ColumnHeader>
@@ -93,6 +90,12 @@ return (
                   const hasAudioData = track.duration && track.duration > 0;
                   const hasPendingFlag = ['pending', 'processing'].includes(track.status || '') || ['pending', 'processing'].includes(track.processing_status || '');
                   const isPending = !hasAudioData || (hasPendingFlag && !hasAudioData);
+
+                  const rawTags = [
+                    ...(track.genre ? track.genre.split(',') : []),
+                    ...(track.style ? track.style.split(',') : [])
+                  ];
+                  const mergedTags = Array.from(new Set(rawTags.map(t => t.trim()).filter(Boolean)));
 
                   return (
                     <Table.Row 
@@ -178,19 +181,17 @@ return (
                       
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
-                          {track.style ? (
-                            track.style.split(',').map((tag, index) => {
-                              const cleanTag = tag.trim();
-                              return (
-                                <Badge 
-                                  key={index} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"}
-                                  _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
-                                  onClick={(e) => { if(!isPending){ e.stopPropagation(); setSearchQuery(cleanTag); } }}
-                                >
-                                  {cleanTag}
-                                </Badge>
-                              );
-                            })
+                          {/* ⚡️ USE THE MERGED TAGS ARRAY HERE */}
+                          {mergedTags.length > 0 ? (
+                            mergedTags.map((cleanTag, index) => (
+                              <Badge 
+                                key={index} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"}
+                                _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
+                                onClick={(e) => { if(!isPending){ e.stopPropagation(); setSearchQuery(cleanTag); } }}
+                              >
+                                {cleanTag}
+                              </Badge>
+                            ))
                           ) : (
                             <Badge size="sm" bg="gray.100" color="gray.400" variant="subtle" borderRadius="md" px={2}>-</Badge>
                           )}
