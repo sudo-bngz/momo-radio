@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Box } from '@chakra-ui/react';
-import { getCdnUrl } from '../../utils/storage'; 
+import { getCdnUrl } from '../../utils/Storage'; 
 
 interface WaveSurferPlayerProps {
   trackId: number;

@@ -4,7 +4,7 @@ import {
   Box, Flex, HStack, VStack, Text, Icon, IconButton, 
   Input, Grid, Button, Spinner 
 } from '@chakra-ui/react';
-import { Music, X, Edit2, Radio, HardDrive, Activity } from 'lucide-react';
+import { Music, X, Edit2, Radio, HardDrive, Activity, Sparkles, Tag } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Track } from '../../../types';
 
@@ -298,28 +298,77 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                 </VStack>
               </Box>
 
-              {/* TAGS TAB */}
+              {/* ⚡️ TAGS TAB REBUILT FOR AI METADATA */}
               <Box display={activeTab === 'Tags' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
-                  <FormRow label="Genre(s)">
-                    <Box>
-                      {isEditing && (
-                        <StyledInput name="genre" value={genreInput} onChange={(e: any) => setGenreInput(e.target.value)} placeholder="Comma separated genres" />
-                      )}
-                      {!isEditing && <input type="hidden" name="genre" value={genreInput} />}
-                      <TagDisplay rawString={genreInput} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
-                    </Box>
-                  </FormRow>
+                  <Box>
+                    <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" color="gray.500" mb={4}>Manual Tags</Text>
+                    <VStack align="stretch" gap={4}>
+                      <FormRow label="Genre(s)">
+                        <Box>
+                          {isEditing && (
+                            <StyledInput name="genre" value={genreInput} onChange={(e: any) => setGenreInput(e.target.value)} placeholder="Comma separated genres" />
+                          )}
+                          {!isEditing && <input type="hidden" name="genre" value={genreInput} />}
+                          <TagDisplay rawString={genreInput} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
+                        </Box>
+                      </FormRow>
 
-                  <FormRow label="Style(s)">
-                    <Box>
-                      {isEditing && (
-                        <StyledInput name="style" value={styleInput} onChange={(e: any) => setStyleInput(e.target.value)} placeholder="e.g. Minimal, Deep Tech" />
-                      )}
-                      {!isEditing && <input type="hidden" name="style" value={styleInput} />}
-                      <TagDisplay rawString={styleInput} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
-                    </Box>
-                  </FormRow>
+                      <FormRow label="Style(s)">
+                        <Box>
+                          {isEditing && (
+                            <StyledInput name="style" value={styleInput} onChange={(e: any) => setStyleInput(e.target.value)} placeholder="e.g. Minimal, Deep Tech" />
+                          )}
+                          {!isEditing && <input type="hidden" name="style" value={styleInput} />}
+                          <TagDisplay rawString={styleInput} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
+                        </Box>
+                      </FormRow>
+                    </VStack>
+                  </Box>
+
+                  <Box borderTop="1px solid" borderColor="gray.200" my={2} />
+
+                  {/* AI GENERATED TAGS SECTION */}
+                  <Box>
+                    <HStack mb={4} justify="space-between">
+                      <HStack>
+                        <Icon as={Sparkles} boxSize={4} color="purple.500" />
+                        <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" color="purple.600">Auto-Generated Tags</Text>
+                      </HStack>
+                    </HStack>
+
+                    <VStack align="stretch" gap={4} bg="gray.50" p={4} borderRadius="md" border="1px solid" borderColor="gray.100">
+                      
+                      <FormRow label="AI Genres">
+                        <ArrayTagDisplay 
+                          tags={fullTrack?.ml_genres} 
+                          colorScheme="blue" 
+                          icon={Tag}
+                          onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} 
+                        />
+                      </FormRow>
+
+                      <FormRow label="Moods">
+                        <ArrayTagDisplay 
+                          tags={fullTrack?.ml_moods} 
+                          colorScheme="purple" 
+                          icon={Sparkles}
+                          onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} 
+                        />
+                      </FormRow>
+
+                      <FormRow label="Characteristics">
+                        <ArrayTagDisplay 
+                          tags={fullTrack?.ml_characteristics} 
+                          colorScheme="green" 
+                          icon={Activity}
+                          onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} 
+                        />
+                      </FormRow>
+                      
+                    </VStack>
+                  </Box>
+
                 </VStack>
               </Box>
 
@@ -341,6 +390,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                   <Box borderTop="1px dashed" borderColor="gray.200" my={2} />
 
                   <FormRow label="Danceability"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.danceability ? fullTrack.danceability.toFixed(2) : '-'}</Text></FormRow>
+                  <FormRow label="Energy"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.energy ? fullTrack.energy.toFixed(2) : '-'}</Text></FormRow>
                   <FormRow label="Loudness"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.loudness ? `${fullTrack.loudness.toFixed(1)} dB` : '-'}</Text></FormRow>
                 </VStack>
               </Box>
@@ -456,7 +506,6 @@ const MultiArtistEditableField = ({ label, artists, isEditing, onNavigate }: any
   return (
     <FormRow label={label}>
       {isEditing ? (
-        // Disabled during edit mode because the backend requires an array upload for Artists
         <StyledInput 
           name="artist_placeholder" 
           defaultValue={artists.join(', ')} 
@@ -489,13 +538,41 @@ const MultiArtistEditableField = ({ label, artists, isEditing, onNavigate }: any
   );
 };
 
-const TagDisplay = ({ rawString, colorScheme = "blue", onTagClick }: any) => {
+// ⚡️ NEW: Dedicated Array Renderer for Postgres String Arrays
+const ArrayTagDisplay = ({ tags, colorScheme = "blue", icon: IconCmp, onTagClick }: any) => {
+  if (!tags || !Array.isArray(tags) || tags.length === 0) {
+    return <Text fontSize="sm" color="gray.400" h="38px" display="flex" alignItems="center">-</Text>;
+  }
+
+  const bg = `${colorScheme}.50`;
+  const color = `${colorScheme}.700`;
+  const border = `${colorScheme}.100`;
+
+  return (
+    <HStack flexWrap="wrap" gap={2}>
+      {tags.map((tag: string, index: number) => (
+        <HStack 
+          key={index} px={2.5} py={1} bg={bg} color={color} gap={1.5}
+          fontSize="xs" fontWeight="600" borderRadius="md" border="1px solid" borderColor={border}
+          cursor={onTagClick ? "pointer" : "default"} transition="all 0.2s"
+          _hover={onTagClick ? { transform: "translateY(-1px)", shadow: "sm", opacity: 0.8 } : {}}
+          onClick={() => onTagClick && onTagClick(tag)}
+        >
+          {IconCmp && <IconCmp size={12} />}
+          <Text>{tag}</Text>
+        </HStack>
+      ))}
+    </HStack>
+  );
+};
+
+const TagDisplay = ({ rawString, colorScheme = "gray", onTagClick }: any) => {
   if (!rawString.trim()) return <Text fontSize="sm" color="gray.400" h="38px" display="flex" alignItems="center">-</Text>;
   const tags = rawString.split(',').map((s: string) => s.trim()).filter(Boolean);
   
-  const bg = colorScheme === 'purple' ? 'purple.50' : 'blue.50';
-  const color = colorScheme === 'purple' ? 'purple.700' : 'blue.700';
-  const border = colorScheme === 'purple' ? 'purple.100' : 'blue.100';
+  const bg = colorScheme === 'gray' ? 'gray.100' : `${colorScheme}.50`;
+  const color = colorScheme === 'gray' ? 'gray.700' : `${colorScheme}.700`;
+  const border = colorScheme === 'gray' ? 'gray.200' : `${colorScheme}.100`;
 
   return (
     <HStack flexWrap="wrap" gap={2} my={2}>

@@ -3,9 +3,9 @@ package ingest
 import (
 	"bytes"
 	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 
 	"momo-radio/internal/metadata"
@@ -34,28 +34,20 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	// 2. Sanitize & Split Artists before DB Insertion
 	var trackArtists []models.Artist
 
-	// Regex to remove noise like "(ES)", "(2)", or "[Live]"
-	rxNoise := regexp.MustCompile(`\s*\([^)]*\)|\s*\[[^]]*\]`)
-	// Regex to split collaborations like "feat.", "vs.", or "&"
-	rxSplit := regexp.MustCompile(`(?i)\s+(feat\.?|ft\.?|pres\.?|vs\.?|&)\s+`)
-
 	for _, rawName := range meta.Artists {
-		// 1. Strip the Discogs/Spotify noise
-		cleanName := rxNoise.ReplaceAllString(rawName, "")
+		// Use the central engine from scoring.go to respect KnownDuos and 'x' splits
+		parsedNames := NormalizeArtist(rawName)
 
-		// 2. Split collaborations into individual artists
-		parts := rxSplit.Split(cleanName, -1)
-
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
+		for _, cleanName := range parsedNames {
+			cleanName = strings.TrimSpace(cleanName)
+			if cleanName == "" {
 				continue
 			}
 
 			// 3. Save the pristine artist name to the database
 			var artist models.Artist
-			db.Where("name = ? AND organization_id = ?", p, track.OrganizationID).
-				FirstOrCreate(&artist, models.Artist{Name: p, OrganizationID: track.OrganizationID})
+			db.Where("name = ? AND organization_id = ?", cleanName, track.OrganizationID).
+				FirstOrCreate(&artist, models.Artist{Name: cleanName, OrganizationID: track.OrganizationID})
 
 			if artist.ArtistCountry == "" && meta.Country != "" {
 				db.Model(&artist).Update("ArtistCountry", meta.Country)
@@ -72,17 +64,13 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 			FirstOrCreate(&artist, models.Artist{Name: "Unknown Artist", OrganizationID: track.OrganizationID})
 		trackArtists = append(trackArtists, artist)
 	}
-
-	// ⚡️ EXPLICITLY save the Many-to-Many relationship directly to the DB!
 	db.Model(track).Association("Artists").Append(trackArtists)
 
-	// ... (The rest of the file continues with File Size & Bitrate) ...
 	// 3. Setup Album using the newly resolved Artists
 	var albumID *uint
 	if meta.Album != "" && len(trackArtists) > 0 {
 		var album models.Album
 
-		// ⚡️ FIXED: Removed ArtistID. Query by Title and Organization only.
 		err := db.Where(models.Album{Title: meta.Album, OrganizationID: track.OrganizationID}).First(&album).Error
 
 		if err == gorm.ErrRecordNotFound {
@@ -128,7 +116,7 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 
 			if len(rawImage) > 0 && errImg == nil {
 				if processedImg, errProc := metadata.ProcessCover(rawImage); errProc == nil {
-					coverKey := fmt.Sprintf("covers/%s/album_%d.jpg", ctx.OrgID, album.ID)
+					coverKey := fmt.Sprintf("covers/%s/album_%d.jpg", ctx.Track.OrganizationID, album.ID)
 					if errUpload := ctx.Worker.storage.UploadAssetFile(coverKey, bytes.NewReader(processedImg), "image/jpeg", "public, max-age=31536000"); errUpload == nil {
 						db.Model(&album).Update("CoverKey", coverKey)
 					}
@@ -151,6 +139,10 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 		"scale":               meta.Scale,
 		"danceability":        meta.Danceability,
 		"loudness":            meta.Loudness,
+		"energy":              meta.Energy,
+		"ml_moods":            pq.StringArray(meta.MLMoods),
+		"ml_genres":           pq.StringArray(meta.MLGenres),
+		"ml_characteristics":  pq.StringArray(meta.MLCharacteristics),
 		"processing_status":   "completed",
 		"processing_progress": 100,
 	})

@@ -3,15 +3,16 @@ package ingest
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 var (
 	// Matches anything inside parentheses or brackets
 	rxParens = regexp.MustCompile(`\(.*?\)`)
 	rxBracks = regexp.MustCompile(`\[.*?\]`)
-
-	// Matches common featuring/collaboration keywords
-	rxFeat = regexp.MustCompile(`(?i)\b(feat\.?|ft\.?|pres\.?|vs\.?|&)\b`)
+	rxNoise  = regexp.MustCompile(`\s*\([^)]*\)|\s*\[[^]]*\]`)
+	rxSplit  = regexp.MustCompile(`(?i)\s+(feat\.?|ft\.?|pres\.?|vs\.?|&|x)\s+`)
+	rxFeat   = regexp.MustCompile(`(?i)\b(feat\.?|ft\.?|pres\.?|vs\.?|&)\b`)
 )
 
 // NormalizeTitle strips out remix/edit noise (e.g., "Time For Us [Radio Edit]" -> "time for us")
@@ -31,15 +32,22 @@ func NormalizeArtist(s string) []string {
 	// Split by featuring/versus keywords
 	parts := rxFeat.Split(s, -1)
 
-	var cleanArtists []string
+	var finalArtists []string
 	for _, p := range parts {
-		// Clean up any double spaces or trailing commas
-		p = strings.Trim(strings.TrimSpace(p), ",")
-		if p != "" {
-			cleanArtists = append(cleanArtists, p)
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
 		}
+
+		p = strings.ReplaceAll(p, " _AND_ ", " & ")
+		p = strings.ReplaceAll(p, " _VS_ ", " vs ")
+		p = strings.ReplaceAll(p, " _X_ ", " x ")
+		p = FormatArtistName(p)
+
+		finalArtists = append(finalArtists, p)
 	}
-	return cleanArtists
+
+	return finalArtists
 }
 
 // CalculateConfidence scores the safety of an API metadata payload
@@ -95,4 +103,17 @@ func CalculateConfidence(hasMBID bool, localArtist, localTitle, apiTitle string,
 	}
 
 	return 10 // Title matches, but the artist is a completely different band (e.g., Procol Harum)
+}
+
+// FormatArtistName forces "roza terenzi" to "Roza Terenzi" natively
+func FormatArtistName(name string) string {
+	words := strings.Fields(name)
+	for i, w := range words {
+		if len(w) > 0 {
+			r := []rune(w)
+			r[0] = unicode.ToUpper(r[0])
+			words[i] = string(r)
+		}
+	}
+	return strings.Join(words, " ")
 }

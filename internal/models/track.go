@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -92,8 +93,13 @@ type Track struct {
 	Scale        string  `gorm:"size:10" json:"scale"`
 	Danceability float64 `json:"danceability"`
 	Loudness     float64 `json:"loudness"`
-	Energy       float64 `json:"energy"`
 	WaveformKey  string  `gorm:"size:512" json:"waveform_key"`
+
+	// Mood
+	Energy            float64        `json:"energy"`
+	MLMoods           pq.StringArray `gorm:"type:text[]" json:"ml_moods"`
+	MLGenres          pq.StringArray `gorm:"type:text[]" json:"ml_genres"`
+	MLCharacteristics pq.StringArray `gorm:"type:text[]" json:"ml_characteristics"`
 
 	// Radio Logic
 	PlayCount  int        `gorm:"default:0" json:"play_count"`

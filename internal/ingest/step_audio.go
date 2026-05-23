@@ -39,7 +39,7 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		}
 	}
 
-	// 2. Deep Acoustic Analysis (Essentia)
+	// 2. Deep Acoustic Analysis (Essentia SVM ML Models)
 	ctx.Worker.analysisSem <- struct{}{}
 	analysis, err := audio.AnalyzeDeep(ctx.RawPath)
 	<-ctx.Worker.analysisSem
@@ -51,6 +51,12 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		meta.Danceability = analysis.Danceability
 		meta.Loudness = analysis.Loudness
 		meta.Duration = analysis.Duration
+		meta.Energy = analysis.Energy
+		meta.MLMoods = analysis.MLMoods
+		meta.MLGenres = analysis.MLGenres
+		meta.MLCharacteristics = analysis.MLCharacteristics
+	} else {
+		log.Printf("Warning: Deep analysis failed for %s: %v", ctx.RawPath, err)
 	}
 
 	// 3. Deterministic Acoustic Fingerprinting (Chromaprint / AcoustID)

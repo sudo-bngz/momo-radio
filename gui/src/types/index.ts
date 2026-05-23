@@ -65,10 +65,12 @@ export interface Track {
   loudness?: number;
   energy?: number;
   waveform_key?: string;
+  ml_moods?: string[];
+  ml_genres?: string[];
+  ml_characteristics?: string[];
 
   // --- Extended Tags ---
   catalog_number?: string;
-  mood?: string;
 
   // --- Radio Logic & Stats ---
   play_count?: number;
