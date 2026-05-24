@@ -82,7 +82,7 @@ func (s *Server) setupRoutes() {
 	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis)
 	playlistHandler := handlers.NewPlaylistHandler(s.db.DB, s.storage)
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
-	artistHandler := handlers.NewArtistHandler(s.db.DB)
+	artistHandler := handlers.NewArtistHandler(s.db.DB, s.storage)
 	albumHandler := handlers.NewAlbumHandler(s.db.DB, s.storage)
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
 
