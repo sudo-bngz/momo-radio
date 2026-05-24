@@ -6,13 +6,20 @@ import { Disc3, Play, Music } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../../services/api';
 import { useSearchStore } from '../../../store/useSearchStore';
+import { usePlayer } from '../../../context/PlayerContext';
+import { toaster } from '../../../components/ui/toaster';
 
 export const AlbumGridView: React.FC = () => {
   const navigate = useNavigate();
   const { globalSearch } = useSearchStore();
   
+  const { playTrack } = usePlayer();
+  
   const [albums, setAlbums] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // ⚡️ ADD A STATE TO SHOW A SPINNER ON THE SPECIFIC ALBUM BEING LOADED
+  const [loadingAlbumId, setLoadingAlbumId] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchAlbums = async () => {
@@ -29,6 +36,31 @@ export const AlbumGridView: React.FC = () => {
 
     fetchAlbums();
   }, []);
+
+  const handlePlayAlbum = async (e: React.MouseEvent, albumId: number) => {
+    e.stopPropagation(); // Prevent navigating to the album detail page
+    setLoadingAlbumId(albumId);
+
+    try {
+      // Fetch the tracks for this specific album.
+      // NOTE: Ensure your api.ts has a method to get tracks by album ID!
+      // This might be api.getAlbumTracks(albumId) or api.getTracks({ album_id: albumId })
+      const response = await api.getAlbumTracks(albumId); 
+      const tracks = response.data || response || [];
+
+      if (tracks.length > 0) {
+        // Play the first track, and pass the entire array to form the queue/playlist
+        playTrack(tracks[0], tracks);
+      } else {
+        toaster.create({ title: "This album is empty", type: "warning" });
+      }
+    } catch (error) {
+      console.error("Failed to load album tracks", error);
+      toaster.create({ title: "Failed to play album", type: "error" });
+    } finally {
+      setLoadingAlbumId(null);
+    }
+  };
 
   const filteredAlbums = albums.filter(a => {
     const matchesTitle = a.title && a.title.toLowerCase().includes(globalSearch.toLowerCase());
@@ -106,12 +138,14 @@ export const AlbumGridView: React.FC = () => {
                       w="48px" h="48px" bg="white" borderRadius="full" align="center" justify="center"
                       transform="translateY(10px)" _groupHover={{ transform: "translateY(0)" }} transition="all 0.2s"
                       shadow="lg" _hover={{ scale: 1.1 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Add play album logic here
-                      }}
+                      onClick={(e) => handlePlayAlbum(e, album.id)} // ⚡️ ATTACHED HERE
                     >
-                      <Icon as={Play} boxSize={5} color="gray.900" fill="currentColor" ml="2px" />
+                      {/* ⚡️ SHOW SPINNER IF LOADING THIS ALBUM */}
+                      {loadingAlbumId === album.id ? (
+                        <Spinner size="sm" color="blue.500" />
+                      ) : (
+                        <Icon as={Play} boxSize={5} color="gray.900" fill="currentColor" ml="2px" />
+                      )}
                     </Flex>
                   </Flex>
                 </Box>

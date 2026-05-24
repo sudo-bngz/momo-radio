@@ -91,17 +91,25 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 	search := c.Query("search")
 	sortBy := c.DefaultQuery("sort", "newest")
 
+	// 1. Extract album_id from the query parameters
+	albumID := c.Query("album_id")
+
 	if limit > 200 {
 		limit = 200
 	}
 
-	// 1. Build the base query, PRELOAD, and ⚡️ SCOPE TO TENANT
+	// 2. Build the base query, PRELOAD, and SCOPE TO TENANT
 	query := h.db.Model(&models.Track{}).
 		Preload("Artists").
 		Preload("Album").
 		Where("tracks.organization_id = ?", orgID)
 
-	// 2. Apply Search
+	// 3. Apply the Album Filter (Must be done BEFORE counting)
+	if albumID != "" {
+		query = query.Where("tracks.album_id = ?", albumID)
+	}
+
+	// 4. Apply Search
 	if search != "" {
 		searchTerm := "%" + search + "%"
 		query = query.Where(
@@ -110,11 +118,11 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		)
 	}
 
-	// 3. Get Total Count
+	// 5. Get Total Count (Now accurately reflects the album filter)
 	var total int64
 	query.Count(&total)
 
-	// 4. Apply Sorting
+	// 6. Apply Sorting
 	switch sortBy {
 	case "alphabetical":
 		query = query.Order("tracks.title ASC")
@@ -124,7 +132,7 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		query = query.Order("tracks.id DESC")
 	}
 
-	// 5. Fetch Models
+	// 7. Fetch Models
 	var tracks []models.Track
 	result := query.Limit(limit).Offset(offset).Find(&tracks)
 
@@ -151,18 +159,17 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		}
 
 		libraryTracks = append(libraryTracks, LibraryTrack{
-			ID:         t.ID,
-			Title:      t.Title,
-			Artist:     artistStr,
-			Album:      t.Album.Title,
-			Duration:   t.Duration,
-			CoverURL:   coverURL,
-			BPM:        t.BPM,
-			MusicalKey: t.MusicalKey,
-			Scale:      t.Scale,
-			Style:      t.Style,
-			Status:     t.ProcessingStatus,
-			// ⚡️ THE FIX: Correctly map the newly added data fields to the payload!
+			ID:                t.ID,
+			Title:             t.Title,
+			Artist:            artistStr,
+			Album:             t.Album.Title,
+			Duration:          t.Duration,
+			CoverURL:          coverURL,
+			BPM:               t.BPM,
+			MusicalKey:        t.MusicalKey,
+			Scale:             t.Scale,
+			Style:             t.Style,
+			Status:            t.ProcessingStatus,
 			Genre:             t.Genre,
 			Energy:            t.Energy,
 			MLMoods:           t.MLMoods,

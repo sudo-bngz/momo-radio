@@ -167,6 +167,13 @@ export const api = {
     return response.data;
   },
 
+  getAlbumTracks: async (albumId: number) => {
+    const response = await apiClient.get('/tracks', {
+      params: { album_id: albumId }
+    });
+    return response.data;
+  },
+
   // 3. PLAYLIST BUILDER
   createPlaylist: async (data: { name: string; description: string, color?: string }): Promise<Playlist> => {
     const response = await apiClient.post<Playlist>('/playlists', data);
@@ -213,7 +220,6 @@ export const api = {
     return response.data;
   },
 
-  // ⚡️ UPDATED: Changed from Rekordbox to M3U to match our backend refactor
   exportToM3u: async (playlistId: number): Promise<{ message: string, task_id: string }> => {
     const response = await apiClient.post(`/playlists/${playlistId}/export/m3u`);
     return response.data;
