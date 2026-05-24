@@ -117,3 +117,43 @@ func FormatArtistName(name string) string {
 	}
 	return strings.Join(words, " ")
 }
+
+// NormalizeTags standardizes messy ID3 genres/styles (e.g., "Minimal / Deep Tech; House")
+// into a clean, comma-separated string (e.g., "Minimal, Deep Tech, House")
+func NormalizeTags(raw string) string {
+	if raw == "" {
+		return ""
+	}
+
+	// 1. Replace common DJ software separators with commas
+	replacer := strings.NewReplacer(
+		"/", ",",
+		";", ",",
+		"|", ",",
+		"\\", ",",
+	)
+	commaString := replacer.Replace(raw)
+
+	// 2. Split, trim, and deduplicate
+	parts := strings.Split(commaString, ",")
+	var cleanTags []string
+	seen := make(map[string]bool)
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		// 3. Format to Title Case using our existing helper!
+		// This forces "deep tech" to become "Deep Tech"
+		p = FormatArtistName(p)
+
+		if !seen[p] {
+			cleanTags = append(cleanTags, p)
+			seen[p] = true
+		}
+	}
+
+	return strings.Join(cleanTags, ", ")
+}
