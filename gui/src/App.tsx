@@ -12,8 +12,8 @@ import { Toaster } from "./components/ui/toaster";
 import { SessionExpiredModal } from "./components/SessionExpiredModal";
 
 // AUTH & STATE
-import { supabase } from './services/client';
 import { useAuthStore } from './store/useAuthStore';
+import { useNetworkStore } from './store/useNetworkStore';
 
 // FEATURE IMPORTS
 import { DashboardFeature } from "./features/dashboard";
@@ -26,7 +26,6 @@ import { ScheduleFeature } from './features/schedule';
 import { SettingsFeature } from './features/settings';
 import { ArtistView } from './features/library/components/ArtistView';
 import { LibraryView } from './features/library/components/LibraryView';
-import { useNetworkStore } from './store/useNetworkStore';
 import { ApiDownScreen } from './layouts/ApiDownScreen';
 
 export const App = () => {
@@ -34,21 +33,11 @@ export const App = () => {
   // 1. CALL ALL HOOKS FIRST
   const isApiDown = useNetworkStore((state) => state.isApiDown);
   
+  const initializeAuth = useAuthStore((state) => state.initialize);
+  
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
-          useAuthStore.getState().setSession(session);
-        } else if (event === 'SIGNED_OUT') {
-          useAuthStore.getState().clearState(); 
-        }
-      }
-    );
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+    initializeAuth();
+  }, [initializeAuth]);
 
   // 2. RENDER (Safely handle the API Down state inside the Provider)
   return (

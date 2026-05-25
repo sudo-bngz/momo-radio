@@ -16,15 +16,17 @@ interface AuthState {
   organizations: Organization[];
   activeOrganizationId: string | null;
   isAuthenticated: boolean;
+  isInitialized: boolean;
   isSessionExpired: boolean;
 
+  // ⚡️ ADDED: The initialize function
+  initialize: () => Promise<void>;
+  
   setSession: (session: Session | null) => void;
   setOrganizations: (orgs: Organization[]) => void;
   setActiveOrganization: (id: string) => void;
   logout: () => Promise<void>;
   setSessionExpired: (expired: boolean) => void;
-  
-  // ⚡️ NEW: A silent cleanup function for the background listener
   clearState: () => void; 
 }
 
@@ -36,7 +38,35 @@ export const useAuthStore = create<AuthState>()(
       organizations: [],
       activeOrganizationId: null,
       isAuthenticated: false,
+      isInitialized: false, // ⚡️ Starts false to block the router
       isSessionExpired: false,
+
+      // ⚡️ ADDED: Fetches the session on boot and marks init as true
+      initialize: async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          set({ 
+            session, 
+            user: session?.user || null,
+            isAuthenticated: !!session,
+            isInitialized: true 
+          });
+
+          // Listen for token refreshes or logins in other tabs
+          supabase.auth.onAuthStateChange((_event, session) => {
+            set({ 
+              session, 
+              user: session?.user || null,
+              isAuthenticated: !!session,
+              isInitialized: true 
+            });
+          });
+        } catch (error) {
+          console.error("Failed to initialize auth", error);
+          set({ isInitialized: true }); // Prevent app from freezing if offline
+        }
+      },
 
       setSession: (session) => set({ 
         session, 
@@ -64,7 +94,6 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem('momo-auth-storage');
       },
 
-      // ⚡️ MANUAL LOGOUT: Talks to Supabase, then forces a hard redirect
       logout: async () => {
         try {
           await supabase.auth.signOut();
@@ -92,6 +121,7 @@ export const useAuthStore = create<AuthState>()(
     { 
       name: 'momo-auth-storage',
       partialize: (state) => ({ 
+        // We only persist the org data, we let Supabase handle the token persistence!
         activeOrganizationId: state.activeOrganizationId,
         organizations: state.organizations
       })
