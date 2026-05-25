@@ -3,6 +3,7 @@ package handlers
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
@@ -119,7 +120,7 @@ func (h *ArtistHandler) GetArtistByName(c *gin.Context) {
 	})
 }
 
-// GetArtistByID returns an artist and their full discography scoped by Tenant
+// GetArtistByID handles fetching an artist by either numeric ID or Name
 func (h *ArtistHandler) GetArtistByID(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -127,17 +128,27 @@ func (h *ArtistHandler) GetArtistByID(c *gin.Context) {
 		return
 	}
 
-	artistID := c.Param("id")
+	param := c.Param("id") // Could be "72" or "Lady Gaga"
 	var artist models.Artist
 
-	err := h.db.
+	// 1. Build the base query with preloads
+	query := h.db.
 		Preload("Tracks").
 		Preload("Tracks.Album").
 		Preload("Albums").
-		Where("organization_id = ?", orgID).
-		First(&artist, artistID).Error
+		Where("organization_id = ?", orgID)
 
-	if err != nil {
+	// ⚡️ 2. Smart Detection: Is it an ID or a Name?
+	if id, err := strconv.Atoi(param); err == nil {
+		// It's a number, search by ID
+		query = query.Where("id = ?", id)
+	} else {
+		// It's a string, search by Name safely
+		query = query.Where("name = ?", param)
+	}
+
+	// 3. Execute the safe query (Notice we removed 'param' from First())
+	if err := query.First(&artist).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Artist not found"})
 			return
@@ -146,14 +157,33 @@ func (h *ArtistHandler) GetArtistByID(c *gin.Context) {
 		return
 	}
 
-	// ⚡️ Same here: Attaching the public URL to the response payload
+	// 4. Attach Public URL
+	// 1. Attach Public URL for the Artist Avatar
 	var publicURL string
-	if artist.AvatarURL != "" {
+	if artist.AvatarURL != "" { // (Use whatever your model uses: ImageKey/AvatarKey)
 		publicURL = h.storage.GetPublicURL(artist.AvatarURL)
 	}
 
+	// Loop through the albums and generate their Public URLs!
+	var formattedAlbums []map[string]any
+	for _, a := range artist.Albums {
+		albumCoverURL := ""
+		if a.CoverKey != "" {
+			albumCoverURL = h.storage.GetPublicURL(a.CoverKey)
+		}
+
+		formattedAlbums = append(formattedAlbums, map[string]interface{}{
+			"id":        a.ID,
+			"title":     a.Title,
+			"year":      a.Year,
+			"cover_url": albumCoverURL, // Perfectly formatted for React
+		})
+	}
+
+	// 3. Send it all back
 	c.JSON(http.StatusOK, gin.H{
 		"artist":    artist,
 		"image_url": publicURL,
+		"albums":    formattedAlbums, // ⚡️ Pass the formatted albums here!
 	})
 }

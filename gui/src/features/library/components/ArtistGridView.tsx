@@ -38,7 +38,6 @@ export const ArtistGridView: React.FC = () => {
     setLoadingArtistId(artist.id);
 
     try {
-      // Reuse your existing getTracks endpoint to find all tracks by this artist
       const response = await api.getTracks({ search: artist.name, limit: 100 }); 
       const tracks = response.data || [];
 
@@ -75,7 +74,6 @@ export const ArtistGridView: React.FC = () => {
       ) : (
         <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5, xl: 6 }} gap={6} px={1}>
           {filteredArtists.map((artist) => {
-            // Check common fields where your backend might store the image URL
             const imageUrl = artist.image_url || artist.picture_url || artist.cover_url;
 
             return (
@@ -83,10 +81,10 @@ export const ArtistGridView: React.FC = () => {
                 key={artist.id} 
                 className="group" 
                 cursor="pointer" 
-                onClick={() => navigate(`/library/artists/${artist.id}`, { state: { activeTab: 'artists' } })}
+                // ⚡️ THE FIX: Changed from `/library/artists/...` to `/artists/...`
+                onClick={() => navigate(`/artists/${artist.id}`)}
                 gap={3}
               >
-                {/* Circular Avatar for Artists */}
                 <Box 
                   w="100%" pb="100%" position="relative" borderRadius="full" overflow="hidden" 
                   shadow="sm" bg="gray.100" border="1px solid" borderColor="gray.200" 
@@ -100,12 +98,10 @@ export const ArtistGridView: React.FC = () => {
                     />
                   ) : (
                     <Flex position="absolute" inset={0} align="center" justify="center">
-                      {/* ⚡️ CHANGED FROM MIC TO USER */}
                       <Icon as={User} boxSize={12} color="gray.300" />
                     </Flex>
                   )}
 
-                  {/* ⚡️ HOVER OVERLAY WITH PLAY BUTTON */}
                   <Flex 
                     position="absolute" inset={0} bg="blackAlpha.400" opacity={0} 
                     _groupHover={{ opacity: 1 }} transition="opacity 0.2s" 
