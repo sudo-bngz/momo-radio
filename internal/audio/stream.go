@@ -11,19 +11,25 @@ import (
 	"momo-radio/internal/config"
 )
 
-// ⚡️ Added 'segmentDir string' so each tenant gets an isolated FFmpeg output folder
-func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startSequence int64, segmentDir string) {
+func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startSequence int64, segmentDir string, targetBitrate int) {
 
 	startNum := strconv.FormatInt(startSequence, 10)
 
-	// ⚡️ Route output to the tenant-specific directory
+	// Route output to the tenant-specific directory
 	segmentPattern := filepath.Join(segmentDir, fmt.Sprintf("stream_%d_%%03d.ts", runID))
 	playlistPath := filepath.Join(segmentDir, "stream.m3u8")
 
-	// ⚡️ Pull FFmpeg parameters dynamically from your Viper Config
-	// Fallbacks are provided just in case the config file is missing them
+	// Format the dynamic bitrate from the database (e.g., 128 -> "128k")
+	// If for some reason it is 0, we gracefully fallback to the viper config
+	var bitrate string
+	if targetBitrate > 0 {
+		bitrate = fmt.Sprintf("%dk", targetBitrate)
+	} else {
+		bitrate = fallbackStr(cfg.Radio.Bitrate, "192k")
+	}
+
+	// Pull remaining FFmpeg parameters dynamically from your Viper Config
 	codec := fallbackStr(cfg.Radio.AudioCodec, "libmp3lame")
-	bitrate := fallbackStr(cfg.Radio.Bitrate, "192k")
 	sampleRate := fallbackStr(cfg.Radio.SampleRate, "44100")
 
 	hlsTime := fallbackInt(cfg.Radio.SegmentTime, 10)
@@ -33,12 +39,12 @@ func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startS
 		"-re",
 		"-i", "pipe:0",
 
-		// ⚡️ Audio Configuration via Viper
+		// Audio Configuration (Now using dynamic DB bitrate)
 		"-c:a", codec,
 		"-b:a", bitrate,
 		"-ar", sampleRate,
 
-		// ⚡️ HLS Configuration via Viper
+		// HLS Configuration via Viper
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(hlsTime),
 		"-hls_list_size", strconv.Itoa(hlsListSize),
@@ -55,11 +61,11 @@ func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startS
 	cmd.Stdin = input
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("❌ FFmpeg failed to start: %v", err)
+		log.Printf("FFmpeg failed to start: %v", err)
 		return
 	}
 
-	log.Printf("FFmpeg started (RunID: %d | Seq: %s | Dir: %s)", runID, startNum, segmentDir)
+	log.Printf("FFmpeg started (RunID: %d | Seq: %s | Dir: %s | Bitrate: %s)", runID, startNum, segmentDir, bitrate)
 
 	if err := cmd.Wait(); err != nil {
 		log.Printf("FFmpeg exited: %v", err)

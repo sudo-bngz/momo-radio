@@ -98,7 +98,6 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client) *Engine
 	}
 }
 
-// ⚡️ Run is now a Manager that spawns pipelines for ALL active tenants
 func (e *Engine) Run() {
 	if e.cfg.Radio.DryRun {
 		return
@@ -111,7 +110,6 @@ func (e *Engine) Run() {
 	activeTenants := make(map[uuid.UUID]bool)
 	ticker := time.NewTicker(30 * time.Second)
 
-	// Check immediately, then poll for new tenants every 30s
 	e.checkAndStartTenants(activeTenants)
 	for range ticker.C {
 		e.checkAndStartTenants(activeTenants)
@@ -120,7 +118,6 @@ func (e *Engine) Run() {
 
 func (e *Engine) checkAndStartTenants(active map[uuid.UUID]bool) {
 	var orgIDs []uuid.UUID
-	// Find any organization that has at least one track
 	e.db.DB.Model(&models.Track{}).Distinct("organization_id").Pluck("organization_id", &orgIDs)
 
 	for _, id := range orgIDs {
@@ -132,15 +129,23 @@ func (e *Engine) checkAndStartTenants(active map[uuid.UUID]bool) {
 	}
 }
 
-// ⚡️ runTenantPipeline manages the HLS stream for ONE specific organization
+// ⚡️ runTenantPipeline manages the HLS stream dynamically configured by DB Mount Points
 func (e *Engine) runTenantPipeline(orgID uuid.UUID) {
-	// 1. Prepare an isolated output dir for this tenant
-	segmentDir := filepath.Join(e.cfg.Radio.SegmentDir, orgID.String())
+	// 1. Fetch the default initialized mount point for this tenant from DB
+	var defaultMount models.MountPoint
+	err := e.db.DB.Where("organization_id = ? AND is_default = ?", orgID, true).First(&defaultMount).Error
+	if err != nil {
+		log.Printf("[%s] No active default mount point found! Skipping transmission infrastructure.", orgID)
+		return
+	}
+
+	// 2. Prepare an isolated output directory scoped to Tenant ID AND Mount Slug
+	segmentDir := filepath.Join(e.cfg.Radio.SegmentDir, orgID.String(), defaultMount.Slug)
 	os.RemoveAll(segmentDir)
 	os.MkdirAll(segmentDir, 0755)
 
-	// 2. Resume Logic (Scoped to Tenant)
-	state, err := e.state.GetCurrentState(orgID) // ⚡️ Must update state manager to accept orgID!
+	// 3. Resume Logic (Scoped to Tenant)
+	state, err := e.state.GetCurrentState(orgID)
 	startSequence := 0
 	var resumeTrackID uint
 
@@ -150,17 +155,17 @@ func (e *Engine) runTenantPipeline(orgID uuid.UUID) {
 		resumeTrackID = state.TrackID
 	}
 
-	// 3. Setup Pipeline
+	// 4. Setup Pipeline Execution
 	pr, pw := io.Pipe()
 
-	// A. FFmpeg Consumer (Pass the scoped segment dir!)
-	go audio.StartStreamProcess(pr, e.cfg, e.runID, int64(startSequence), segmentDir) // ⚡️ Must update audio pkg!
+	// A. FFmpeg Consumer passed with segment directory and targeted Mount Bitrate specification
+	go audio.StartStreamProcess(pr, e.cfg, e.runID, int64(startSequence), segmentDir, defaultMount.Bitrate)
 
 	// B. Orchestrator Producer
 	go e.runOrchestrator(orgID, pw, resumeTrackID)
 
-	// C. Uploader
-	e.startStreamUploader(orgID, segmentDir)
+	// C. Dynamic Mount Uploader
+	e.startStreamUploader(orgID, defaultMount.Slug, segmentDir)
 }
 
 func getShowName(slot *models.ScheduleSlot) string {
@@ -176,13 +181,11 @@ func getShowName(slot *models.ScheduleSlot) string {
 	return "Momo Radio"
 }
 
-// ⚡️ Orchestrator scoped to Tenant
 func (e *Engine) runOrchestrator(orgID uuid.UUID, output *io.PipeWriter, resumeID uint) {
 	defer output.Close()
 
-	// Pass orgID into selectors so they only pull tenant tracks
 	selectors := map[string]dj.Selector{
-		"random":     dj.NewSelector("random", e.db.DB, orgID), // ⚡️ Must update Selector init!
+		"random":     dj.NewSelector("random", e.db.DB, orgID),
 		"starvation": dj.NewSelector("starvation", e.db.DB, orgID),
 	}
 
@@ -194,7 +197,6 @@ func (e *Engine) runOrchestrator(orgID uuid.UUID, output *io.PipeWriter, resumeI
 		var err error
 
 		if firstRun && resumeID != 0 {
-			// ⚡️ Preload Artists to avoid empty slice when resuming
 			if dbErr := e.db.DB.Preload("Artists").Where("organization_id = ?", orgID).First(&selectedTrack, resumeID).Error; dbErr == nil {
 				lastTrack = selectedTrack
 			}
@@ -202,7 +204,7 @@ func (e *Engine) runOrchestrator(orgID uuid.UUID, output *io.PipeWriter, resumeI
 		}
 
 		if selectedTrack == nil {
-			activeSlot := e.scheduler.GetCurrentSchedule(orgID) // ⚡️ Must update Scheduler to accept orgID
+			activeSlot := e.scheduler.GetCurrentSchedule(orgID)
 
 			if activeSlot != nil && activeSlot.PlaylistID != nil {
 				selectedTrack, err = e.pickNextFromPlaylist(orgID, *activeSlot.PlaylistID, lastTrack)
@@ -224,7 +226,7 @@ func (e *Engine) runOrchestrator(orgID uuid.UUID, output *io.PipeWriter, resumeI
 		}
 
 		if selectedTrack != nil {
-			e.state.UpdateTrack(orgID, selectedTrack.ID, 0) // ⚡️ Scope state to org
+			e.state.UpdateTrack(orgID, selectedTrack.ID, 0)
 
 			e.cache.Prefetch([]string{selectedTrack.Key})
 			go e.cache.Cleanup([]string{selectedTrack.Key})
@@ -245,7 +247,6 @@ func (e *Engine) runOrchestrator(orgID uuid.UUID, output *io.PipeWriter, resumeI
 	}
 }
 
-// ⚡️ Scoped strictly to the tenant
 func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrack *models.Track) (*models.Track, error) {
 	var track models.Track
 	currentSortOrder := -1
@@ -260,7 +261,7 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 	err := e.db.DB.Model(&models.Track{}).
 		Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 		Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ? AND playlist_tracks.sort_order > ?", playlistID, orgID, currentSortOrder).
-		Preload("Artists"). // ⚡️ Updated to Artists
+		Preload("Artists").
 		Preload("Album").
 		Order("playlist_tracks.sort_order ASC").
 		First(&track).Error
@@ -269,7 +270,7 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 		err = e.db.DB.Model(&models.Track{}).
 			Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 			Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ?", playlistID, orgID).
-			Preload("Artists"). // ⚡️ Updated to Artists
+			Preload("Artists").
 			Preload("Album").
 			Order("playlist_tracks.sort_order ASC").
 			First(&track).Error
@@ -284,7 +285,6 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 		albumName = t.Album.Title
 	}
 
-	// Format the array of artists into a display string
 	var artistNames []string
 	for _, a := range t.Artists {
 		artistNames = append(artistNames, a.Name)
@@ -296,7 +296,7 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 
 	trackData := CurrentTrack{
 		Title:     t.Title,
-		Artist:    artistStr, // ⚡️ Uses the joined string now
+		Artist:    artistStr,
 		Album:     albumName,
 		Show:      showName,
 		StartedAt: time.Now().Unix(),
@@ -307,7 +307,6 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 		return
 	}
 
-	// ⚡️ Uploads to tenant-specific URL: stream/org-id/now_playing.json
 	destKey := fmt.Sprintf("%s/now_playing.json", orgID.String())
 	e.storage.UploadStreamFile(destKey, bytes.NewReader(data), "application/json", "max-age=0, no-cache")
 }
@@ -326,7 +325,7 @@ func (e *Engine) recordTrackPlay(orgID uuid.UUID, t *models.Track) {
 		}
 
 		history := models.PlayHistory{
-			OrganizationID: orgID, // ⚡️ Scope History
+			OrganizationID: orgID,
 			TrackID:        t.ID,
 			PlayedAt:       now,
 		}
@@ -353,8 +352,8 @@ func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
 	return err
 }
 
-// Isolated Uploader per tenant
-func (e *Engine) startStreamUploader(orgID uuid.UUID, dir string) {
+// Scoped Uploader now routes variants using mount parameters
+func (e *Engine) startStreamUploader(orgID uuid.UUID, mountSlug string, dir string) {
 	ticker := time.NewTicker(800 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -382,7 +381,7 @@ func (e *Engine) startStreamUploader(orgID uuid.UUID, dir string) {
 
 			if filename == "stream.m3u8" {
 				if info.ModTime().After(lastM3u8Time) {
-					if err := e.uploadPlaylist(orgID, fullPath, filename); err == nil {
+					if err := e.uploadPlaylist(orgID, mountSlug, fullPath, filename); err == nil {
 						lastM3u8Time = info.ModTime()
 					}
 				}
@@ -393,11 +392,11 @@ func (e *Engine) startStreamUploader(orgID uuid.UUID, dir string) {
 				matches := seqRegex.FindStringSubmatch(filename)
 				if len(matches) > 1 {
 					if seq, err := strconv.Atoi(matches[1]); err == nil {
-						e.state.IncrementSequence(orgID, seq) // ⚡️ State tracking per tenant
+						e.state.IncrementSequence(orgID, seq)
 					}
 				}
 
-				if err := e.uploadSegment(orgID, fullPath, filename); err == nil {
+				if err := e.uploadSegment(orgID, mountSlug, fullPath, filename); err == nil {
 					uploadedSegments[filename] = true
 					os.Remove(fullPath)
 				}
@@ -410,7 +409,7 @@ func (e *Engine) startStreamUploader(orgID uuid.UUID, dir string) {
 	}
 }
 
-func (e *Engine) uploadPlaylist(orgID uuid.UUID, path, name string) error {
+func (e *Engine) uploadPlaylist(orgID uuid.UUID, mountSlug string, path, name string) error {
 	timer := prometheus.NewTimer(uploadDuration.WithLabelValues("playlist"))
 	defer timer.ObserveDuration()
 
@@ -420,8 +419,8 @@ func (e *Engine) uploadPlaylist(orgID uuid.UUID, path, name string) error {
 	}
 	defer f.Close()
 
-	// ⚡️ Route to stream/tenant_id/stream.m3u8
-	destKey := fmt.Sprintf("%s/%s", orgID.String(), name)
+	// ⚡️ Route target: {tenant_id}/{mount_slug}/stream.m3u8
+	destKey := fmt.Sprintf("%s/%s/%s", orgID.String(), mountSlug, name)
 	err = e.storage.UploadStreamFile(destKey, f, "application/vnd.apple.mpegurl", "max-age=0, no-cache, no-store, must-revalidate")
 	if err == nil {
 		uploadsTotal.WithLabelValues("playlist", orgID.String()).Inc()
@@ -429,7 +428,7 @@ func (e *Engine) uploadPlaylist(orgID uuid.UUID, path, name string) error {
 	return err
 }
 
-func (e *Engine) uploadSegment(orgID uuid.UUID, path, name string) error {
+func (e *Engine) uploadSegment(orgID uuid.UUID, mountSlug string, path, name string) error {
 	timer := prometheus.NewTimer(uploadDuration.WithLabelValues("segment"))
 	defer timer.ObserveDuration()
 
@@ -439,8 +438,8 @@ func (e *Engine) uploadSegment(orgID uuid.UUID, path, name string) error {
 	}
 	defer f.Close()
 
-	// ⚡️ Route to stream/tenant_id/segment_xx.ts
-	destKey := fmt.Sprintf("%s/%s", orgID.String(), name)
+	// Route target: {tenant_id}/{mount_slug}/segment_xxx.ts
+	destKey := fmt.Sprintf("%s/%s/%s", orgID.String(), mountSlug, name)
 	err = e.storage.UploadStreamFile(destKey, f, "video/MP2T", "public, max-age=86400")
 	if err == nil {
 		uploadsTotal.WithLabelValues("segment", orgID.String()).Inc()
@@ -456,21 +455,25 @@ func (e *Engine) cleanupUploadedMap(m map[string]bool, dir string) {
 	}
 }
 
-// Multi-Tenant Redirect Server
 func (e *Engine) startRedirectServer() {
 	endpoint := strings.TrimRight(e.cfg.Storage.Endpoint, "/")
 	port := ":8080"
 
-	// E.g. /listen?org_id=uuid
+	// E.g. /listen?org_id=uuid&mount=radio
 	http.HandleFunc("/listen", func(w http.ResponseWriter, r *http.Request) {
 		orgID := r.URL.Query().Get("org_id")
+		mount := r.URL.Query().Get("mount")
+
 		if orgID == "" {
 			http.Error(w, "Missing org_id parameter", http.StatusBadRequest)
 			return
 		}
+		if mount == "" {
+			mount = "radio"
+		}
 
-		// Redirect to BunnyCDN path
-		publicURL := fmt.Sprintf("%s/%s/%s/stream.m3u8", endpoint, e.cfg.Storage.BucketStream, orgID)
+		// Dynamic asset routing redirect to Object Storage / BunnyCDN configuration
+		publicURL := fmt.Sprintf("%s/%s/%s/%s/stream.m3u8", endpoint, e.cfg.Storage.BucketStream, orgID, mount)
 		http.Redirect(w, r, publicURL, http.StatusFound)
 	})
 

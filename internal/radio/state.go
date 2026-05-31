@@ -3,10 +3,15 @@ package radio
 import (
 	"time"
 
-	"github.com/google/uuid" // ⚡️ REQUIRED FOR MULTI-TENANT
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"momo-radio/internal/models"
+)
+
+const (
+	ModeAutoDJ = "autodj"
+	ModeLive   = "live"
 )
 
 type StateManager struct {
@@ -21,13 +26,13 @@ func NewStateManager(db *gorm.DB) *StateManager {
 func (sm *StateManager) GetCurrentState(orgID uuid.UUID) (*models.StreamState, error) {
 	var state models.StreamState
 
-	// FirstOrCreate ensures that if a new tenant boots up for the first time,
-	// they get a fresh state row automatically generated for them.
+	// Ensure new tenants get a fresh state row defaulting to AutoDJ mode
 	err := sm.db.Where(models.StreamState{OrganizationID: orgID}).
 		FirstOrCreate(&state, models.StreamState{
 			OrganizationID: orgID,
 			Sequence:       0,
 			TrackID:        0,
+			BroadcastMode:  ModeAutoDJ, // ⚡️ Default to scheduled playback
 			StartedAt:      time.Now(),
 		}).Error
 
@@ -36,25 +41,32 @@ func (sm *StateManager) GetCurrentState(orgID uuid.UUID) (*models.StreamState, e
 
 // UpdateTrack is called every time a new track starts FOR THIS TENANT
 func (sm *StateManager) UpdateTrack(orgID uuid.UUID, trackID uint, sequence int) error {
-	// Target the specific tenant's state row
 	return sm.db.Model(&models.StreamState{}).
 		Where("organization_id = ?", orgID).
 		Updates(map[string]interface{}{
 			"track_id":           trackID,
 			"started_at":         time.Now(),
-			"hls_media_sequence": sequence, // Ensure this matches your DB column name (either sequence or hls_media_sequence)
+			"hls_media_sequence": sequence,
 			"updated_at":         time.Now(),
 		}).Error
 }
 
 // IncrementSequence is called every time a new .ts segment is generated
-// This is critical so the new container continues counting (501, 502...) instead of resetting to 0.
 func (sm *StateManager) IncrementSequence(orgID uuid.UUID, newSequence int) {
-	// ⚡️ Target the specific tenant's state row
 	sm.db.Model(&models.StreamState{}).
 		Where("organization_id = ?", orgID).
 		Updates(map[string]interface{}{
 			"hls_media_sequence": newSequence,
 			"updated_at":         time.Now(),
 		})
+}
+
+// SetBroadcastMode switches the engine between 'autodj' and 'live' when a stream connects/disconnects
+func (sm *StateManager) SetBroadcastMode(orgID uuid.UUID, mode string) error {
+	return sm.db.Model(&models.StreamState{}).
+		Where("organization_id = ?", orgID).
+		Updates(map[string]interface{}{
+			"broadcast_mode": mode,
+			"updated_at":     time.Now(),
+		}).Error
 }

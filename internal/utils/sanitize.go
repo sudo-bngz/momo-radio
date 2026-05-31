@@ -16,7 +16,19 @@ var (
 
 	// Regex to clean up "feat." or "ft."
 	reFeat = regexp.MustCompile(`(?i)\s(\(|\[)?f(ea)?t\.?`)
+
+	// Regex for generating clean URL slugs (allows only lowercase alphanumeric, replaces rest with hyphens)
+	reSlug = regexp.MustCompile(`[^a-z0-9]+`)
 )
+
+// SanitizeSlug creates a URL-friendly string (e.g. "My Station!" -> "my-station")
+func SanitizeSlug(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	// Replace any non-alphanumeric character with a hyphen
+	text = reSlug.ReplaceAllString(text, "-")
+	// Trim any leading or trailing hyphens
+	return strings.Trim(text, "-")
+}
 
 func CleanFilename(filename string) string {
 	ext := filepath.Ext(filename)

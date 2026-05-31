@@ -51,6 +51,7 @@ func (c *Client) AutoMigrate() {
 		&models.User{},
 		&models.OrganizationUser{},
 		&models.Organization{},
+		&models.MountPoint{},
 		&models.PlayHistory{},
 		&models.Playlist{},
 		&models.PlaylistTrack{},

@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strings"
 
 	"momo-radio/internal/models"
+	"momo-radio/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -17,6 +20,13 @@ type AuthHandler struct {
 
 func NewAuthHandler(db *gorm.DB) *AuthHandler {
 	return &AuthHandler{db: db}
+}
+
+// Helper to generate a secure random stream key
+func generateStreamKey() string {
+	bytes := make([]byte, 10)
+	rand.Read(bytes)
+	return "live_" + hex.EncodeToString(bytes)
 }
 
 // ----------------------------------------------------------------------------
@@ -75,9 +85,21 @@ func (h *AuthHandler) HandleSupabaseWebhook(c *gin.Context) {
 		}
 
 		// 2. Create a default Personal Organization for them
+		orgName := user.Name + "'s Station"
 		org := models.Organization{
-			Name: user.Name + "'s Station",
-			Plan: "free",
+			Name:        orgName,
+			StationSlug: utils.SanitizeSlug(orgName), // ⚡️ Dynamically generate a clean URL slug
+			StreamKey:   generateStreamKey(),         // ⚡️ Generate live ingest key
+			Plan:        "free",
+			// ⚡️ Automatically provision the default HLS Mount Point
+			MountPoints: []models.MountPoint{
+				{
+					Name:      "Standard Quality",
+					Slug:      "radio",
+					Bitrate:   128,
+					IsDefault: true,
+				},
+			},
 		}
 		if err := tx.Create(&org).Error; err != nil {
 			return err
@@ -155,10 +177,22 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 
 				// B. Create a Personal Organization for them
 				orgID := uuid.New()
+				orgName := name + "'s Station"
 				org := models.Organization{
-					ID:   orgID,
-					Name: name + "'s Station",
-					Plan: "free",
+					ID:          orgID,
+					Name:        orgName,
+					StationSlug: utils.SanitizeSlug(orgName), // ⚡️ Same slug generator here
+					StreamKey:   generateStreamKey(),         // ⚡️ Same stream key logic
+					Plan:        "free",
+					// ⚡️ Automatically provision the default HLS Mount Point here as well
+					MountPoints: []models.MountPoint{
+						{
+							Name:      "Standard Quality",
+							Slug:      "radio",
+							Bitrate:   128,
+							IsDefault: true,
+						},
+					},
 				}
 				if err := tx.Create(&org).Error; err != nil {
 					return err

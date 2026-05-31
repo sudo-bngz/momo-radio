@@ -63,20 +63,15 @@ func (s *Server) Close() {
 }
 
 func (s *Server) setupMiddleware() {
-	// CORS Configuration
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowAllOrigins = true
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-
-	// IMPORTANT: Allow Authorization (JWT) and X-Organization-Id (Tenant Context)
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-Organization-Id"}
 
 	s.router.Use(cors.New(corsConfig))
-	//s.router.Use(middleware.SilentLogger())
 }
 
 func (s *Server) setupRoutes() {
-	// 1. Initialize Modular Handlers
 	authHandler := handlers.NewAuthHandler(s.db.DB)
 	statsHandler := handlers.NewStatsHandler(s.db.DB)
 	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis)
@@ -86,33 +81,38 @@ func (s *Server) setupRoutes() {
 	albumHandler := handlers.NewAlbumHandler(s.db.DB, s.storage)
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
 
-	// Health Check
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
 	})
 
+	// ==========================================
+	// INTERNAL ROUTES (Machine-to-Machine / RTMP)
+	// ==========================================
+	internal := s.router.Group("/api/internal")
+	{
+		// This endpoint will be called by Nginx-RTMP or SRT to validate the stream key
+		// e.g. handlers.AuthStreamPublish must be defined in stream.go
+		internal.POST("/auth-publish", handlers.AuthStreamPublish(s.db.DB))
+	}
+
+	// ==========================================
 	// API Group
+	// ==========================================
 	v1 := s.router.Group("/api/v1")
 	{
-		// ==========================================
-		// PUBLIC ROUTES (No Token Required)
-		// ==========================================
 		jwtOnly := v1.Group("/")
 		jwtOnly.Use(middleware.RequireValidJWT(s.cfg.Supabase.JWTPublicKey))
 		{
 			jwtOnly.GET("/auth/me", authHandler.GetMe)
 		}
 
-		// Supabase Webhook for User Sync
 		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
 
-		// ==========================================
-		// PROTECTED ROUTES (Requires Supabase JWT + Tenant Context)
-		// ==========================================
 		protected := v1.Group("/")
 		{
 			// --- STATS ---
 			protected.GET("/stats", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), statsHandler.GetStats)
+
 			// --- TRACKS ---
 			protected.GET("/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTracks)
 			protected.GET("/tracks/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTrack)
@@ -141,17 +141,19 @@ func (s *Server) setupRoutes() {
 			protected.PUT("/playlists/:id/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), playlistHandler.UpdatePlaylistTracks)
 			protected.POST("/playlists/:id/export/rekordbox", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), exportHandler.ExportToM3u)
 
-			// --- SCHEDULING (Station Managers Only) ---
+			// --- SCHEDULING ---
 			protected.GET("/schedules", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), schedulerHandler.GetSchedule)
 			protected.POST("/schedules", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.CreateScheduleSlot)
 			protected.DELETE("/schedules/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.DeleteScheduleSlot)
+
+			// ⚡️ --- BROADCAST & MOUNT POINTS ---
+			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB))
 		}
 	}
 
 	// ==========================================
 	// EMBEDDED REACT UI (SPA Fallback)
 	// ==========================================
-
 	distFS, err := fs.Sub(gui.DistFS, "dist")
 	if err != nil {
 		panic("Failed to load embedded frontend: " + err.Error())
@@ -192,7 +194,6 @@ func (s *Server) setupRoutes() {
 	})
 }
 
-// Start runs the server on the configured port
 func (s *Server) Start(addr string) error {
 	return s.router.Run(addr)
 }

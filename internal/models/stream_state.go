@@ -6,19 +6,21 @@ import (
 	"github.com/google/uuid"
 )
 
-// StreamState represents the live status of the radio.
-// There is ONE row in this table (ID=1).
+// StreamState represents the real-time playback state of a single station pipeline
 type StreamState struct {
-	OrganizationID   uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
-	ID               uint      `gorm:"primaryKey" json:"-"`
-	TrackID          uint      `json:"track_id"`           // What song is playing?
-	StartedAt        time.Time `json:"started_at"`         // When did it start? (To calculate Seek)
-	Sequence         int       `json:"hls_media_sequence"` // The current .ts segment number (Crucial for HLS)
-	UpdatedAt        time.Time `json:"last_heartbeat"`     // To check if the state is stale
-	HLSMediaSequence int       `gorm:"column:hls_media_sequence"`
+	ID             uint      `gorm:"primaryKey" json:"-"`
+	OrganizationID uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
+	TrackID        uint      `json:"track_id"`                                                         // What song is currently playing?
+	BroadcastMode  string    `gorm:"type:varchar(20);default:'autodj';not null" json:"broadcast_mode"` // autodj vs live
+	StartedAt      time.Time `json:"started_at"`                                                       // When did the current item start playing? (For seek calculations)
+
+	// Crucial for keeping HLS segment continuity across engine restarts
+	Sequence int `gorm:"column:hls_media_sequence;not null;default:0" json:"hls_media_sequence"`
+
+	UpdatedAt time.Time `gorm:"column:last_heartbeat" json:"last_heartbeat"` // Monitors pipeline lifecycle
 }
 
-// TableName overrides the default pluralization
+// TableName overrides GORM's default pluralization strategy
 func (StreamState) TableName() string {
 	return "stream_state"
 }
