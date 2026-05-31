@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	// ... (Storage and Server structs remain the same)
 	Storage struct {
 		Provider     string `mapstructure:"provider"`
 		KeyID        string `mapstructure:"key_id"`
@@ -27,6 +28,7 @@ type Config struct {
 		Timezone        string `mapstructure:"timezone"`
 	} `mapstructure:"server"`
 	Radio struct {
+		PublicDomain  string `mapstructure:"public_domain"`
 		Bitrate       string `mapstructure:"bitrate"`
 		SampleRate    string `mapstructure:"sample_rate"`
 		SegmentTime   int    `mapstructure:"segment_time"`
@@ -75,7 +77,7 @@ func Load() *Config {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	// Storage Bindings
+	// Storage & Server Bindings...
 	viper.BindEnv("storage.provider")
 	viper.BindEnv("storage.key_id")
 	viper.BindEnv("storage.app_key")
@@ -87,15 +89,15 @@ func Load() *Config {
 	viper.BindEnv("storage.bucket_master")
 	viper.BindEnv("storage.local_storage_path")
 
-	// Server Bindings
 	viper.BindEnv("server.temp_dir")
 	viper.BindEnv("server.polling_interval_seconds")
 	viper.BindEnv("server.metrics_port")
 	viper.BindEnv("server.timezone")
 
 	// Radio Config Bindings
+	viper.BindEnv("radio.public_domain")
 	viper.BindEnv("radio.bitrate")
-	viper.BindEnv("radio.sample_rate") // ⚡️ BIND NEW FIELD
+	viper.BindEnv("radio.sample_rate")
 	viper.BindEnv("radio.segment_time")
 	viper.BindEnv("radio.list_size")
 	viper.BindEnv("radio.segment_dir")
@@ -109,28 +111,23 @@ func Load() *Config {
 	viper.BindEnv("radio.prefetch_count")
 	viper.BindEnv("radio.provider")
 
-	// Database keys
+	// Database, Redis, Services, Worker, Auth bindings...
 	viper.BindEnv("database.host")
 	viper.BindEnv("database.port")
 	viper.BindEnv("database.user")
 	viper.BindEnv("database.password")
 	viper.BindEnv("database.name")
 
-	// Redis keys
 	viper.BindEnv("redis.host")
 	viper.BindEnv("redis.port")
 	viper.BindEnv("redis.password")
 	viper.BindEnv("redis.db")
 
-	// Services
 	viper.BindEnv("services.discogs_token")
 	viper.BindEnv("services.contact_email")
 	viper.BindEnv("services.acoustid_key")
 
-	// Worker Bindings
 	viper.BindEnv("worker.concurrency")
-
-	// Auth
 	viper.BindEnv("supabase.jwt_public_key", "SUPABASE_JWT_PUBLIC_KEY")
 
 	// Defaults
@@ -139,17 +136,17 @@ func Load() *Config {
 	viper.SetDefault("server.metrics_port", ":9091")
 	viper.SetDefault("server.timezone", "UTC")
 
-	// Redis Defaults
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", "6379")
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
 
 	// Radio Defaults
+	viper.SetDefault("radio.public_domain", "momo.radio")
 	viper.SetDefault("radio.bitrate", "128k")
-	viper.SetDefault("radio.sample_rate", "44100") // ⚡️ NEW DEFAULT
-	viper.SetDefault("radio.segment_time", 4)      // ⚡️ NOW AN INT
-	viper.SetDefault("radio.list_size", 15)        // ⚡️ NOW AN INT
+	viper.SetDefault("radio.sample_rate", "44100")
+	viper.SetDefault("radio.segment_time", 4)
+	viper.SetDefault("radio.list_size", 15)
 	viper.SetDefault("radio.segment_dir", "./hls_output")
 	viper.SetDefault("radio.log_level", "error")
 	viper.SetDefault("radio.input_format", "mp3")
@@ -160,9 +157,8 @@ func Load() *Config {
 	viper.SetDefault("radio.hls_flags", "append_list+omit_endlist+temp_file")
 	viper.SetDefault("radio.prefetch_count", 5)
 	viper.SetDefault("radio.provider", "starvation")
-	viper.SetDefault("radio.dry_run", false) // Good practice to default booleans explicitly
+	viper.SetDefault("radio.dry_run", false)
 
-	// Worker Defaults
 	viper.SetDefault("worker.concurrency", 6)
 	viper.SetDefault("worker.queues", map[string]int{
 		"default": 10,
@@ -189,7 +185,6 @@ func Load() *Config {
 	}
 
 	validateConfig(&cfg)
-
 	return &cfg
 }
 

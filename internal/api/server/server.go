@@ -146,8 +146,8 @@ func (s *Server) setupRoutes() {
 			protected.POST("/schedules", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.CreateScheduleSlot)
 			protected.DELETE("/schedules/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.DeleteScheduleSlot)
 
-			// ⚡️ --- BROADCAST & MOUNT POINTS ---
-			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB))
+			// --- BROADCAST & MOUNT POINTS ---
+			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, s.cfg))
 		}
 	}
 

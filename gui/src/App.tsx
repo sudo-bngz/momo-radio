@@ -27,7 +27,7 @@ import { SettingsFeature } from './features/settings';
 import { ArtistView } from './features/library/components/ArtistView';
 import { LibraryView } from './features/library/components/LibraryView';
 import { ApiDownScreen } from './layouts/ApiDownScreen';
-import { BroadcastPage } from './features/broadcast/components/BroadcastPage';
+import { BroadcastView } from './features/broadcast/components/BroadcastView';
 
 export const App = () => {
 
@@ -77,7 +77,7 @@ export const App = () => {
                 <Route path="/schedule" element={<ScheduleFeature />} />
                 
                 {/* ⚡️ THE NEW BROADCAST ROUTE */}
-                <Route path="/broadcast" element={<BroadcastPage />} />
+                <Route path="/broadcast" element={<BroadcastView />} />
               </Route>
               
               {/* Keeping settings outside DashboardLayout if intended, or move it inside! */}

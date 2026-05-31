@@ -12,6 +12,17 @@ import type {
   DashboardData
 } from '../types';
 
+export interface MountPoint {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  bitrate: number;
+  is_default: boolean;
+  hls_url: string;
+  created_at?: string;
+}
+
 const API_URL = '/api/v1';
 
 export const apiClient = axios.create({
@@ -265,5 +276,16 @@ export const api = {
 
   inviteUser: async (data: { email: string; role: string }): Promise<void> => {
     await apiClient.post('/organizations/invites', data);
+  },
+
+  // ⚡️ 6. BROADCAST & MOUNTS
+  getMountPoints: async (): Promise<MountPoint[]> => {
+    const response = await apiClient.get('/mounts');
+    return response.data.mount_points;
+  },
+
+  createMountPoint: async (data: { name: string; slug: string; bitrate: number; is_default: boolean }): Promise<MountPoint> => {
+    const response = await apiClient.post('/mounts', data);
+    return response.data;
   },
 };
