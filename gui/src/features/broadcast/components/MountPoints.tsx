@@ -4,9 +4,8 @@ import {
 } from '@chakra-ui/react';
 import { Copy, Check, Plus, Settings, Trash2 } from 'lucide-react';
 
-// ⚡️ FIXED: Import 'api' instead of 'broadcastApi', and updated the path based on your error
 import { api } from '../../../services/api'; 
-import type { MountPoint} from '../../../services/api'; 
+import type { MountPoint } from '../../../services/api'; 
 
 export const MountPoints: React.FC = () => {
   const [mounts, setMounts] = useState<MountPoint[]>([]);
@@ -21,7 +20,7 @@ export const MountPoints: React.FC = () => {
         const data = await api.getMountPoints();
         setMounts(data);
       } catch (err) {
-        console.error("Failed to load mount points:", err);
+        console.error("Failed to load streams:", err);
         setError("Failed to load transmission configurations.");
       } finally {
         setLoading(false);
@@ -59,11 +58,11 @@ export const MountPoints: React.FC = () => {
       {/* Table Header Section */}
       <Flex justify="space-between" align="center" mb={6}>
         <Box>
-          <Heading size="sm" fontWeight="bold" color="gray.800" mb={1}>HLS Mount Points</Heading>
-          <Text fontSize="xs" color="gray.500">Each profile generates a distinct adaptive live manifest stream for your target public players.</Text>
+          <Heading size="sm" fontWeight="bold" color="gray.800" mb={1}>Audio Streams</Heading>
+          <Text fontSize="xs" color="gray.500">Manage the different audio qualities and direct streaming links for your station.</Text>
         </Box>
         <Button size="sm" bg="gray.900" color="white" _hover={{ bg: "black" }}>
-          <Icon as={Plus} mr={1} boxSize={3.5} /> Add Mount Point
+          <Icon as={Plus} mr={1} boxSize={3.5} /> Add Stream
         </Button>
       </Flex>
 
@@ -72,10 +71,9 @@ export const MountPoints: React.FC = () => {
         <Table.Root variant="line" size="md">
           <Table.Header bg="gray.50">
             <Table.Row>
-              {/* ⚡️ FIXED: Replaced Table.Th with Table.ColumnHeader for Chakra v3 */}
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Stream Profile</Table.ColumnHeader>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Target Bitrate</Table.ColumnHeader>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Public HLS Master Endpoint</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Stream Name</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Quality</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Direct URL</Table.ColumnHeader>
               <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs" textAlign="right">Actions</Table.ColumnHeader>
             </Table.Row>
           </Table.Header>
@@ -84,7 +82,7 @@ export const MountPoints: React.FC = () => {
             {mounts.length === 0 ? (
               <Table.Row>
                 <Table.Cell colSpan={4} textAlign="center" py={8} color="gray.400">
-                  No mount points configured.
+                  No streams configured.
                 </Table.Cell>
               </Table.Row>
             ) : (
@@ -96,17 +94,17 @@ export const MountPoints: React.FC = () => {
                     <VStack align="flex-start" gap={1}>
                       <Text fontSize="sm" fontWeight="semibold" color="gray.800">{mount.name}</Text>
                       <HStack gap={1.5}>
-                        <Text fontSize="11px" fontFamily="mono" color="gray.400">/hls/{mount.slug}</Text>
+                        <Text fontSize="11px" fontFamily="mono" color="gray.400">{mount.slug}</Text>
                         {mount.is_default && (
                           <Badge color="blue.600" bg="blue.50" fontSize="10px" px={2} py={0.5} borderRadius="md">
-                            Default Output
+                            Default
                           </Badge>
                         )}
                       </HStack>
                     </VStack>
                   </Table.Cell>
 
-                  {/* Bitrate */}
+                  {/* Bitrate (Quality) */}
                   <Table.Cell>
                     <Badge color="gray.700" bg="gray.100" fontSize="11px" px={2} py={1} borderRadius="md">
                       {mount.bitrate} kbps

@@ -21,6 +21,10 @@ type Config struct {
 		BucketMaster string `mapstructure:"bucket_master"`
 		LocalStorage string `mapstructure:"local_storage_path"`
 	} `mapstructure:"storage"`
+	CDN struct {
+		Enabled bool   `mapstructure:"enabled"`
+		Domain  string `mapstructure:"domain"`
+	} `mapstructure:"cdn"`
 	Server struct {
 		TempDir         string `mapstructure:"temp_dir"`
 		PollingInterval int    `mapstructure:"polling_interval_seconds"`
@@ -89,6 +93,9 @@ func Load() *Config {
 	viper.BindEnv("storage.bucket_master")
 	viper.BindEnv("storage.local_storage_path")
 
+	viper.BindEnv("cdn.enabled")
+	viper.BindEnv("cdn.domain")
+
 	viper.BindEnv("server.temp_dir")
 	viper.BindEnv("server.polling_interval_seconds")
 	viper.BindEnv("server.metrics_port")
@@ -135,6 +142,9 @@ func Load() *Config {
 	viper.SetDefault("server.temp_dir", "/tmp/")
 	viper.SetDefault("server.metrics_port", ":9091")
 	viper.SetDefault("server.timezone", "UTC")
+
+	viper.SetDefault("cdn.enabled", false)
+	viper.SetDefault("cdn.domain", "")
 
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", "6379")
@@ -197,5 +207,8 @@ func validateConfig(cfg *Config) {
 	}
 	if cfg.Supabase.JWTPublicKey == "" {
 		log.Fatal("Critical: Supabase JWT Public Key is missing (SUPABASE_JWT_PUBLIC_KEY)")
+	}
+	if cfg.CDN.Enabled && cfg.CDN.Domain == "" {
+		log.Fatal("Critical: CDN is enabled but CDN Domain is missing")
 	}
 }

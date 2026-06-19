@@ -3,13 +3,16 @@ import {
   Box, VStack, HStack, Heading, Text, Button, Icon, Input, Textarea, Flex
 } from '@chakra-ui/react';
 import { Copy, Check, Globe, Instagram, Link as LinkIcon } from 'lucide-react';
-import { useAuthStore } from '../../../store/useAuthStore'; // Adjust path if needed
+import { useAuthStore } from '../../../store/useAuthStore'; 
 
 export const PublicPageView: React.FC = () => {
   const [copied, setCopied] = useState(false);
-  // Assuming your auth store holds the current organization details
+  
+  // Get the current organization from the Auth Store
   const currentOrg = useAuthStore(state => state.organizations.find(o => o.id === state.activeOrganizationId));
-  const publicUrl = `https://${currentOrg?.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'my-station'}.momo.radio`;
+  
+  // ⚡️ UPDATED: Simple flat URL structure using the Tenant ID
+  const publicUrl = `https://env.momosbasement.com/listen?org=${currentOrg?.id || 'demo-id'}`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(publicUrl);

@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"momo-radio/internal/config"
@@ -13,7 +14,31 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetMountPoints fetches mounts and injects the dynamic HLS URL
+// generateHlsURL dynamically routes between the CDN, direct S3, or a local fallback
+func generateHlsURL(cfg *config.Config, slug string, orgID string) string {
+	// The exact physical path your worker uses to save the manifest
+	objectPath := fmt.Sprintf("/%s/%s/stream.m3u8", orgID, slug)
+
+	// 1. Production: CDN is toggled ON
+	if cfg.CDN.Enabled && cfg.CDN.Domain != "" {
+		domain := strings.TrimRight(cfg.CDN.Domain, "/")
+		return fmt.Sprintf("https://%s%s", domain, objectPath)
+	}
+
+	// 2. Testing: CDN is OFF, return direct B2/S3 Virtual-Hosted Bucket URL
+	if cfg.Storage.Provider == "s3" {
+		cleanEndpoint := strings.TrimPrefix(cfg.Storage.Endpoint, "https://")
+		cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "http://")
+		cleanEndpoint = strings.TrimRight(cleanEndpoint, "/")
+		return fmt.Sprintf("https://%s.%s%s", cfg.Storage.BucketStream, cleanEndpoint, objectPath)
+	}
+
+	// 3. Fallback: Local testing without S3
+	domain := strings.TrimRight(cfg.Radio.PublicDomain, "/")
+	return fmt.Sprintf("https://%s%s", domain, objectPath)
+}
+
+// GetMountPoints fetches streams and injects the dynamic HLS URL
 func GetMountPoints(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		orgID, ok := getOrgID(c)
@@ -28,8 +53,11 @@ func GetMountPoints(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		// Ensure orgID is a string for the URL generator
+		orgIDStr := fmt.Sprintf("%v", orgID)
+
 		for i := range org.MountPoints {
-			org.MountPoints[i].HlsUrl = fmt.Sprintf("https://%s.%s/live/%s/index.m3u8", org.StationSlug, cfg.Radio.PublicDomain, org.MountPoints[i].Slug)
+			org.MountPoints[i].HlsUrl = generateHlsURL(cfg, org.MountPoints[i].Slug, orgIDStr)
 		}
 
 		c.JSON(http.StatusOK, gin.H{"mount_points": org.MountPoints})
@@ -37,7 +65,7 @@ func GetMountPoints(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 }
 
 // CreateMountPoint provisions a new stream profile
-func CreateMountPoint(db *gorm.DB, cfg *config.Config) gin.HandlerFunc { // ⚡️ ADDED CONFIG
+func CreateMountPoint(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		orgID, ok := getOrgID(c)
 		if !ok {
@@ -85,19 +113,13 @@ func CreateMountPoint(db *gorm.DB, cfg *config.Config) gin.HandlerFunc { // ⚡�
 				return err
 			}
 
-			var org models.Organization
-			if err := tx.Select("station_slug").First(&org, "id = ?", parsedOrgID).Error; err != nil {
-				return err
-			}
-
-			// ⚡️ DYNAMIC DOMAIN INJECTION
-			mount.HlsUrl = fmt.Sprintf("https://%s.%s/hls/%s/index.m3u8", org.StationSlug, cfg.Radio.PublicDomain, mount.Slug)
+			mount.HlsUrl = generateHlsURL(cfg, mount.Slug, parsedOrgID.String())
 			c.JSON(http.StatusCreated, mount)
 			return nil
 		})
 
 		if err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "mount point generation conflict or slug uniqueness constraint violation"})
+			c.JSON(http.StatusConflict, gin.H{"error": "stream generation conflict or slug uniqueness constraint violation"})
 		}
 	}
 }
