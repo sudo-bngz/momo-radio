@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -12,13 +13,13 @@ import (
 	"momo-radio/internal/config"
 )
 
-// StartFFmpeg starts the HLS transcoding process using parameters from config
-func StartFFmpeg(input io.Reader, cfg *config.Config) {
-	if err := os.MkdirAll(cfg.Radio.SegmentDir, 0755); err != nil {
-		log.Fatalf("Failed to create segment dir '%s': %v", cfg.Radio.SegmentDir, err)
+// StartFFmpeg executes the HLS transcoding process using multi-tenant dynamic parameters
+func StartFFmpeg(input io.Reader, cfg *config.Config, outputDir string, bitrate string) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create tenant segment dir '%s': %w", outputDir, err)
 	}
 
-	outputFile := filepath.Join(cfg.Radio.SegmentDir, "stream.m3u8")
+	outputFile := filepath.Join(outputDir, "stream.m3u8")
 
 	args := []string{
 		"-loglevel", cfg.Radio.LogLevel,
@@ -32,7 +33,7 @@ func StartFFmpeg(input io.Reader, cfg *config.Config) {
 
 		"-af", cfg.Radio.AudioFilter,
 		"-c:a", cfg.Radio.AudioCodec,
-		"-b:a", cfg.Radio.Bitrate,
+		"-b:a", bitrate, // ⚡️ Dynamic mount point target bitrate (e.g., "128k", "320k")
 		"-ac", cfg.Radio.AudioChannels,
 
 		"-f", "hls",
@@ -48,12 +49,14 @@ func StartFFmpeg(input io.Reader, cfg *config.Config) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	log.Printf("FFmpeg Transcoder Started (Bitrate: %s, Codec: %s, SegTime: %s, Window: %s segments)",
-		cfg.Radio.Bitrate, cfg.Radio.AudioCodec, strconv.Itoa(cfg.Radio.SegmentTime), strconv.Itoa(cfg.Radio.ListSize))
+	log.Printf("[FFMPEG] Pipeline starting (Bitrate: %s, Codec: %s, OutDir: %s)",
+		bitrate, cfg.Radio.AudioCodec, outputDir)
 
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("FFmpeg crashed: %v", err)
+		return fmt.Errorf("ffmpeg execution failure: %w", err)
 	}
+
+	return nil
 }
 
 func IsSupportedFormat(filename string) bool {
@@ -95,7 +98,6 @@ func Validate(path string) error {
 	}
 
 	// 2. Check Integrity via ffprobe
-	// We try to read the duration; if the file is truncated, this returns an error status
 	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
 	if err := cmd.Run(); err != nil {
 		log.Printf("Integrity check failed (corrupt stream): %v", err)

@@ -214,3 +214,18 @@ func AuthStreamPublish(db *gorm.DB) gin.HandlerFunc {
 		})
 	}
 }
+
+func (h *BroadcastHandler) GetStreamState(c *gin.Context) {
+	orgID, _ := getOrgID(c)
+
+	var state models.StreamState
+	err := h.db.Select("broadcast_mode").Where("organization_id = ?", orgID).First(&state).Error
+
+	if err != nil {
+		// If no state exists yet, default to offline rather than throwing a 500
+		c.JSON(http.StatusOK, gin.H{"state": "offline"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"state": state.BroadcastMode})
+}

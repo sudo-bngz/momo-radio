@@ -294,5 +294,10 @@ export const api = {
     const response = await apiClient.post('/broadcast/toggle', { action });
     return response.data;
   },
+
+  getBroadcastState: async (): Promise<{ state: string }> => {
+    const response = await apiClient.get('/broadcast/state');
+    return response.data;
+  },
   
 };
