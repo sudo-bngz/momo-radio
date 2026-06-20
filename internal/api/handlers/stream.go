@@ -11,8 +11,56 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
+
+type BroadcastHandler struct {
+	db  *gorm.DB
+	rdb *redis.Client
+}
+
+// NewBroadcastHandler initializes the broadcast controller with DB and Redis
+func NewBroadcastHandler(db *gorm.DB, rdb *redis.Client) *BroadcastHandler {
+	return &BroadcastHandler{
+		db:  db,
+		rdb: rdb,
+	}
+}
+
+func (h *BroadcastHandler) ToggleStream(c *gin.Context) {
+	orgID, _ := getOrgID(c)
+
+	var req struct {
+		Action string `json:"action" binding:"required,oneof=start stop"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 1. Update the Database (Source of Truth)
+	newState := "offline"
+	if req.Action == "start" {
+		newState = "online"
+	}
+
+	// ⚡️ USE h.db DIRECTLY
+	err := h.db.Model(&models.StreamState{}).
+		Where("organization_id = ?", orgID).
+		Update("broadcast_mode", newState).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update state"})
+		return
+	}
+
+	// 2. Fire the Signal via Redis Pub/Sub
+	payload := fmt.Sprintf(`{"org_id": "%s", "action": "%s"}`, orgID, req.Action)
+	h.rdb.Publish(c.Request.Context(), "radio.control", payload)
+
+	c.JSON(http.StatusOK, gin.H{"status": "signaled", "state": newState})
+}
 
 // generateHlsURL dynamically routes between the CDN, direct S3, or a local fallback
 func generateHlsURL(cfg *config.Config, slug string, orgID string) string {

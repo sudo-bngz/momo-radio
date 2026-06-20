@@ -288,4 +288,11 @@ export const api = {
     const response = await apiClient.post('/mounts', data);
     return response.data;
   },
+
+  // ⚡️ NEW: Control the Radio Daemon Stream State
+  toggleBroadcast: async (action: 'start' | 'stop'): Promise<{ status: string; state: string }> => {
+    const response = await apiClient.post('/broadcast/toggle', { action });
+    return response.data;
+  },
+  
 };

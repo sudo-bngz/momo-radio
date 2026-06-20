@@ -80,6 +80,7 @@ func (s *Server) setupRoutes() {
 	artistHandler := handlers.NewArtistHandler(s.db.DB, s.storage)
 	albumHandler := handlers.NewAlbumHandler(s.db.DB, s.storage)
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
+	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis)
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
@@ -90,8 +91,6 @@ func (s *Server) setupRoutes() {
 	// ==========================================
 	internal := s.router.Group("/api/internal")
 	{
-		// This endpoint will be called by Nginx-RTMP or SRT to validate the stream key
-		// e.g. handlers.AuthStreamPublish must be defined in stream.go
 		internal.POST("/auth-publish", handlers.AuthStreamPublish(s.db.DB))
 	}
 
@@ -148,6 +147,7 @@ func (s *Server) setupRoutes() {
 
 			// --- BROADCAST & MOUNT POINTS ---
 			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, s.cfg))
+			protected.POST("/broadcast/toggle", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), broadcastHandler.ToggleStream) // ⚡️ NEW: Dispatches real-time pipeline status payloads
 		}
 	}
 

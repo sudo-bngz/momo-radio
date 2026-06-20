@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, VStack, HStack, Heading, Text, Button, Icon, Select, createListCollection, Flex 
+  Box, VStack, HStack, Heading, Text, Button, Icon, Select, createListCollection, Flex, Spinner
 } from '@chakra-ui/react';
-import { Plus, Radio, ChevronDown } from 'lucide-react';
+import { Plus, Radio, ChevronDown, Play, Square } from 'lucide-react';
 import { useNavigate, useMatch, useLocation } from 'react-router-dom'; 
 
-import { MountPoints } from './MountPoints'; // Keeping your underlying component name
+import { MountPoints } from './MountPoints'; 
 import { PublicPageView } from './PublicPageView';
+import { api } from '../../../services/api'; // Adjust path if needed
 
 type BroadcastTab = 'streams' | 'public_page';
 
@@ -34,6 +35,10 @@ export const BroadcastView: React.FC = () => {
   );
   
   const [sortBy, setSortBy] = useState('default');
+  
+  // ⚡️ NEW: Master Broadcast State
+  const [isLive, setIsLive] = useState(false); // Ideally, fetch the initial state from your backend on mount!
+  const [isToggling, setIsToggling] = useState(false);
 
   useEffect(() => {
     if ((location.state as any)?.activeTab) {
@@ -42,57 +47,97 @@ export const BroadcastView: React.FC = () => {
   }, [location.state]);
 
   const currentTabLabel = TABS.find(t => t.id === activeTab)?.label || 'Streams';
+  const isDetailViewActive = !!streamDetailMatch;
+
+  // ⚡️ NEW: Toggle Handler
+  const handleBroadcastToggle = async () => {
+    try {
+      setIsToggling(true);
+      const action = isLive ? 'stop' : 'start';
+      await api.toggleBroadcast(action);
+      setIsLive(!isLive);
+    } catch (error) {
+      console.error("Failed to toggle broadcast state:", error);
+      // Optional: Add a toast notification here to inform the user of the error
+    } finally {
+      setIsToggling(false);
+    }
+  };
 
   const handleAddClick = () => {
     navigate('/broadcast/streams/new');
   };
 
-  const isDetailViewActive = !!streamDetailMatch;
-
   return (
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
       
       {/* 1. HEADER & BREADCRUMB */}
-      <VStack align="start" gap={1}>
-        <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
-          <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
-            <Icon as={Radio} boxSize={3} strokeWidth={3} />
-          </Box>
-          <Text 
-            cursor="pointer" 
-            _hover={{ textDecoration: "underline", color: "gray.900" }} 
-            onClick={() => navigate('/broadcast', { state: { activeTab: 'streams' } })}
-          >
-            Broadcasting
-          </Text>
-          <Text color="gray.300">/</Text>
-          
-          {streamDetailMatch ? (
-            <>
-              <Text 
-                cursor="pointer" 
-                _hover={{ textDecoration: "underline", color: "gray.900" }} 
-                onClick={() => {
-                  setActiveTab('streams');
-                  navigate('/broadcast', { state: { activeTab: 'streams' } });
-                }}
-              >
-                Streams
-              </Text>
-              <Text color="gray.300">/</Text>
-              <Text color="gray.900" fontWeight="600">Edit Stream</Text>
-            </>
-          ) : (
-            <Text color="gray.900" fontWeight="500">{currentTabLabel}</Text>
-          )}
-        </HStack>
+      <Flex justify="space-between" align="flex-end" wrap="wrap" gap={4}>
+        <VStack align="start" gap={1}>
+          <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
+            <Box w="24px" h="24px" bg={isLive ? "red.500" : "blue.500"} color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center" transition="background 0.3s">
+              <Icon as={Radio} boxSize={3} strokeWidth={3} />
+            </Box>
+            <Text 
+              cursor="pointer" 
+              _hover={{ textDecoration: "underline", color: "gray.900" }} 
+              onClick={() => navigate('/broadcast', { state: { activeTab: 'streams' } })}
+            >
+              Broadcasting
+            </Text>
+            <Text color="gray.300">/</Text>
+            
+            {streamDetailMatch ? (
+              <>
+                <Text 
+                  cursor="pointer" 
+                  _hover={{ textDecoration: "underline", color: "gray.900" }} 
+                  onClick={() => {
+                    setActiveTab('streams');
+                    navigate('/broadcast', { state: { activeTab: 'streams' } });
+                  }}
+                >
+                  Streams
+                </Text>
+                <Text color="gray.300">/</Text>
+                <Text color="gray.900" fontWeight="600">Edit Stream</Text>
+              </>
+            ) : (
+              <Text color="gray.900" fontWeight="500">{currentTabLabel}</Text>
+            )}
+          </HStack>
 
+          {!isDetailViewActive && (
+            <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
+              Transmission
+            </Heading>
+          )}
+        </VStack>
+
+        {/* ⚡️ NEW: Master Power Button */}
         {!isDetailViewActive && (
-          <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
-            Transmission
-          </Heading>
+          <Button
+            size="lg"
+            bg={isLive ? "red.50" : "gray.900"}
+            color={isLive ? "red.600" : "white"}
+            border={isLive ? "1px solid" : "none"}
+            borderColor="red.200"
+            _hover={isLive ? { bg: "red.100" } : { bg: "black" }}
+            onClick={handleBroadcastToggle}
+            disabled={isToggling}
+            px={6}
+            borderRadius="full"
+            shadow={isLive ? "none" : "md"}
+          >
+            {isToggling ? (
+              <Spinner size="sm" mr={2} />
+            ) : (
+              <Icon as={isLive ? Square : Play} boxSize={4} mr={2} fill={isLive ? "currentColor" : "none"} />
+            )}
+            {isLive ? "Stop Broadcast" : "Start Broadcast"}
+          </Button>
         )}
-      </VStack>
+      </Flex>
 
       {/* 2. CONTROLS */}
       {!isDetailViewActive && (
