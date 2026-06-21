@@ -1,0 +1,44 @@
+name: Public Page CI (Build Only)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'public-page/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'public-page/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'public-page/package-lock.json'
+
+      - name: Install Dependencies
+        run: |
+          cd public-page
+          npm ci
+
+      - name: Build Application
+        run: |
+          cd public-page
+          npm run build
+
+      # Optional: Uploads the compiled dist/ folder as an artifact attached to the workflow run
+      # so contributors can download and inspect the compiled output if needed.
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-page-dist
+          path: public-page/dist/
+          retention-days: 5

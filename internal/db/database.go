@@ -61,6 +61,7 @@ func (c *Client) AutoMigrate() {
 		&models.Album{},
 		&models.Artist{},
 		&models.Track{},
+		&models.PublicPage{},
 	)
 	if err != nil {
 		log.Fatalf("Migration failed: %v", err)

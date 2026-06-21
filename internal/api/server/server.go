@@ -81,6 +81,7 @@ func (s *Server) setupRoutes() {
 	albumHandler := handlers.NewAlbumHandler(s.db.DB, s.storage)
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
 	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis)
+	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
@@ -147,9 +148,12 @@ func (s *Server) setupRoutes() {
 
 			// --- BROADCAST & MOUNT POINTS ---
 			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, s.cfg))
-			// In setupRoutes()
 			protected.GET("/broadcast/state", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), broadcastHandler.GetStreamState)
 			protected.POST("/broadcast/toggle", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), broadcastHandler.ToggleStream)
+
+			// --- PUBLIC PAGE ---
+			protected.GET("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), pageHandler.GetSettings)
+			protected.PUT("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UpdateSettings)
 		}
 	}
 

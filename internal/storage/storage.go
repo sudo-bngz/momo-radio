@@ -15,12 +15,13 @@ import (
 )
 
 type Client struct {
-	backend      StorageProvider
-	bucketProd   string
-	bucketIngest string
-	bucketStream string
-	bucketMaster string // ⚡️ Standardized to match other bucket names
-	region       string
+	backend          StorageProvider
+	bucketProd       string
+	bucketIngest     string
+	bucketStream     string
+	bucketMaster     string
+	bucketPublicPage string
+	region           string
 
 	cache      map[string][]string
 	cacheTime  map[string]time.Time
@@ -48,14 +49,15 @@ func New(cfg *config.Config) *Client {
 	}
 
 	return &Client{
-		backend:      backend,
-		bucketProd:   cfg.Storage.BucketProd,
-		bucketIngest: cfg.Storage.BucketIngest,
-		bucketStream: cfg.Storage.BucketStream,
-		bucketMaster: cfg.Storage.BucketMaster,
-		region:       cfg.Storage.Region,
-		cache:        make(map[string][]string),
-		cacheTime:    make(map[string]time.Time),
+		backend:          backend,
+		bucketProd:       cfg.Storage.BucketProd,
+		bucketIngest:     cfg.Storage.BucketIngest,
+		bucketStream:     cfg.Storage.BucketStream,
+		bucketMaster:     cfg.Storage.BucketMaster,
+		bucketPublicPage: cfg.Storage.BucketPublicPage,
+		region:           cfg.Storage.Region,
+		cache:            make(map[string][]string),
+		cacheTime:        make(map[string]time.Time),
 	}
 }
 
@@ -103,7 +105,7 @@ func (c *Client) UploadAssetFile(key string, body io.ReadSeeker, contentType, ca
 	return c.backend.Put(c.bucketProd, key, body, contentType, cacheControl)
 }
 
-// --- Master Vault Methods --- ⚡️ NEW
+// --- Master Vault Methods ---
 
 func (c *Client) UploadMasterFile(key string, body io.ReadSeeker, contentType string) error {
 	// No cache control needed for private files
@@ -149,4 +151,8 @@ func (c *Client) GetPublicURL(key string) string {
 	}
 
 	return ""
+}
+
+func (c *Client) UploadPublicPageFile(key string, body io.ReadSeeker, contentType, cacheControl string) error {
+	return c.backend.Put(c.bucketPublicPage, key, body, contentType, cacheControl)
 }

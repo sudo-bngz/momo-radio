@@ -10,16 +10,17 @@ import (
 type Config struct {
 	// ... (Storage and Server structs remain the same)
 	Storage struct {
-		Provider     string `mapstructure:"provider"`
-		KeyID        string `mapstructure:"key_id"`
-		AppKey       string `mapstructure:"app_key"`
-		Endpoint     string `mapstructure:"endpoint"`
-		Region       string `mapstructure:"region"`
-		BucketIngest string `mapstructure:"bucket_ingest"`
-		BucketProd   string `mapstructure:"bucket_prod"`
-		BucketStream string `mapstructure:"bucket_stream_live"`
-		BucketMaster string `mapstructure:"bucket_master"`
-		LocalStorage string `mapstructure:"local_storage_path"`
+		Provider         string `mapstructure:"provider"`
+		KeyID            string `mapstructure:"key_id"`
+		AppKey           string `mapstructure:"app_key"`
+		Endpoint         string `mapstructure:"endpoint"`
+		Region           string `mapstructure:"region"`
+		BucketIngest     string `mapstructure:"bucket_ingest"`
+		BucketProd       string `mapstructure:"bucket_prod"`
+		BucketStream     string `mapstructure:"bucket_stream_live"`
+		BucketMaster     string `mapstructure:"bucket_master"`
+		BucketPublicPage string `mapstructure:"bucket_public_page"`
+		LocalStorage     string `mapstructure:"local_storage_path"`
 	} `mapstructure:"storage"`
 	CDN struct {
 		Enabled bool   `mapstructure:"enabled"`
@@ -91,6 +92,7 @@ func Load() *Config {
 	viper.BindEnv("storage.bucket_prod")
 	viper.BindEnv("storage.bucket_stream_live")
 	viper.BindEnv("storage.bucket_master")
+	viper.BindEnv("storage.bucket_public_page")
 	viper.BindEnv("storage.local_storage_path")
 
 	viper.BindEnv("cdn.enabled")
@@ -210,5 +212,8 @@ func validateConfig(cfg *Config) {
 	}
 	if cfg.CDN.Enabled && cfg.CDN.Domain == "" {
 		log.Fatal("Critical: CDN is enabled but CDN Domain is missing")
+	}
+	if cfg.Storage.Provider == "s3" && cfg.Storage.BucketPublicPage == "" {
+		log.Fatal("Critical: Public Page bucket is missing (RADIO_STORAGE_BUCKET_PUBLIC_PAGE)")
 	}
 }

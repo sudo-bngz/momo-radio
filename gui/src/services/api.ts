@@ -23,6 +23,17 @@ export interface MountPoint {
   created_at?: string;
 }
 
+export interface PublicPageConfig {
+  theme_mode: string;
+  accent_color: string;
+  custom_css: string;
+  visual_mode: string;
+  hydra_preset: string;
+  hydra_code: string;
+  logo_url: string;
+  bio: string;
+}
+
 const API_URL = '/api/v1';
 
 export const apiClient = axios.create({
@@ -299,5 +310,18 @@ export const api = {
     const response = await apiClient.get('/broadcast/state');
     return response.data;
   },
-  
+  updateMountPoint: async (id: string, data: Partial<MountPoint>): Promise<MountPoint> => {
+    const response = await apiClient.put(`/mounts/${id}`, data);
+    return response.data;
+  },
+  deleteMountPoint: async (id: string): Promise<void> => {
+    await apiClient.delete(`/mounts/${id}`);
+  },
+  getPublicPageSettings: async (): Promise<PublicPageConfig> => {
+    const response = await apiClient.get('/public-page');
+    return response.data;
+  },
+  updatePublicPageSettings: async (data: Partial<PublicPageConfig>): Promise<void> => {
+    await apiClient.put('/public-page', data);
+  },
 };

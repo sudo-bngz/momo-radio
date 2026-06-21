@@ -1,97 +1,209 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Box, VStack, HStack, Heading, Text, Button, Icon, Input, Textarea, Flex
+  Box, Flex, Heading, Text, VStack, HStack, Button, Input, Textarea, 
+  Select, createListCollection, Spinner, Center, Icon, Grid
 } from '@chakra-ui/react';
-import { Copy, Check, Globe, Instagram, Link as LinkIcon } from 'lucide-react';
-import { useAuthStore } from '../../../store/useAuthStore'; 
+import { Save, Code, Palette, Badge } from 'lucide-react';
+import { api, type PublicPageConfig } from '../../../services/api';
+
+const visualModeOptions = createListCollection({
+  items: [
+    { label: "Built-in Presets", value: "preset" },
+    { label: "Custom Hydra Code", value: "custom" },
+  ],
+});
+
+const presetOptions = createListCollection({
+  items: [
+    { label: "Classic Oscillator", value: "oscillator" },
+    { label: "Voronoi Liquid", value: "voronoi" },
+    { label: "Audio Reactive Noise", value: "noise" },
+    { label: "Kaleidoscope", value: "kaleidoscope" },
+  ],
+});
 
 export const PublicPageView: React.FC = () => {
-  const [copied, setCopied] = useState(false);
-  
-  // Get the current organization from the Auth Store
-  const currentOrg = useAuthStore(state => state.organizations.find(o => o.id === state.activeOrganizationId));
-  
-  // ⚡️ UPDATED: Simple flat URL structure using the Tenant ID
-  const publicUrl = `https://env.momosbasement.com/listen?org=${currentOrg?.id || 'demo-id'}`;
+  const [config, setConfig] = useState<PublicPageConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(publicUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const data = await api.getPublicPageSettings();
+        setConfig(data);
+      } catch (err) {
+        console.error("Failed to load public page config", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchConfig();
+  }, []);
+
+  const handleSave = async () => {
+    if (!config) return;
+    try {
+      setSaving(true);
+      await api.updatePublicPageSettings(config);
+      // Optional: Add success toast here
+    } catch (error) {
+      console.error("Failed to save", error);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading || !config) {
+    return (
+      <Center h="400px" bg="white" borderRadius="2xl" border="1px solid" borderColor="gray.100">
+        <Spinner size="xl" color="gray.400" />
+      </Center>
+    );
+  }
 
   return (
     <Box w="100%" bg="white" p={8} borderRadius="2xl" border="1px solid" borderColor="gray.100" shadow="sm">
-      <Flex direction={{ base: "column", md: "row" }} gap={10}>
+      
+      <Flex justify="space-between" align="center" mb={8}>
+        <Box>
+          <Heading size="md" fontWeight="bold" color="gray.800" mb={1}>Public Listener Page</Heading>
+          <Text fontSize="sm" color="gray.500">Customize the visual identity and audio-reactive background for your station's public URL.</Text>
+        </Box>
+        <Button 
+          bg="blue.500" color="white" _hover={{ bg: "blue.600" }} 
+          onClick={handleSave} disabled={saving}
+        >
+          {saving ? <Spinner size="sm" mr={2} /> : <Icon as={Save} boxSize={4} mr={2} />}
+          Publish Changes
+        </Button>
+      </Flex>
+
+      <Grid templateColumns={{ base: "1fr", lg: "1fr 1fr" }} gap={10}>
         
-        {/* Left Side: Form */}
-        <VStack align="start" flex="1" gap={6} maxW="600px">
+        {/* Left Column: Visuals & Aesthetics */}
+        <VStack align="stretch" gap={8}>
           <Box>
-            <Heading size="md" fontWeight="bold" color="gray.800" mb={2}>Your Public Radio Page</Heading>
-            <Text fontSize="sm" color="gray.500">
-              This is the link you share with your listeners. It includes a live audio player, the currently playing track, and links to your social profiles.
-            </Text>
-          </Box>
-
-          {/* URL Display */}
-          <Box w="100%">
-            <Text fontSize="sm" fontWeight="600" color="gray.700" mb={2}>Listener Link</Text>
-            <HStack w="100%">
-              <Input 
-                value={publicUrl} 
-                readOnly 
-                bg="gray.50" 
-                color="gray.600" 
-                fontFamily="mono" 
-                fontSize="sm" 
-              />
-              <Button onClick={copyToClipboard} colorPalette="gray" variant="outline" w="100px">
-                <Icon as={copied ? Check : Copy} color={copied ? "green.500" : "inherit"} mr={2} boxSize={4}/>
-                {copied ? "Copied" : "Copy"}
-              </Button>
+            <HStack mb={4} color="gray.700">
+              <Icon as={Code} boxSize={5} />
+              <Heading size="sm">Hydra Visualizer Background</Heading>
             </HStack>
-          </Box>
+            
+            <VStack align="stretch" gap={4} p={5} bg="gray.50" borderRadius="xl" border="1px solid" borderColor="gray.100">
+              <Box>
+                <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Visual Engine Mode</Text>
+                <Select.Root 
+                  collection={visualModeOptions} 
+                  value={[config.visual_mode]} 
+                  onValueChange={(e) => setConfig({ ...config, visual_mode: e.value[0] })}
+                >
+                  <Select.Trigger bg="white">
+                    <Select.ValueText />
+                  </Select.Trigger>
+                  <Select.Content bg="white" zIndex={10}>
+                    {visualModeOptions.items.map(item => (
+                      <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+              </Box>
 
-          {/* Basic Info */}
-          <Box w="100%">
-            <Text fontSize="sm" fontWeight="600" color="gray.700" mb={2}>Station Description</Text>
-            <Textarea 
-              placeholder="Tell your listeners what kind of music you broadcast..." 
-              rows={4}
-              resize="none"
-            />
+              {config.visual_mode === 'preset' ? (
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Select Preset</Text>
+                  <Select.Root 
+                    collection={presetOptions} 
+                    value={[config.hydra_preset]} 
+                    onValueChange={(e) => setConfig({ ...config, hydra_preset: e.value[0] })}
+                  >
+                    <Select.Trigger bg="white">
+                      <Select.ValueText />
+                    </Select.Trigger>
+                    <Select.Content bg="white" zIndex={10}>
+                      {presetOptions.items.map(item => (
+                        <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
+                      ))}
+                    </Select.Content>
+                  </Select.Root>
+                </Box>
+              ) : (
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Raw Hydra JavaScript</Text>
+                  <Textarea 
+                    value={config.hydra_code}
+                    onChange={(e) => setConfig({ ...config, hydra_code: e.target.value })}
+                    placeholder="osc().color(0.9, 0.3, 0.1).out()"
+                    fontFamily="mono" fontSize="xs" bg="gray.900" color="green.300" 
+                    rows={8}
+                  />
+                </Box>
+              )}
+            </VStack>
           </Box>
+        </VStack>
 
-          {/* Social Links */}
-          <Box w="100%">
-            <Text fontSize="sm" fontWeight="600" color="gray.700" mb={4}>Social Profiles</Text>
-            <VStack gap={3}>
-              <HStack w="100%">
-                <Box bg="gray.100" p={2} borderRadius="md"><Icon as={Instagram} boxSize={4} color="gray.600" /></Box>
-                <Input placeholder="Instagram Username (e.g. momo.radio)" />
-              </HStack>
-              <HStack w="100%">
-                <Box bg="gray.100" p={2} borderRadius="md"><Icon as={LinkIcon} boxSize={4} color="gray.600" /></Box>
-                <Input placeholder="Website or Linktree URL" />
-              </HStack>
+        {/* Right Column: Identity & CSS */}
+        <VStack align="stretch" gap={8}>
+          <Box>
+            <HStack mb={4} color="gray.700">
+              <Icon as={Palette} boxSize={5} />
+              <Heading size="sm">Brand Identity</Heading>
+            </HStack>
+            
+            <VStack align="stretch" gap={5}>
+              <Box>
+                <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Station Bio</Text>
+                <Textarea 
+                  value={config.bio}
+                  onChange={(e) => setConfig({ ...config, bio: e.target.value })}
+                  placeholder="Welcome to our underground broadcast..."
+                  rows={3}
+                />
+              </Box>
+
+              <Grid templateColumns="1fr 1fr" gap={4}>
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Theme Mode</Text>
+                  <Select.Root 
+                    collection={createListCollection({ items: [{label: 'Dark', value: 'dark'}, {label: 'Light', value: 'light'}] })} 
+                    value={[config.theme_mode]} 
+                    onValueChange={(e) => setConfig({ ...config, theme_mode: e.value[0] })}
+                  >
+                    <Select.Trigger><Select.ValueText /></Select.Trigger>
+                    <Select.Content bg="white" zIndex={10}>
+                      <Select.Item item={{value: 'dark'}} key="dark">Dark Theme</Select.Item>
+                      <Select.Item item={{value: 'light'}} key="light">Light Theme</Select.Item>
+                    </Select.Content>
+                  </Select.Root>
+                </Box>
+                <Box>
+                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Accent Color</Text>
+                  <Input 
+                    type="color" 
+                    value={config.accent_color}
+                    onChange={(e) => setConfig({ ...config, accent_color: e.target.value })}
+                    h="40px" p={1} cursor="pointer"
+                  />
+                </Box>
+              </Grid>
             </VStack>
           </Box>
 
-          <Button bg="blue.600" color="white" _hover={{ bg: "blue.700" }} px={8} mt={4}>
-            Save Changes
-          </Button>
+          <Box>
+            <HStack justify="space-between" mb={2}>
+              <Text fontSize="xs" fontWeight="600" color="gray.600">Custom CSS (MySpace Mode)</Text>
+              <Badge color="purple.600" fontSize="10px">Advanced</Badge>
+            </HStack>
+            <Textarea 
+              value={config.custom_css}
+              onChange={(e) => setConfig({ ...config, custom_css: e.target.value })}
+              placeholder="/* Override player styles here */&#10;.player-container {&#10;  border-radius: 0px;&#10;}"
+              fontFamily="mono" fontSize="xs" bg="gray.50" rows={6}
+            />
+          </Box>
+
         </VStack>
-
-        {/* Right Side: Preview Illustration */}
-        <Box flex="1" bg="gray.50" borderRadius="xl" border="1px solid" borderColor="gray.100" p={8} display="flex" flexDirection="column" alignItems="center" justifyContent="center">
-          <Icon as={Globe} boxSize={16} color="gray.300" mb={4} />
-          <Heading size="sm" color="gray.600" mb={2}>Live Preview</Heading>
-          <Text fontSize="sm" color="gray.400" textAlign="center" maxW="250px">
-            Your listeners will see a beautiful, mobile-friendly player here when they visit your link.
-          </Text>
-        </Box>
-
-      </Flex>
+      </Grid>
     </Box>
   );
 };

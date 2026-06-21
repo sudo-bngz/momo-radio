@@ -6,6 +6,7 @@ import { Copy, Check, Plus, Settings, Trash2, Play, Square } from 'lucide-react'
 
 import { api } from '../../../services/api'; 
 import type { MountPoint } from '../../../services/api'; 
+import { StreamSettingsPanel } from './StreamSettingsView';
 
 export const MountPoints: React.FC = () => {
   const [mounts, setMounts] = useState<MountPoint[]>([]);
@@ -15,6 +16,7 @@ export const MountPoints: React.FC = () => {
   // UI States
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [editingMount, setEditingMount] = useState<MountPoint | null>(null);
   
   // Broadcast State synced with DB
   const [isLive, setIsLive] = useState(false); 
@@ -26,27 +28,27 @@ export const MountPoints: React.FC = () => {
   // Hidden audio element for pre-listening
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const fetchMountsAndState = async () => {
+    try {
+      setLoading(true);
+      const [mountsData, stateData] = await Promise.all([
+        api.getMountPoints(),
+        api.getBroadcastState() 
+      ]);
+      
+      setMounts(mountsData);
+      setIsLive(stateData.state === 'online');
+
+    } catch (err) {
+      console.error("Failed to load stream data:", err);
+      setError("Failed to load transmission configurations.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [mountsData, stateData] = await Promise.all([
-          api.getMountPoints(),
-          api.getBroadcastState() 
-        ]);
-        
-        setMounts(mountsData);
-        setIsLive(stateData.state === 'online');
-
-      } catch (err) {
-        console.error("Failed to load stream data:", err);
-        setError("Failed to load transmission configurations.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    fetchMountsAndState();
   }, []);
 
   const copyToClipboard = (url: string, id: string) => {
@@ -105,7 +107,6 @@ export const MountPoints: React.FC = () => {
 
   return (
     <Box w="100%" bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="gray.100" shadow="sm">
-      {/* ⚡️ CSS Animation for the Live Dot */}
       <style>
         {`
           @keyframes pulseRed {
@@ -118,7 +119,6 @@ export const MountPoints: React.FC = () => {
 
       <audio ref={audioRef} style={{ display: 'none' }} />
 
-      {/* ⚡️ Confirmation Modal Overlay */}
       {showStopConfirm && (
         <Box position="fixed" top={0} left={0} right={0} bottom={0} zIndex={9999} display="flex" alignItems="center" justifyContent="center" bg="blackAlpha.400" backdropFilter="blur(2px)">
           <Box bg="white" p={6} borderRadius="2xl" shadow="2xl" maxW="400px" w="90%" border="1px solid" borderColor="gray.100">
@@ -184,8 +184,6 @@ export const MountPoints: React.FC = () => {
                     _hover={{ bg: isRowLive ? "red.50/80" : "gray.50/50" }}
                     transition="background 0.2s"
                   >
-                    
-                    {/* 1. Clean Stream Name & Play Button */}
                     <Table.Cell maxW="280px">
                       <HStack gap={3}>
                         <Button 
@@ -197,7 +195,7 @@ export const MountPoints: React.FC = () => {
                           onClick={() => handlePlayStop(mount.id, mount.hls_url)}
                           borderRadius="full"
                           w="32px" h="32px" p={0}
-                          disabled={!isRowLive} // ⚡️ Button disabled when stream is offline
+                          disabled={!isRowLive}
                           cursor={isRowLive ? "pointer" : "not-allowed"}
                           opacity={isRowLive ? 1 : 0.5}
                         >
@@ -215,14 +213,12 @@ export const MountPoints: React.FC = () => {
                       </HStack>
                     </Table.Cell>
 
-                    {/* 2. Bitrate / Quality */}
                     <Table.Cell>
                       <Badge color="gray.700" bg="gray.100" fontSize="11px" px={2} py={1} borderRadius="md">
                         {mount.bitrate} kbps
                       </Badge>
                     </Table.Cell>
 
-                    {/* 3. Status Indicator */}
                     <Table.Cell>
                       {mount.is_default ? (
                         <HStack gap={2}>
@@ -242,18 +238,14 @@ export const MountPoints: React.FC = () => {
                       )}
                     </Table.Cell>
 
-                    {/* 4. URL */}
                     <Table.Cell maxW="320px">
                       <Text fontSize="xs" fontFamily="mono" color="gray.600" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">
                         {mount.hls_url}
                       </Text>
                     </Table.Cell>
 
-                    {/* 5. Controls & Actions */}
                     <Table.Cell textAlign="right">
                       <HStack gap={2} justify="flex-end" align="center">
-                        
-                        {/* Engine Start/Stop */}
                         {mount.is_default && (
                           <>
                             <Button
@@ -277,10 +269,19 @@ export const MountPoints: React.FC = () => {
                         <Button size="sm" variant="ghost" color="gray.500" _hover={{ bg: "gray.100", color: "gray.800" }} onClick={() => copyToClipboard(mount.hls_url, mount.id)}>
                           <Icon as={copiedId === mount.id ? Check : Copy} boxSize={4} color={copiedId === mount.id ? "green.500" : "inherit"} />
                         </Button>
-                        <Button size="sm" variant="ghost" color="gray.500" _hover={{ bg: "gray.100", color: "gray.800" }}>
+                        <Button 
+                          size="sm" variant="ghost" color="gray.500" 
+                          _hover={{ bg: "gray.100", color: "gray.800" }} 
+                          onClick={() => setEditingMount(mount)} // ⚡️ Open settings panel
+                        >
                           <Icon as={Settings} boxSize={4} />
                         </Button>
-                        <Button size="sm" variant="ghost" color="red.400" _hover={{ bg: "red.50", color: "red.600" }} disabled={mount.is_default}>
+                        <Button 
+                          size="sm" variant="ghost" color="red.400" 
+                          _hover={{ bg: "red.50", color: "red.600" }} 
+                          disabled={mount.is_default}
+                          onClick={() => setEditingMount(mount)} // Optional: Also open panel to delete
+                        >
                           <Icon as={Trash2} boxSize={4} />
                         </Button>
                       </HStack>
@@ -293,6 +294,17 @@ export const MountPoints: React.FC = () => {
           </Table.Body>
         </Table.Root>
       </Box>
+
+      {/* ⚡️ Stream Settings Panel mounted here */}
+      <StreamSettingsPanel 
+        isOpen={!!editingMount}
+        mount={editingMount}
+        onClose={() => setEditingMount(null)}
+        onUpdateSuccess={() => {
+          setEditingMount(null);
+          fetchMountsAndState(); 
+        }}
+      />
     </Box>
   );
 };
