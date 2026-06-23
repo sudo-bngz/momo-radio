@@ -156,3 +156,7 @@ func (c *Client) GetPublicURL(key string) string {
 func (c *Client) UploadPublicPageFile(key string, body io.ReadSeeker, contentType, cacheControl string) error {
 	return c.backend.Put(c.bucketPublicPage, key, body, contentType, cacheControl)
 }
+
+func (c *Client) DeletePublicPageFile(key string) error {
+	return c.backend.Delete(c.bucketPublicPage, key)
+}

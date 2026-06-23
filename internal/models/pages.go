@@ -10,6 +10,9 @@ import (
 type PublicPage struct {
 	OrganizationID uuid.UUID `gorm:"type:uuid;primaryKey" json:"organization_id"`
 
+	// Routing
+	Slug string `gorm:"type:varchar(255);uniqueIndex" json:"slug"` // ⚡️ NEW: Added with database-level uniqueness
+
 	// Appearance
 	ThemeMode   string `gorm:"type:varchar(20);default:'dark'" json:"theme_mode"`
 	AccentColor string `gorm:"type:varchar(20);default:'#ff0055'" json:"accent_color"`
@@ -19,10 +22,10 @@ type PublicPage struct {
 	VisualMode         string `gorm:"type:varchar(20);default:'preset'" json:"visual_mode"` // 'preset' or 'custom'
 	HydraPreset        string `gorm:"type:varchar(50);default:'oscillator'" json:"hydra_preset"`
 	HydraCode          string `gorm:"type:text" json:"hydra_code"` // Raw JS for the visualizer
-	BackgroundImageURL string `json:"background_image_url" gorm:"type:text"`
+	BackgroundImageKey string `gorm:"type:text" json:"background_image_key"`
 
 	// Content
-	LogoURL string `gorm:"type:varchar(255)" json:"logo_url"`
+	LogoKey string `gorm:"type:varchar(255)" json:"logo_key"`
 	Bio     string `gorm:"type:text" json:"bio"`
 
 	UpdatedAt time.Time `json:"updated_at"`

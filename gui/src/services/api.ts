@@ -30,8 +30,13 @@ export interface PublicPageConfig {
   visual_mode: string;
   hydra_preset: string;
   hydra_code: string;
-  logo_url: string;
+  base_domain: string;
+  slug: string;
   bio: string;
+  logo_key?: string;            
+  logo_url?: string;            
+  background_image_key?: string;
+  background_image_url?: string;
 }
 
 const API_URL = '/api/v1';
@@ -324,4 +329,18 @@ export const api = {
   updatePublicPageSettings: async (data: Partial<PublicPageConfig>): Promise<void> => {
     await apiClient.put('/public-page', data);
   },
+uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ url: string; key: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+
+    // Use apiClient so it automatically attaches auth tokens and organization IDs
+    const response = await apiClient.post<{ url: string; key: string }>('/public-page/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+    return response.data;
+  }
 };

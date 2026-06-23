@@ -154,6 +154,7 @@ func (s *Server) setupRoutes() {
 			// --- PUBLIC PAGE ---
 			protected.GET("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), pageHandler.GetSettings)
 			protected.PUT("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UpdateSettings)
+			protected.POST("/public-page/upload", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UploadImage)
 		}
 	}
 

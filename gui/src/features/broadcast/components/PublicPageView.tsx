@@ -1,31 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Box, Flex, Heading, Text, VStack, HStack, Button, Input, Textarea, 
-  Select, createListCollection, Spinner, Center, Icon, Grid
+  Box, Flex, Heading, Text, VStack, HStack, Button, Input, 
+  Spinner, Center, Icon, Grid, Group, InputAddon, Image as ChakraImage
 } from '@chakra-ui/react';
-import { Save, Code, Palette, Badge } from 'lucide-react';
+import { Save, Palette, Globe, Image as ImageIcon, UploadCloud } from 'lucide-react';
 import { api, type PublicPageConfig } from '../../../services/api';
-
-const visualModeOptions = createListCollection({
-  items: [
-    { label: "Built-in Presets", value: "preset" },
-    { label: "Custom Hydra Code", value: "custom" },
-  ],
-});
-
-const presetOptions = createListCollection({
-  items: [
-    { label: "Classic Oscillator", value: "oscillator" },
-    { label: "Voronoi Liquid", value: "voronoi" },
-    { label: "Audio Reactive Noise", value: "noise" },
-    { label: "Kaleidoscope", value: "kaleidoscope" },
-  ],
-});
 
 export const PublicPageView: React.FC = () => {
   const [config, setConfig] = useState<PublicPageConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingBg, setUploadingBg] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  // Refs for hidden file inputs
+  const bgInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -43,14 +33,51 @@ export const PublicPageView: React.FC = () => {
 
   const handleSave = async () => {
     if (!config) return;
+    const safeSlug = config.slug.toLowerCase().replace(/[^a-z0-9-]/g, '');
     try {
       setSaving(true);
-      await api.updatePublicPageSettings(config);
-      // Optional: Add success toast here
+      await api.updatePublicPageSettings({ ...config, slug: safeSlug });
     } catch (error) {
       console.error("Failed to save", error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'background' | 'logo') => {
+    const file = e.target.files?.[0];
+    if (!file || !config) return;
+
+    if (type === 'background') setUploadingBg(true);
+    else setUploadingLogo(true);
+
+    try {
+      // The API now returns BOTH the preview URL and the storage key
+      const response = await api.uploadPublicImage(file, type);
+      
+      // Update the config state with BOTH properties
+      if (type === 'background') {
+        setConfig({ 
+          ...config, 
+          background_image_url: response.url, 
+          background_image_key: response.key // ⚡️ Store the key for the DB
+        });
+      } else {
+        setConfig({ 
+          ...config, 
+          logo_url: response.url, 
+          logo_key: response.key             // ⚡️ Store the key for the DB
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to upload ${type}`, error);
+      alert("Image upload failed. Please try again.");
+    } finally {
+      if (type === 'background') setUploadingBg(false);
+      else setUploadingLogo(false);
+      
+      // Reset input so the same file can be selected again if needed
+      e.target.value = ''; 
     }
   };
 
@@ -68,7 +95,7 @@ export const PublicPageView: React.FC = () => {
       <Flex justify="space-between" align="center" mb={8}>
         <Box>
           <Heading size="md" fontWeight="bold" color="gray.800" mb={1}>Public Listener Page</Heading>
-          <Text fontSize="sm" color="gray.500">Customize the visual identity and audio-reactive background for your station's public URL.</Text>
+          <Text fontSize="sm" color="gray.500">Customize the visual identity and public URL for your broadcast.</Text>
         </Box>
         <Button 
           bg="blue.500" color="white" _hover={{ bg: "blue.600" }} 
@@ -85,123 +112,109 @@ export const PublicPageView: React.FC = () => {
         <VStack align="stretch" gap={8}>
           <Box>
             <HStack mb={4} color="gray.700">
-              <Icon as={Code} boxSize={5} />
-              <Heading size="sm">Hydra Visualizer Background</Heading>
+              <Icon as={ImageIcon} boxSize={5} />
+              <Heading size="sm">Imagery</Heading>
             </HStack>
             
-            <VStack align="stretch" gap={4} p={5} bg="gray.50" borderRadius="xl" border="1px solid" borderColor="gray.100">
+            <VStack align="stretch" gap={6} p={5} bg="gray.50" borderRadius="xl" border="1px solid" borderColor="gray.100">
+              
+              {/* Background Image Upload */}
               <Box>
-                <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Visual Engine Mode</Text>
-                <Select.Root 
-                  collection={visualModeOptions} 
-                  value={[config.visual_mode]} 
-                  onValueChange={(e) => setConfig({ ...config, visual_mode: e.value[0] })}
+                <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Background Image</Text>
+                {config.background_image_url && (
+                  <Box mb={3} borderRadius="md" overflow="hidden" h="100px" border="1px solid" borderColor="gray.200">
+                    <ChakraImage src={config.background_image_url} alt="Background Preview" objectFit="cover" w="100%" h="100%" />
+                  </Box>
+                )}
+                <input 
+                  type="file" accept="image/*" ref={bgInputRef} style={{ display: 'none' }}
+                  onChange={(e) => handleFileUpload(e, 'background')} 
+                />
+                <Button 
+                  w="100%" variant="outline" bg="white" size="sm"
+                  onClick={() => bgInputRef.current?.click()} disabled={uploadingBg}
                 >
-                  <Select.Trigger bg="white">
-                    <Select.ValueText />
-                  </Select.Trigger>
-                  <Select.Content bg="white" zIndex={10}>
-                    {visualModeOptions.items.map(item => (
-                      <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select.Root>
+                  {uploadingBg ? <Spinner size="sm" mr={2} /> : <Icon as={UploadCloud} boxSize={4} mr={2} />}
+                  {config.background_image_url ? "Replace Background" : "Upload Background"}
+                </Button>
               </Box>
 
-              {config.visual_mode === 'preset' ? (
-                <Box>
-                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Select Preset</Text>
-                  <Select.Root 
-                    collection={presetOptions} 
-                    value={[config.hydra_preset]} 
-                    onValueChange={(e) => setConfig({ ...config, hydra_preset: e.value[0] })}
-                  >
-                    <Select.Trigger bg="white">
-                      <Select.ValueText />
-                    </Select.Trigger>
-                    <Select.Content bg="white" zIndex={10}>
-                      {presetOptions.items.map(item => (
-                        <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
-                      ))}
-                    </Select.Content>
-                  </Select.Root>
-                </Box>
-              ) : (
-                <Box>
-                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Raw Hydra JavaScript</Text>
-                  <Textarea 
-                    value={config.hydra_code}
-                    onChange={(e) => setConfig({ ...config, hydra_code: e.target.value })}
-                    placeholder="osc().color(0.9, 0.3, 0.1).out()"
-                    fontFamily="mono" fontSize="xs" bg="gray.900" color="green.300" 
-                    rows={8}
-                  />
-                </Box>
-              )}
+              {/* Logo Upload */}
+              <Box>
+                <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Station Logo</Text>
+                {config.logo_url && (
+                  <Box mb={3} p={2} bg="gray.800" borderRadius="md" maxW="150px">
+                    <ChakraImage src={config.logo_url} alt="Logo Preview" maxH="50px" objectFit="contain" />
+                  </Box>
+                )}
+                <input 
+                  type="file" accept="image/png, image/jpeg, image/svg+xml" ref={logoInputRef} style={{ display: 'none' }}
+                  onChange={(e) => handleFileUpload(e, 'logo')} 
+                />
+                <Button 
+                  w="100%" variant="outline" bg="white" size="sm"
+                  onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}
+                >
+                  {uploadingLogo ? <Spinner size="sm" mr={2} /> : <Icon as={UploadCloud} boxSize={4} mr={2} />}
+                  {config.logo_url ? "Replace Logo" : "Upload Logo"}
+                </Button>
+              </Box>
+
             </VStack>
           </Box>
-        </VStack>
 
-        {/* Right Column: Identity & CSS */}
-        <VStack align="stretch" gap={8}>
           <Box>
             <HStack mb={4} color="gray.700">
               <Icon as={Palette} boxSize={5} />
-              <Heading size="sm">Brand Identity</Heading>
+              <Heading size="sm">Brand Color</Heading>
             </HStack>
-            
-            <VStack align="stretch" gap={5}>
-              <Box>
-                <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Station Bio</Text>
-                <Textarea 
-                  value={config.bio}
-                  onChange={(e) => setConfig({ ...config, bio: e.target.value })}
-                  placeholder="Welcome to our underground broadcast..."
-                  rows={3}
+            <Box p={5} bg="gray.50" borderRadius="xl" border="1px solid" borderColor="gray.100">
+              <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Accent Color</Text>
+              <HStack>
+                <Input 
+                  type="color" 
+                  value={config.accent_color}
+                  onChange={(e) => setConfig({ ...config, accent_color: e.target.value })}
+                  h="40px" w="60px" p={1} cursor="pointer"
+                  bg="white"
                 />
-              </Box>
-
-              <Grid templateColumns="1fr 1fr" gap={4}>
-                <Box>
-                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Theme Mode</Text>
-                  <Select.Root 
-                    collection={createListCollection({ items: [{label: 'Dark', value: 'dark'}, {label: 'Light', value: 'light'}] })} 
-                    value={[config.theme_mode]} 
-                    onValueChange={(e) => setConfig({ ...config, theme_mode: e.value[0] })}
-                  >
-                    <Select.Trigger><Select.ValueText /></Select.Trigger>
-                    <Select.Content bg="white" zIndex={10}>
-                      <Select.Item item={{value: 'dark'}} key="dark">Dark Theme</Select.Item>
-                      <Select.Item item={{value: 'light'}} key="light">Light Theme</Select.Item>
-                    </Select.Content>
-                  </Select.Root>
-                </Box>
-                <Box>
-                  <Text fontSize="xs" fontWeight="600" color="gray.600" mb={2}>Accent Color</Text>
-                  <Input 
-                    type="color" 
-                    value={config.accent_color}
-                    onChange={(e) => setConfig({ ...config, accent_color: e.target.value })}
-                    h="40px" p={1} cursor="pointer"
-                  />
-                </Box>
-              </Grid>
-            </VStack>
+                <Input 
+                  bg="white"
+                  value={config.accent_color}
+                  onChange={(e) => setConfig({ ...config, accent_color: e.target.value })}
+                  fontFamily="mono" fontSize="sm"
+                />
+              </HStack>
+            </Box>
           </Box>
+        </VStack>
 
+        {/* Right Column: Routing */}
+        <VStack align="stretch" gap={8}>
           <Box>
-            <HStack justify="space-between" mb={2}>
-              <Text fontSize="xs" fontWeight="600" color="gray.600">Custom CSS (MySpace Mode)</Text>
-              <Badge color="purple.600" fontSize="10px">Advanced</Badge>
+            <HStack mb={4} color="gray.700">
+              <Icon as={Globe} boxSize={5} />
+              <Heading size="sm">Station URL</Heading>
             </HStack>
-            <Textarea 
-              value={config.custom_css}
-              onChange={(e) => setConfig({ ...config, custom_css: e.target.value })}
-              placeholder="/* Override player styles here */&#10;.player-container {&#10;  border-radius: 0px;&#10;}"
-              fontFamily="mono" fontSize="xs" bg="gray.50" rows={6}
-            />
+            <Box p={5} bg="blue.50" borderRadius="xl" border="1px solid" borderColor="blue.100">
+              <Text fontSize="xs" fontWeight="600" color="blue.800" mb={2}>Custom Subdomain</Text>
+              <Group attached w="100%">
+                <InputAddon bg="white" color="gray.500" px={3}>https://</InputAddon>
+                <Input 
+                  bg="white"
+                  value={config.slug || ''}
+                  onChange={(e) => setConfig({ ...config, slug: e.target.value })}
+                  placeholder="my-underground-label"
+                />
+                <InputAddon bg="white" color="gray.500" px={3}>
+                  .{config.base_domain || 'yourdomain.com'}
+                </InputAddon>
+              </Group>
+              <Text fontSize="10px" color="blue.600" mt={2}>
+                Changing this will instantly update where listeners find your stream.
+              </Text>
+            </Box>
           </Box>
-
         </VStack>
       </Grid>
     </Box>
