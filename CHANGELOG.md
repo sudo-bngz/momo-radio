@@ -1,3 +1,35 @@
+## [0.6.0] - 2026-06-23
+
+### 🚀 Features
+
+- *(gui)* Implement signup, multi-step onboarding, and organization route guarding
+- *(ingest)* Implement many-to-many artist relationships and modular pipeline steps
+- *(library)* Implement global search architecture, tabbed views, and many-to-many album-artist relations
+- *(library)* Implement AlbumDetailView sub-routing and tab state persistence
+- *(library)* Implement ArtistDetailView sub-routing and multi-artist dashboard metrics
+- *(gui)* Implement global API downtime handling and connection fallback screen
+- *(ingest)* Implement asynchronous artist profiling and background Discogs enrichment
+- *(ingest)* Integrate BBC audiowaveform generation into ingestion worker
+- *(player)* Implement pre-rendered JSON waveform peaks and multi-tenant audio streaming
+- *(ingest)* Implement cascading metadata enrichment with acoustic fingerprinting
+- *(ingest)* Implement machine learning tag routing and high-level Essentia models
+- *(library)* Merge genre/style tags and expose AI acoustic data in API payloads
+- *(library)* Implement instant album playout and contextual query filters
+- *(library)* Implement instant artist playback and resolve avatar asset public URLs
+- *(auth)* Implement dedicated initialization lifecycle to resolve auth state flash
+- *(library)* Consolidate artist profiling and implement smart routing for entity resolution
+- *(radio)* Implement dynamic mount-point infrastructure for multi-tenant HLS delivery
+- *(radio)* Implement dynamic broadcast domain resolution and HLS mount provisioning
+- *(broadcast)* Implement dynamic multi-tenant stream path routing and CDN integration
+- *(radio)* Implement horizontal engine supervisor using Redis Pub/Sub orchestration
+- *(broadcast)* Refactor master transmission controls into the MountPoints view
+- *(public-page)* Implement customizable listener page with audio-reactive Hydra backgrounds
+- *(public-page)* Implement direct asset uploads and secure domain URL resolution
+
+### 🐛 Bug Fixes
+
+- *(api)* Resolve stats handler log spam and adapt for many-to-many artists
+- *(ingest)* Standardize and deduplicate genre and style metadata tags
 ## [0.6.0-alpha.1] - 2026-05-15
 
 ### 🐛 Bug Fixes
@@ -7,6 +39,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - *(release)* Prepare v0.6.0-alpha
+- *(release)* Prepare v0.6.0-alpha.1
 ## [0.6.0-alpha] - 2026-05-15
 
 ### 🚀 Features
