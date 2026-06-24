@@ -7,6 +7,7 @@ import { Copy, Check, Plus, Settings, Trash2, Play, Square } from 'lucide-react'
 import { api } from '../../../services/api'; 
 import type { MountPoint } from '../../../services/api'; 
 import { StreamSettingsPanel } from './StreamSettingsView';
+import { useBroadcastStore } from '../../../store/useBroadcast'; // ⚡️ IMPORT STORE
 
 export const MountPoints: React.FC = () => {
   const [mounts, setMounts] = useState<MountPoint[]>([]);
@@ -18,8 +19,10 @@ export const MountPoints: React.FC = () => {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [editingMount, setEditingMount] = useState<MountPoint | null>(null);
   
-  // Broadcast State synced with DB
-  const [isLive, setIsLive] = useState(false); 
+  // ⚡️ USE GLOBAL STATE INSTEAD OF LOCAL STATE
+  const isLive = useBroadcastStore((state) => state.isLive);
+  const setLive = useBroadcastStore((state) => state.setLive);
+  
   const [isToggling, setIsToggling] = useState(false);
   
   // Modal State
@@ -37,7 +40,7 @@ export const MountPoints: React.FC = () => {
       ]);
       
       setMounts(mountsData);
-      setIsLive(stateData.state === 'online');
+      setLive(stateData.state === 'online'); // ⚡️ Update global store
 
     } catch (err) {
       console.error("Failed to load stream data:", err);
@@ -63,7 +66,7 @@ export const MountPoints: React.FC = () => {
       const action = isLive ? 'stop' : 'start';
       const response = await api.toggleBroadcast(action);
       
-      setIsLive(response.state === 'online');
+      setLive(response.state === 'online'); // ⚡️ Instantly syncs global store and TopNav
       
       if (isLive && playingId) {
         handlePlayStop(playingId, ""); 
@@ -272,7 +275,7 @@ export const MountPoints: React.FC = () => {
                         <Button 
                           size="sm" variant="ghost" color="gray.500" 
                           _hover={{ bg: "gray.100", color: "gray.800" }} 
-                          onClick={() => setEditingMount(mount)} // ⚡️ Open settings panel
+                          onClick={() => setEditingMount(mount)} 
                         >
                           <Icon as={Settings} boxSize={4} />
                         </Button>
@@ -280,7 +283,7 @@ export const MountPoints: React.FC = () => {
                           size="sm" variant="ghost" color="red.400" 
                           _hover={{ bg: "red.50", color: "red.600" }} 
                           disabled={mount.is_default}
-                          onClick={() => setEditingMount(mount)} // Optional: Also open panel to delete
+                          onClick={() => setEditingMount(mount)} 
                         >
                           <Icon as={Trash2} boxSize={4} />
                         </Button>
@@ -295,7 +298,6 @@ export const MountPoints: React.FC = () => {
         </Table.Root>
       </Box>
 
-      {/* ⚡️ Stream Settings Panel mounted here */}
       <StreamSettingsPanel 
         isOpen={!!editingMount}
         mount={editingMount}

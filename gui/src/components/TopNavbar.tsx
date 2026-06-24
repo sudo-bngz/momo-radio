@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Box, HStack, Text, Flex, Icon, Spinner, Input } from '@chakra-ui/react';
 import { Avatar, Menu } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
 import { LogOut, Settings, BookOpen, Music, ChevronDown, Search } from 'lucide-react';
+
 import { useAuthStore } from '../store/useAuthStore';
-import { useDashboard } from '../features/dashboard/hook/useDashboard';
 import { useSearchStore } from '../store/useSearchStore';
+import { useDashboard } from '../features/dashboard/hook/useDashboard';
+import { useBroadcastStore } from '../store/useBroadcast';
 
 const scrollAnimation = keyframes`
   0% { transform: translateX(100%); }
@@ -14,9 +16,20 @@ const scrollAnimation = keyframes`
 
 export const TopNav: React.FC = () => {
   const user = useAuthStore((state) => state.user);
-  const { globalSearch, setGlobalSearch } = useSearchStore();
   const logout = useAuthStore((state) => state.logout);
+  const { globalSearch, setGlobalSearch } = useSearchStore();
   const { nowPlaying, isLoading } = useDashboard(); 
+  
+  // ⚡️ USE GLOBAL STATE INSTEAD OF LOCAL STATE
+  const isLive = useBroadcastStore((state) => state.isLive);
+  const checkState = useBroadcastStore((state) => state.checkState);
+
+  useEffect(() => {
+    // Check immediately, then poll every 10s
+    checkState();
+    const interval = setInterval(checkState, 10000);
+    return () => clearInterval(interval);
+  }, [checkState]);
 
   if (!user) return null;
 
@@ -38,10 +51,10 @@ export const TopNav: React.FC = () => {
     : "AutoDJ is active";
 
   return (
-    <Box w="100%" px={8} py={4} zIndex={50} bg="white" borderBottom="1px solid" borderColor="gray.100">
+    <Box w="100%" px={8} py={4} zIndex={50} bg="white">
       <Flex justify="space-between" align="center" gap={4}>
         
-        {/* 1. SEARCH BAR (Left Aligned) */}
+        {/* 1. SEARCH BAR */}
         <Box position="relative" w="100%" maxW="400px" ml={2}>
           <Icon as={Search} position="absolute" left={4} top="50%" transform="translateY(-50%)" color="gray.400" boxSize={4} zIndex={2} />
           <Input 
@@ -53,7 +66,7 @@ export const TopNav: React.FC = () => {
           />
         </Box>
 
-        {/* 2. RIGHT SIDE GROUP (Live + User Profile) */}
+        {/* 2. RIGHT SIDE GROUP */}
         <HStack gap={4}>
           
           {/* Live Widget */}
@@ -68,27 +81,39 @@ export const TopNav: React.FC = () => {
             display={{ base: 'none', lg: 'flex' }}
           >
             <HStack gap={2} mr={4}>
-              <Box w={2} h={2} bg="red.500" borderRadius="full" animation="pulse 2s infinite" />
-              <Text fontSize="10px" fontWeight="900" color="red.500" letterSpacing="widest">LIVE</Text>
+              <Box 
+                w={2} h={2} 
+                bg={isLive ? "red.500" : "gray.400"} 
+                borderRadius="full" 
+                animation={isLive ? "pulse 2s infinite" : "none"} 
+              />
+              <Text 
+                fontSize="10px" 
+                fontWeight="900" 
+                color={isLive ? "red.500" : "gray.500"} 
+                letterSpacing="widest"
+              >
+                {isLive ? "LIVE" : "OFF AIR"}
+              </Text>
             </HStack>
             
             <Box w="1px" h="16px" bg="gray.100" mr={4} />
             
             <HStack gap={3} mr={4} w="160px" overflow="hidden">
-              <Icon as={Music} boxSize={3.5} color="gray.400" flexShrink={0} />
-              {isLoading ? (
+              <Icon as={Music} boxSize={3.5} color={isLive ? "gray.400" : "gray.300"} flexShrink={0} />
+              {isLoading && isLive ? (
                 <Spinner size="xs" color="gray.400" />
               ) : (
                 <Box flex="1" overflow="hidden" h="20px" display="flex" alignItems="center">
                   <Text 
                     fontSize="xs" 
                     fontWeight="600" 
-                    color="gray.700" 
+                    color={isLive ? "gray.700" : "gray.400"} 
                     whiteSpace="nowrap"
                     display="inline-block"
-                    animation={`${scrollAnimation} 12s linear infinite`}
+                    animation={isLive ? `${scrollAnimation} 12s linear infinite` : "none"}
                   >
-                    {trackText}
+                    {isLive ? trackText : "Offline"}
                   </Text>
                 </Box>
               )}
@@ -124,36 +149,39 @@ export const TopNav: React.FC = () => {
               </HStack>
             </Menu.Trigger>
 
-            <Menu.Content 
-              minW="180px" 
-              bg="white" 
-              borderRadius="xl" 
-              boxShadow="xl" 
-              p={2}
-              mt={2}
-              border="1px solid" borderColor="gray.100"
-              zIndex={100}
-            >
-              <Menu.Item value="settings" _hover={{ bg: "gray.50" }} cursor="pointer">
-                <Icon as={Settings} boxSize={4} /> Settings
-              </Menu.Item>
-              <Menu.Item value="docs" _hover={{ bg: "gray.50" }} cursor="pointer">
-                <Icon as={BookOpen} boxSize={4} /> Docs
-              </Menu.Item>
-              <Menu.Separator />
-              <Menu.Item 
-                value="logout" 
-                color="red.600" 
-                _hover={{ bg: "red.50" }} 
-                cursor="pointer"
-                onClick={logout}
+            <Menu.Positioner zIndex={100}>
+              <Menu.Content 
+                minW="180px" 
+                bg="white" 
+                borderRadius="xl" 
+                boxShadow="xl" 
+                p={2}
+                border="1px solid" borderColor="gray.100"
               >
-                <Icon as={LogOut} boxSize={4} /> Sign Out
-              </Menu.Item>
-            </Menu.Content>
+                <Menu.Item value="settings" _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
+                  <Icon as={Settings} boxSize={4} /> 
+                  <Text>Settings</Text>
+                </Menu.Item>
+                <Menu.Item value="docs" _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
+                  <Icon as={BookOpen} boxSize={4} /> 
+                  <Text>Docs</Text>
+                </Menu.Item>
+                <Menu.Separator my={1} />
+                <Menu.Item 
+                  value="logout" 
+                  color="red.600" 
+                  _hover={{ bg: "red.50" }} 
+                  cursor="pointer"
+                  onClick={logout}
+                  display="flex" alignItems="center" gap={3}
+                >
+                  <Icon as={LogOut} boxSize={4} /> 
+                  <Text>Sign Out</Text>
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Positioner>
           </Menu.Root>
         </HStack>
-
       </Flex>
     </Box>
   );
