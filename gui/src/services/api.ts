@@ -48,6 +48,14 @@ export interface OrganizationSettings {
   storage_bucket: string;
 }
 
+export interface UserProfile {
+  id: string;
+  first_name: string;
+  last_name: string;
+  avatar_url: string;
+  updated_at: string;
+}
+
 const API_URL = '/api/v1';
 
 export const apiClient = axios.create({
@@ -359,6 +367,15 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
 
   updateSettings: async (data: Partial<OrganizationSettings>): Promise<OrganizationSettings> => {
     const response = await apiClient.put('/settings', data);
+    return response.data;
+  },
+  getProfile: async (): Promise<UserProfile> => {
+    const response = await apiClient.get('/profile');
+    return response.data;
+  },
+
+  updateProfile: async (data: Partial<UserProfile>): Promise<UserProfile> => {
+    const response = await apiClient.put('/profile', data);
     return response.data;
   },
 };

@@ -63,6 +63,7 @@ func (c *Client) AutoMigrate() {
 		&models.Track{},
 		&models.PublicPage{},
 		&models.OrganizationSettings{},
+		&models.UserProfile{},
 	)
 	if err != nil {
 		log.Fatalf("Migration failed: %v", err)

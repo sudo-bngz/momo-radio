@@ -12,18 +12,21 @@ import { AdvancedFfmpegSettings } from './components/AdvancedFfmpegSettings';
 import { StorageSettings } from './components/StorageSettings';
 import { UsersManagement } from './components/UsersManagement';
 import { StreamSettings } from './components/StreamSettings';
+import { AccountSettings } from './components/AccountSettings';
+import { User } from 'lucide-react'; // Add User to your lucide-react imports
 
 const TABS = [
+  { id: 'account', label: 'Account', icon: User }, // ⚡️ Added Account tab
   { id: 'general', label: 'Workspace', icon: Radio },
   { id: 'engine', label: 'Broadcast Engine', icon: SettingsIcon },
-  { id: 'stream', label: 'Stream Config', icon: Activity }, // ⚡️ Added Stream tab
+  { id: 'stream', label: 'Stream Config', icon: Activity }, 
   { id: 'storage', label: 'Storage & Assets', icon: HardDrive },
   { id: 'team', label: 'Members', icon: Users },
   { id: 'billing', label: 'Billing', icon: CreditCard },
 ];
 
 export const SettingsFeature: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState('account');
   const { fetchSettings, isLoading } = useSettings();
   const navigate = useNavigate();
 
@@ -92,6 +95,7 @@ export const SettingsFeature: React.FC = () => {
       <Box flex="1" p={10} overflowY="auto" bg="gray.50">
         <Box maxW="800px" mx="auto">
           {/* ⚡️ REPLACED PLACEHOLDERS WITH ACTUAL COMPONENTS */}
+          {activeTab === 'account' && <AccountSettings />}
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'engine' && <AdvancedFfmpegSettings />}
           {activeTab === 'stream' && <StreamSettings />}

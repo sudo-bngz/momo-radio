@@ -19,7 +19,6 @@ interface AuthState {
   isInitialized: boolean;
   isSessionExpired: boolean;
 
-  // ⚡️ ADDED: The initialize function
   initialize: () => Promise<void>;
   
   setSession: (session: Session | null) => void;
@@ -28,6 +27,11 @@ interface AuthState {
   logout: () => Promise<void>;
   setSessionExpired: (expired: boolean) => void;
   clearState: () => void; 
+
+  // ⚡️ ADDED: The missing Supabase Auth update methods
+  updateProfile: (firstName: string, lastName: string) => Promise<void>;
+  updateEmail: (newEmail: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -38,10 +42,9 @@ export const useAuthStore = create<AuthState>()(
       organizations: [],
       activeOrganizationId: null,
       isAuthenticated: false,
-      isInitialized: false, // ⚡️ Starts false to block the router
+      isInitialized: false, 
       isSessionExpired: false,
 
-      // ⚡️ ADDED: Fetches the session on boot and marks init as true
       initialize: async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -64,7 +67,7 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (error) {
           console.error("Failed to initialize auth", error);
-          set({ isInitialized: true }); // Prevent app from freezing if offline
+          set({ isInitialized: true }); 
         }
       },
 
@@ -116,12 +119,30 @@ export const useAuthStore = create<AuthState>()(
 
       setSessionExpired: (expired: boolean) => {
         set({ isSessionExpired: expired });
+      },
+
+      // ⚡️ ADDED: Implementations for the update methods
+      updateProfile: async (firstName: string, lastName: string) => {
+        const { data, error } = await supabase.auth.updateUser({
+          data: { first_name: firstName, last_name: lastName }
+        });
+        if (error) throw error;
+        set({ user: data.user }); // Update local user state immediately
+      },
+
+      updateEmail: async (newEmail: string) => {
+        const { error } = await supabase.auth.updateUser({ email: newEmail });
+        if (error) throw error;
+      },
+
+      updatePassword: async (newPassword: string) => {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) throw error;
       }
     }),
     { 
       name: 'momo-auth-storage',
       partialize: (state) => ({ 
-        // We only persist the org data, we let Supabase handle the token persistence!
         activeOrganizationId: state.activeOrganizationId,
         organizations: state.organizations
       })

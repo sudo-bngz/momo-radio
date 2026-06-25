@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
+	"time"
 
 	"momo-radio/internal/models"
 	"momo-radio/internal/utils"
@@ -31,8 +32,6 @@ func generateStreamKey() string {
 
 // ----------------------------------------------------------------------------
 // 1. SUPABASE WEBHOOK HANDLER
-// Route: POST /api/webhooks/supabase
-// Called automatically by Supabase when a new user registers.
 // ----------------------------------------------------------------------------
 
 type SupabaseWebhookPayload struct {
@@ -40,10 +39,13 @@ type SupabaseWebhookPayload struct {
 	Record struct {
 		ID    string `json:"id"`
 		Email string `json:"email"`
-		// Supabase stores social login names in raw_user_meta_data
+
 		RawUserMetaData struct {
-			Name     string `json:"name"`
-			FullName string `json:"full_name"`
+			Name      string `json:"name"`
+			FullName  string `json:"full_name"`
+			FirstName string `json:"first_name"`
+			LastName  string `json:"last_name"`
+			AvatarURL string `json:"avatar_url"`
 		} `json:"raw_user_meta_data"`
 	} `json:"record"`
 }
@@ -55,7 +57,6 @@ func (h *AuthHandler) HandleSupabaseWebhook(c *gin.Context) {
 		return
 	}
 
-	// Only process INSERT events (new signups)
 	if payload.Type != "INSERT" {
 		c.JSON(http.StatusOK, gin.H{"message": "Ignored non-insert event"})
 		return
@@ -67,12 +68,25 @@ func (h *AuthHandler) HandleSupabaseWebhook(c *gin.Context) {
 		return
 	}
 
-	name := payload.Record.RawUserMetaData.Name
+	// Smart Name Parsing for the Profile
+	meta := payload.Record.RawUserMetaData
+	name := meta.Name
 	if name == "" {
-		name = payload.Record.RawUserMetaData.FullName
+		name = meta.FullName
 	}
 
-	// Use a database transaction to ensure both user and org are created safely
+	firstName := meta.FirstName
+	lastName := meta.LastName
+
+	// Fallback if identity provider only gives "full_name"
+	if firstName == "" && name != "" {
+		parts := strings.SplitN(name, " ", 2)
+		firstName = parts[0]
+		if len(parts) > 1 {
+			lastName = parts[1]
+		}
+	}
+
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// 1. Create the Local User
 		user := models.User{
@@ -84,14 +98,29 @@ func (h *AuthHandler) HandleSupabaseWebhook(c *gin.Context) {
 			return err
 		}
 
-		// 2. Create a default Personal Organization for them
-		orgName := user.Name + "'s Station"
+		// ⚡️ 2. Create the User Profile automatically
+		profile := models.UserProfile{
+			ID:        userID,
+			FirstName: firstName,
+			LastName:  lastName,
+			AvatarURL: meta.AvatarURL,
+			UpdatedAt: time.Now(),
+		}
+		if err := tx.Create(&profile).Error; err != nil {
+			return err
+		}
+
+		// 3. Create a default Personal Organization
+		orgName := firstName + "'s Station"
+		if firstName == "" {
+			orgName = "My Station"
+		}
+
 		org := models.Organization{
 			Name:        orgName,
-			StationSlug: utils.SanitizeSlug(orgName), // ⚡️ Dynamically generate a clean URL slug
-			StreamKey:   generateStreamKey(),         // ⚡️ Generate live ingest key
+			StationSlug: utils.SanitizeSlug(orgName),
+			StreamKey:   generateStreamKey(),
 			Plan:        "free",
-			// ⚡️ Automatically provision the default HLS Mount Point
 			MountPoints: []models.MountPoint{
 				{
 					Name:      "Standard Quality",
@@ -105,7 +134,7 @@ func (h *AuthHandler) HandleSupabaseWebhook(c *gin.Context) {
 			return err
 		}
 
-		// 3. Make them the Owner of their new Organization
+		// 4. Make them the Owner
 		orgUser := models.OrganizationUser{
 			OrganizationID: org.ID,
 			UserID:         user.ID,
@@ -123,19 +152,16 @@ func (h *AuthHandler) HandleSupabaseWebhook(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "User and Organization provisioned successfully"})
+	c.JSON(http.StatusCreated, gin.H{"message": "User, Profile, and Organization provisioned successfully"})
 }
 
 // ----------------------------------------------------------------------------
-// FETCH CURRENT USER CONTEXT & JIT PROVISIONING
-// Route: GET /api/v1/auth/me
-// Protected by the Supabase JWT Middleware (NOT the Organization Middleware)
+// 2. FETCH CURRENT USER CONTEXT & JIT PROVISIONING
 // ----------------------------------------------------------------------------
 
 func (h *AuthHandler) GetMe(c *gin.Context) {
-	// Extract the UserID and Email injected by your JWT Middleware
 	userIDStr := c.GetString("userID")
-	emailStr := c.GetString("email") // Ensure your middleware sets this!
+	emailStr := c.GetString("email")
 
 	if userIDStr == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User context not found"})
@@ -144,10 +170,8 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 
 	var user models.User
 
-	// 1. Try to find the user and their organizations
 	err := h.db.Preload("Organizations.Organization").Where("id = ?", userIDStr).First(&user).Error
 
-	// 2. If the user DOES NOT exist, trigger Just-In-Time Provisioning
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 
@@ -157,15 +181,13 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 				return
 			}
 
-			// Generate a friendly default name from their email prefix
 			name := "New User"
 			if emailStr != "" {
 				name = strings.Split(emailStr, "@")[0]
 			}
 
-			// Use a database transaction so if one step fails, it all rolls back safely
 			txErr := h.db.Transaction(func(tx *gorm.DB) error {
-				// A. Create the Local User
+				// A. Create Local User
 				newUser := models.User{
 					ID:    userID,
 					Email: emailStr,
@@ -175,16 +197,26 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 					return err
 				}
 
-				// B. Create a Personal Organization for them
+				// ⚡️ B. Create Local Profile Fallback
+				profile := models.UserProfile{
+					ID:        userID,
+					FirstName: name, // Default to email prefix
+					LastName:  "",
+					UpdatedAt: time.Now(),
+				}
+				if err := tx.Create(&profile).Error; err != nil {
+					return err
+				}
+
+				// C. Create Organization
 				orgID := uuid.New()
 				orgName := name + "'s Station"
 				org := models.Organization{
 					ID:          orgID,
 					Name:        orgName,
-					StationSlug: utils.SanitizeSlug(orgName), // ⚡️ Same slug generator here
-					StreamKey:   generateStreamKey(),         // ⚡️ Same stream key logic
+					StationSlug: utils.SanitizeSlug(orgName),
+					StreamKey:   generateStreamKey(),
 					Plan:        "free",
-					// ⚡️ Automatically provision the default HLS Mount Point here as well
 					MountPoints: []models.MountPoint{
 						{
 							Name:      "Standard Quality",
@@ -198,7 +230,7 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 					return err
 				}
 
-				// C. Make them the Owner of their new station
+				// D. Assign Owner Role
 				orgUser := models.OrganizationUser{
 					OrganizationID: org.ID,
 					UserID:         newUser.ID,
@@ -216,20 +248,17 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 				return
 			}
 
-			// D. Re-fetch the newly created user with their fresh organization
 			if err := h.db.Preload("Organizations.Organization").Where("id = ?", userIDStr).First(&user).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve provisioned account"})
 				return
 			}
 
 		} else {
-			// A different database error occurred
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error while fetching user"})
 			return
 		}
 	}
 
-	// 3. Format a clean response for the React frontend
 	type OrgResponse struct {
 		ID   uuid.UUID `json:"id"`
 		Name string    `json:"name"`

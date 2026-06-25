@@ -83,6 +83,7 @@ func (s *Server) setupRoutes() {
 	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis)
 	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
 	settingsHandler := handlers.NewSettingsHandler(s.db.DB)
+	profileHandler := handlers.NewProfileHandler(s.db.DB)
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
@@ -105,6 +106,9 @@ func (s *Server) setupRoutes() {
 		jwtOnly.Use(middleware.RequireValidJWT(s.cfg.Supabase.JWTPublicKey))
 		{
 			jwtOnly.GET("/auth/me", authHandler.GetMe)
+			// --- PERSONAL PROFILE ---
+			jwtOnly.GET("/profile", profileHandler.GetProfile)
+			jwtOnly.PUT("/profile", profileHandler.UpdateProfile)
 		}
 
 		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
