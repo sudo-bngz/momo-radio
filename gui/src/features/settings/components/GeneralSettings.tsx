@@ -1,60 +1,106 @@
-import { VStack, Heading, Text, Input, Field, Button, Box, Stack } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
+import { Box, Flex, Heading, Text, VStack, Input, Button, Select, createListCollection } from '@chakra-ui/react';
+import { useSettings } from '../hook/useSettings';
 
-export const GeneralSettings = () => {
+const timezoneOptions = createListCollection({
+  items: [
+    { label: "UTC (Coordinated Universal Time)", value: "UTC" },
+    { label: "Europe/Paris", value: "Europe/Paris" },
+    { label: "America/New_York", value: "America/New_York" },
+    { label: "Asia/Tokyo", value: "Asia/Tokyo" },
+  ],
+});
+
+export const GeneralSettings: React.FC = () => {
+  const { settings, updateSettings, isSaving } = useSettings();
+  
+  // Local state for the form so we don't trigger global renders on every keystroke
+  const [formData, setFormData] = useState({
+    station_name: '',
+    timezone: 'UTC',
+  });
+
+  // Sync local state when global settings load
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        station_name: settings.station_name || '',
+        timezone: settings.timezone || 'UTC',
+      });
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
+    try {
+      await updateSettings(formData);
+      // Add a success toast here if you have a toast provider setup!
+    } catch (error) {
+      console.error("Save failed");
+    }
+  };
+
   return (
-    <VStack align="stretch" gap={8}>
-      <Box>
-        <Heading size="md" mb={1} fontWeight="bold">General Settings</Heading>
-        <Text fontSize="sm" color="gray.500">Configure the basic identity of your station.</Text>
+    <Box>
+      <Heading size="lg" color="gray.900" mb={2}>Workspace Information</Heading>
+      <Text fontSize="sm" color="gray.500" mb={8}>
+        Manage your station's identity and global localization settings.
+      </Text>
+
+      {/* Card 1: Station Identity */}
+      <Box bg="white" p={6} borderRadius="xl" border="1px solid" borderColor="gray.200" shadow="sm" mb={6}>
+        <Heading size="sm" color="gray.800" mb={4}>Station Details</Heading>
+        
+        <VStack align="stretch" gap={4}>
+          <Box>
+            <Text fontSize="xs" fontWeight="600" color="gray.700" mb={1}>Station Name</Text>
+            <Input 
+              value={formData.station_name}
+              onChange={(e) => setFormData({ ...formData, station_name: e.target.value })}
+              placeholder="e.g. Momo's Basement Radio"
+              bg="gray.50"
+            />
+            <Text fontSize="11px" color="gray.500" mt={1}>This name will be displayed in emails and on your public dashboard.</Text>
+          </Box>
+        </VStack>
       </Box>
 
-      <Stack gap={6}>
-        {/* Chakra v3 uses the Field component pattern */}
-        <Field.Root>
-          <Field.Label fontSize="sm" fontWeight="bold">Station Name</Field.Label>
-          <Input 
-            defaultValue="Momo Radio" 
-            size="md" 
-            variant="subtle" 
-            bg="gray.50" 
-            _focus={{ bg: "white", borderColor: "gray.200" }} 
-          />
-        </Field.Root>
+      {/* Card 2: Localization */}
+      <Box bg="white" p={6} borderRadius="xl" border="1px solid" borderColor="gray.200" shadow="sm" mb={6}>
+        <Heading size="sm" color="gray.800" mb={4}>Localization</Heading>
+        
+        <VStack align="stretch" gap={4}>
+          <Box>
+            <Text fontSize="xs" fontWeight="600" color="gray.700" mb={1}>Default Timezone</Text>
+            <Select.Root 
+              collection={timezoneOptions} 
+              value={[formData.timezone]} 
+              onValueChange={(e) => setFormData({ ...formData, timezone: e.value[0] })}
+            >
+              <Select.Trigger bg="gray.50">
+                <Select.ValueText />
+              </Select.Trigger>
+              <Select.Content bg="white" zIndex={10}>
+                {timezoneOptions.items.map(item => (
+                  <Select.Item item={item} key={item.value}>{item.label}</Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+            <Text fontSize="11px" color="gray.500" mt={1}>Used for playlist scheduling and analytics tracking.</Text>
+          </Box>
+        </VStack>
+      </Box>
 
-        <Field.Root>
-          <Field.Label fontSize="sm" fontWeight="bold">Station Description</Field.Label>
-          <Input 
-            defaultValue="The best independent radio station." 
-            size="md" 
-            variant="subtle" 
-            bg="gray.50"
-          />
-        </Field.Root>
-
-        <Field.Root>
-          <Field.Label fontSize="sm" fontWeight="bold">Timezone</Field.Label>
-          <Input 
-            defaultValue="Europe/Paris" 
-            size="md" 
-            variant="subtle" 
-            bg="gray.50"
-            disabled
-          />
-          <Field.HelperText fontSize="xs">Timezone is locked to the server's local time.</Field.HelperText>
-        </Field.Root>
-      </Stack>
-
-      <Button 
-        bg="gray.900" 
-        color="white" 
-        alignSelf="flex-end" 
-        size="sm" 
-        px={8} 
-        borderRadius="full" 
-        _hover={{ bg: "black" }}
-      >
-        Update Profile
-      </Button>
-    </VStack>
+      {/* Action Footer */}
+      <Flex justify="flex-end">
+        <Button 
+          bg="blue.600" color="white" _hover={{ bg: "blue.700" }}
+          onClick={handleSave}
+          loading={isSaving}
+          loadingText="Saving..."
+        >
+          Save Changes
+        </Button>
+      </Flex>
+    </Box>
   );
 };

@@ -1,13 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, HStack, Text, Flex, Icon, Spinner, Input } from '@chakra-ui/react';
 import { Avatar, Menu } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
 import { LogOut, Settings, BookOpen, Music, ChevronDown, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 import { useAuthStore } from '../store/useAuthStore';
-import { useSearchStore } from '../store/useSearchStore';
 import { useDashboard } from '../features/dashboard/hook/useDashboard';
-import { useBroadcastStore } from '../store/useBroadcast';
+import { useSearchStore } from '../store/useSearchStore';
+import { api } from '../services/api'; 
 
 const scrollAnimation = keyframes`
   0% { transform: translateX(100%); }
@@ -16,20 +17,27 @@ const scrollAnimation = keyframes`
 
 export const TopNav: React.FC = () => {
   const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
   const { globalSearch, setGlobalSearch } = useSearchStore();
+  const logout = useAuthStore((state) => state.logout);
   const { nowPlaying, isLoading } = useDashboard(); 
   
-  // ⚡️ USE GLOBAL STATE INSTEAD OF LOCAL STATE
-  const isLive = useBroadcastStore((state) => state.isLive);
-  const checkState = useBroadcastStore((state) => state.checkState);
+  const navigate = useNavigate();
+  const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
-    // Check immediately, then poll every 10s
-    checkState();
-    const interval = setInterval(checkState, 10000);
+    const checkBroadcastState = async () => {
+      try {
+        const res = await api.getBroadcastState();
+        setIsLive(res.state === 'online');
+      } catch (error) {
+        setIsLive(false);
+      }
+    };
+
+    checkBroadcastState();
+    const interval = setInterval(checkBroadcastState, 10000);
     return () => clearInterval(interval);
-  }, [checkState]);
+  }, []);
 
   if (!user) return null;
 
@@ -54,7 +62,7 @@ export const TopNav: React.FC = () => {
     <Box w="100%" px={8} py={4} zIndex={50} bg="white">
       <Flex justify="space-between" align="center" gap={4}>
         
-        {/* 1. SEARCH BAR */}
+        {/* SEARCH BAR */}
         <Box position="relative" w="100%" maxW="400px" ml={2}>
           <Icon as={Search} position="absolute" left={4} top="50%" transform="translateY(-50%)" color="gray.400" boxSize={4} zIndex={2} />
           <Input 
@@ -66,33 +74,14 @@ export const TopNav: React.FC = () => {
           />
         </Box>
 
-        {/* 2. RIGHT SIDE GROUP */}
+        {/* RIGHT SIDE GROUP */}
         <HStack gap={4}>
           
           {/* Live Widget */}
-          <HStack 
-            gap={0} 
-            bg="white" 
-            h="42px"
-            pl={4} pr={2}
-            borderRadius="full" 
-            shadow="sm"
-            border="1px solid" borderColor="gray.100"
-            display={{ base: 'none', lg: 'flex' }}
-          >
+          <HStack gap={0} bg="white" h="42px" pl={4} pr={2} borderRadius="full" shadow="sm" border="1px solid" borderColor="gray.100" display={{ base: 'none', lg: 'flex' }}>
             <HStack gap={2} mr={4}>
-              <Box 
-                w={2} h={2} 
-                bg={isLive ? "red.500" : "gray.400"} 
-                borderRadius="full" 
-                animation={isLive ? "pulse 2s infinite" : "none"} 
-              />
-              <Text 
-                fontSize="10px" 
-                fontWeight="900" 
-                color={isLive ? "red.500" : "gray.500"} 
-                letterSpacing="widest"
-              >
+              <Box w={2} h={2} bg={isLive ? "red.500" : "gray.400"} borderRadius="full" animation={isLive ? "pulse 2s infinite" : "none"} />
+              <Text fontSize="10px" fontWeight="900" color={isLive ? "red.500" : "gray.500"} letterSpacing="widest">
                 {isLive ? "LIVE" : "OFF AIR"}
               </Text>
             </HStack>
@@ -105,14 +94,7 @@ export const TopNav: React.FC = () => {
                 <Spinner size="xs" color="gray.400" />
               ) : (
                 <Box flex="1" overflow="hidden" h="20px" display="flex" alignItems="center">
-                  <Text 
-                    fontSize="xs" 
-                    fontWeight="600" 
-                    color={isLive ? "gray.700" : "gray.400"} 
-                    whiteSpace="nowrap"
-                    display="inline-block"
-                    animation={isLive ? `${scrollAnimation} 12s linear infinite` : "none"}
-                  >
+                  <Text fontSize="xs" fontWeight="600" color={isLive ? "gray.700" : "gray.400"} whiteSpace="nowrap" display="inline-block" animation={isLive ? `${scrollAnimation} 12s linear infinite` : "none"}>
                     {isLive ? trackText : "Offline"}
                   </Text>
                 </Box>
@@ -123,61 +105,40 @@ export const TopNav: React.FC = () => {
           {/* User Profile Menu */}
           <Menu.Root positioning={{ placement: "bottom-end" }}>
             <Menu.Trigger asChild>
-              <HStack 
-                bg="white"
-                h="42px"
-                pl={1.5} pr={3}
-                borderRadius="full" 
-                shadow="sm"
-                border="1px solid" borderColor="gray.100"
-                cursor="pointer"
-                transition="all 0.2s"
-                _hover={{ shadow: "md" }}
-                gap={3}
-              >
+              <HStack bg="white" h="42px" pl={1.5} pr={3} borderRadius="full" shadow="sm" border="1px solid" borderColor="gray.100" cursor="pointer" transition="all 0.2s" _hover={{ shadow: "md" }} gap={3}>
                 <Avatar.Root size="xs">
                   <Avatar.Image src={avatarUrl} />
                   <Avatar.Fallback fontWeight="bold" fontSize="xs">
                     {displayName.slice(0, 2).toUpperCase()}
                   </Avatar.Fallback>
                 </Avatar.Root>
-                
-                <Text fontSize="sm" fontWeight="600" color="gray.800">
-                  {displayName}
-                </Text>
+                <Text fontSize="sm" fontWeight="600" color="gray.800">{displayName}</Text>
                 <Icon as={ChevronDown} boxSize={3.5} color="gray.400" />
               </HStack>
             </Menu.Trigger>
 
             <Menu.Positioner zIndex={100}>
-              <Menu.Content 
-                minW="180px" 
-                bg="white" 
-                borderRadius="xl" 
-                boxShadow="xl" 
-                p={2}
-                border="1px solid" borderColor="gray.100"
-              >
-                <Menu.Item value="settings" _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
+              <Menu.Content minW="180px" bg="white" borderRadius="xl" boxShadow="xl" p={2} border="1px solid" borderColor="gray.100">
+                
+                {/* ⚡️ ROUTER NAVIGATION ADDED HERE */}
+                <Menu.Item value="settings" onClick={() => navigate('/settings')} _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
                   <Icon as={Settings} boxSize={4} /> 
                   <Text>Settings</Text>
                 </Menu.Item>
-                <Menu.Item value="docs" _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
+                
+                {/* ⚡️ EXTERNAL LINK FOR DOCS */}
+                <Menu.Item value="docs" onClick={() => window.open('https://docs.momo.radio', '_blank')} _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
                   <Icon as={BookOpen} boxSize={4} /> 
                   <Text>Docs</Text>
                 </Menu.Item>
+                
                 <Menu.Separator my={1} />
-                <Menu.Item 
-                  value="logout" 
-                  color="red.600" 
-                  _hover={{ bg: "red.50" }} 
-                  cursor="pointer"
-                  onClick={logout}
-                  display="flex" alignItems="center" gap={3}
-                >
+                
+                <Menu.Item value="logout" onClick={logout} color="red.600" _hover={{ bg: "red.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
                   <Icon as={LogOut} boxSize={4} /> 
                   <Text>Sign Out</Text>
                 </Menu.Item>
+
               </Menu.Content>
             </Menu.Positioner>
           </Menu.Root>

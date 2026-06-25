@@ -1,47 +1,72 @@
-import { VStack, Box, Text, Progress, Grid, Icon, Heading, HStack, Code } from '@chakra-ui/react';
-import { Database, HardDrive } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Box, Flex, Heading, Text, VStack, Input, Button } from '@chakra-ui/react';
+import { Switch } from "../../../components/ui/switch"
+import { useSettings } from '../hook/useSettings';
 
-export const StorageSettings = () => {
+export const StorageSettings: React.FC = () => {
+  const { settings, updateSettings, isSaving } = useSettings();
+  
+  const [formData, setFormData] = useState({
+    custom_storage_enabled: false,
+    storage_bucket: '',
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        custom_storage_enabled: settings.custom_storage_enabled || false,
+        storage_bucket: settings.storage_bucket || '',
+      });
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
+    try {
+      await updateSettings(formData);
+    } catch (error) {
+      console.error("Save failed");
+    }
+  };
+
   return (
-    <VStack align="stretch" gap={8}>
-      <Box>
-        <Heading size="md" fontWeight="bold">Media Storage</Heading>
-        <Text fontSize="sm" color="gray.500">Monitor your library capacity and file paths.</Text>
+    <Box>
+      <Heading size="lg" color="gray.900" mb={2}>Storage & Assets</Heading>
+      <Text fontSize="sm" color="gray.500" mb={8}>
+        Manage where your audio files and images are stored.
+      </Text>
+
+      <Box bg="white" p={6} borderRadius="xl" border="1px solid" borderColor="gray.200" shadow="sm" mb={6}>
+        <Flex justify="space-between" align="center" mb={4}>
+          <Box>
+            <Heading size="sm" color="gray.800">Custom S3 Storage</Heading>
+            <Text fontSize="xs" color="gray.500">Bring your own bucket for media storage.</Text>
+          </Box>
+          <Switch 
+            checked={formData.custom_storage_enabled}
+            onCheckedChange={(e) => setFormData({ ...formData, custom_storage_enabled: e.checked })}
+          />
+        </Flex>
+        
+        {formData.custom_storage_enabled && (
+          <VStack align="stretch" gap={4} mt={4} pt={4} borderTop="1px solid" borderColor="gray.100">
+            <Box>
+              <Text fontSize="xs" fontWeight="600" color="gray.700" mb={1}>Bucket Name</Text>
+              <Input 
+                value={formData.storage_bucket}
+                onChange={(e) => setFormData({ ...formData, storage_bucket: e.target.value })}
+                placeholder="my-radio-assets"
+                bg="gray.50"
+              />
+            </Box>
+          </VStack>
+        )}
       </Box>
 
-      <Grid templateColumns="repeat(2, 1fr)" gap={6}>
-        <Box p={6} borderRadius="2xl" border="1px solid" borderColor="gray.100" bg="gray.50">
-          <HStack mb={4} justify="space-between">
-            <Text fontWeight="bold" fontSize="xs" color="gray.500" textTransform="uppercase">Disk Usage</Text>
-            <Icon as={HardDrive} color="blue.500" size="sm" />
-          </HStack>
-          <Text fontSize="2xl" fontWeight="bold" color="gray.900">42.8 GB</Text>
-          <Text fontSize="xs" color="gray.400" mb={4}>of 100 GB available</Text>
-          
-          <Progress.Root value={42.8} colorPalette="blue" size="xs" shape="rounded">
-            <Progress.Track bg="gray.200">
-              <Progress.Range />
-            </Progress.Track>
-          </Progress.Root>
-        </Box>
-
-        <Box p={6} borderRadius="2xl" border="1px solid" borderColor="gray.100" bg="gray.50">
-          <HStack mb={4} justify="space-between">
-            <Text fontWeight="bold" fontSize="xs" color="gray.500" textTransform="uppercase">Database</Text>
-            <Icon as={Database} color="purple.500" size="sm" />
-          </HStack>
-          <Text fontSize="2xl" fontWeight="bold" color="gray.900">1,248</Text>
-          <Text fontSize="xs" color="gray.400">Tracks indexed</Text>
-          <Text fontSize="xs" color="gray.400" mt={4}>Healthy connection</Text>
-        </Box>
-      </Grid>
-      
-      <Box>
-        <Text fontSize="xs" fontWeight="bold" color="gray.500" textTransform="uppercase" mb={2}>Root Media Path</Text>
-        <Code p={3} borderRadius="xl" w="full" bg="gray.100" color="gray.700" fontSize="xs">
-          /var/lib/momo-radio/music
-        </Code>
-      </Box>
-    </VStack>
+      <Flex justify="flex-end">
+        <Button bg="blue.600" color="white" _hover={{ bg: "blue.700" }} onClick={handleSave} loading={isSaving}>
+          Save Changes
+        </Button>
+      </Flex>
+    </Box>
   );
 };

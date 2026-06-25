@@ -60,3 +60,21 @@ type MountPoint struct {
 	// The gorm:"-" tag ensures GORM ignores this field when interacting with the database.
 	HlsUrl string `gorm:"-" json:"hls_url,omitempty"`
 }
+
+type OrganizationSettings struct {
+	OrganizationID uuid.UUID `gorm:"type:uuid;primaryKey" json:"organization_id"`
+
+	// GeneralSettings.tsx
+	StationName string `gorm:"type:varchar(255)" json:"station_name"`
+	Timezone    string `gorm:"type:varchar(50);default:'UTC'" json:"timezone"`
+
+	// AdvancedFfmpegSettings.tsx
+	FFmpegBitrate    string `gorm:"type:varchar(20);default:'128k'" json:"ffmpeg_bitrate"`
+	FFmpegSampleRate string `gorm:"type:varchar(20);default:'44100'" json:"ffmpeg_sample_rate"`
+
+	// StorageSettings.tsx (If tenants can bring their own S3/B2, otherwise keep this in your core config)
+	CustomStorageEnabled bool   `json:"custom_storage_enabled"`
+	StorageBucket        string `json:"storage_bucket"`
+
+	UpdatedAt time.Time `json:"updated_at"`
+}

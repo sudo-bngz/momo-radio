@@ -62,6 +62,7 @@ func (c *Client) AutoMigrate() {
 		&models.Artist{},
 		&models.Track{},
 		&models.PublicPage{},
+		&models.OrganizationSettings{},
 	)
 	if err != nil {
 		log.Fatalf("Migration failed: %v", err)

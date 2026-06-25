@@ -82,6 +82,7 @@ func (s *Server) setupRoutes() {
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
 	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis)
 	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
+	settingsHandler := handlers.NewSettingsHandler(s.db.DB)
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
@@ -155,6 +156,11 @@ func (s *Server) setupRoutes() {
 			protected.GET("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), pageHandler.GetSettings)
 			protected.PUT("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UpdateSettings)
 			protected.POST("/public-page/upload", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UploadImage)
+
+			// --- SETTINGS
+			protected.GET("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
+			protected.PUT("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.UpdateOrgSettings)
+
 		}
 	}
 

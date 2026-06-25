@@ -39,6 +39,15 @@ export interface PublicPageConfig {
   background_image_url?: string;
 }
 
+export interface OrganizationSettings {
+  station_name: string;
+  timezone: string;
+  ffmpeg_bitrate: string;
+  ffmpeg_sample_rate: string;
+  custom_storage_enabled: boolean;
+  storage_bucket: string;
+}
+
 const API_URL = '/api/v1';
 
 export const apiClient = axios.create({
@@ -342,5 +351,14 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
     });
 
     return response.data;
-  }
+  },
+  getSettings: async (): Promise<OrganizationSettings> => {
+    const response = await apiClient.get('/settings');
+    return response.data;
+  },
+
+  updateSettings: async (data: Partial<OrganizationSettings>): Promise<OrganizationSettings> => {
+    const response = await apiClient.put('/settings', data);
+    return response.data;
+  },
 };
