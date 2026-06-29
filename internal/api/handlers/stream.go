@@ -68,8 +68,8 @@ func generateHlsURL(cfg *config.Config, slug string, orgID string) string {
 	objectPath := fmt.Sprintf("/%s/%s/stream.m3u8", orgID, slug)
 
 	// 1. Production: CDN is toggled ON
-	if cfg.CDN.Enabled && cfg.CDN.Domain != "" {
-		domain := strings.TrimRight(cfg.CDN.Domain, "/")
+	if cfg.CDN.Enabled && cfg.CDN.Stream != "" {
+		domain := strings.TrimRight(cfg.CDN.Stream, "/")
 		return fmt.Sprintf("https://%s%s", domain, objectPath)
 	}
 

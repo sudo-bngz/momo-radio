@@ -107,12 +107,15 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client, rdb *re
 // StartSupervisor blocks forever, managing the real-time execution topology via Redis Pub/Sub
 func (e *Engine) StartSupervisor(ctx context.Context) {
 	if e.cfg.Radio.DryRun {
-		log.Println("🧪 Engine running in Dry Run mode. Supervisor will not bind.")
+		log.Println("Engine running in Dry Run mode. Supervisor will not bind.")
 		return
 	}
 
 	log.Printf("Engine Run ID: %d", e.runID)
 	go e.startRedirectServer()
+
+	log.Println("Bootstrapping active tenants from database state...")
+	e.bootstrapActiveStreams(ctx)
 
 	pubsub := e.rdb.Subscribe(ctx, "radio.control")
 	defer pubsub.Close()
@@ -143,6 +146,24 @@ func (e *Engine) StartSupervisor(ctx context.Context) {
 		case "stop":
 			e.handleStop(orgUUID)
 		}
+	}
+}
+
+func (e *Engine) bootstrapActiveStreams(ctx context.Context) {
+	var defaultMounts []models.MountPoint
+
+	// Fetch every default mount point across all tenants
+	err := e.db.DB.Where("is_default = ?", true).Find(&defaultMounts).Error
+	if err != nil {
+		log.Printf("Failed to query default mount points during bootstrap: %v", err)
+		return
+	}
+
+	log.Printf("Found %d tenant streams to restore.", len(defaultMounts))
+
+	for _, mount := range defaultMounts {
+		log.Printf("Auto-restoring pipeline for tenant: %s", mount.OrganizationID)
+		e.handleStart(ctx, mount.OrganizationID)
 	}
 }
 
@@ -279,7 +300,7 @@ func (e *Engine) runOrchestrator(ctx context.Context, orgID uuid.UUID, output *i
 				selectedTrack, _ = selectors["random"].PickTrack(nil, nil)
 			}
 
-			if selectedTrack != nil {
+			if selectedTrack != nil && selectedTrack.ID != 0 && selectedTrack.Key != "" {
 				e.state.UpdateTrack(orgID, selectedTrack.ID, 0)
 
 				e.cache.Prefetch([]string{selectedTrack.Key})
@@ -294,10 +315,15 @@ func (e *Engine) runOrchestrator(ctx context.Context, orgID uuid.UUID, output *i
 
 				if err := e.streamFileToPipe(selectedTrack.Key, output); err != nil {
 					log.Printf("[%s] Pipe Stream Error: %v", orgID, err)
-					continue
+					// If stream fails, sleep briefly before trying the next track
+					time.Sleep(1 * time.Second)
 				}
+			} else {
+				// ⚡️ FALLBACK: The tenant has no tracks in their library!
+				// Sleep to prevent an infinite CPU-burning loop.
+				log.Printf("[%s] Orchestrator idle: No tracks available in library.", orgID)
+				time.Sleep(100 * time.Second)
 			}
-			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }

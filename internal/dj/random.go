@@ -20,5 +20,9 @@ func (s *RandomSelector) PickTrack(rules *models.RuleSet, _ *models.Track) (*mod
 	query = applyBaseFilters(query, rules, s.orgID)
 
 	err := query.Order("RANDOM()").First(&track).Error
-	return &track, err
+	if err != nil {
+		return nil, err
+	}
+
+	return &track, nil
 }

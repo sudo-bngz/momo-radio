@@ -37,7 +37,7 @@ func (h *PublicPageHandler) resolveAssetURL(key string) string {
 		return ""
 	}
 	if h.config.CDN.Enabled {
-		cdnDomain := strings.TrimPrefix(h.config.CDN.Domain, "https://")
+		cdnDomain := strings.TrimPrefix(h.config.CDN.PublicPage, "https://")
 		cdnDomain = strings.TrimPrefix(cdnDomain, "http://")
 		return fmt.Sprintf("https://%s/%s", cdnDomain, key)
 	}

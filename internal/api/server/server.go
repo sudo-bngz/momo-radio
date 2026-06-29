@@ -84,6 +84,7 @@ func (s *Server) setupRoutes() {
 	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
 	settingsHandler := handlers.NewSettingsHandler(s.db.DB)
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
+	membersHandler := handlers.NewMembersHandler(s.db.DB)
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
@@ -109,6 +110,7 @@ func (s *Server) setupRoutes() {
 			// --- PERSONAL PROFILE ---
 			jwtOnly.GET("/profile", profileHandler.GetProfile)
 			jwtOnly.PUT("/profile", profileHandler.UpdateProfile)
+
 		}
 
 		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
@@ -165,6 +167,9 @@ func (s *Server) setupRoutes() {
 			protected.GET("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
 			protected.PUT("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.UpdateOrgSettings)
 
+			// TEAM MANAGEMENT (Owner/Admin only)
+			protected.GET("/settings/members", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), membersHandler.GetMembers)
+			protected.POST("/settings/members/invite", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), membersHandler.InviteMember)
 		}
 	}
 

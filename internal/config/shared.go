@@ -8,7 +8,6 @@ import (
 )
 
 type Config struct {
-	// ... (Storage and Server structs remain the same)
 	Storage struct {
 		Provider         string `mapstructure:"provider"`
 		KeyID            string `mapstructure:"key_id"`
@@ -23,8 +22,11 @@ type Config struct {
 		LocalStorage     string `mapstructure:"local_storage_path"`
 	} `mapstructure:"storage"`
 	CDN struct {
-		Enabled bool   `mapstructure:"enabled"`
-		Domain  string `mapstructure:"domain"`
+		Enabled    bool   `mapstructure:"enabled"`
+		Stream     string `mapstructure:"stream"`
+		Master     string `mapstructure:"master"`
+		PublicPage string `mapstructure:"public_page"`
+		Assets     string `mapstructure:"assets"`
 	} `mapstructure:"cdn"`
 	Server struct {
 		TempDir         string `mapstructure:"temp_dir"`
@@ -82,7 +84,7 @@ func Load() *Config {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	// Storage & Server Bindings...
+	// Storage Bindings
 	viper.BindEnv("storage.provider")
 	viper.BindEnv("storage.key_id")
 	viper.BindEnv("storage.app_key")
@@ -95,9 +97,14 @@ func Load() *Config {
 	viper.BindEnv("storage.bucket_public_page")
 	viper.BindEnv("storage.local_storage_path")
 
+	// Split CDN Bindings
 	viper.BindEnv("cdn.enabled")
-	viper.BindEnv("cdn.domain")
+	viper.BindEnv("cdn.stream")
+	viper.BindEnv("cdn.master")
+	viper.BindEnv("cdn.public_page")
+	viper.BindEnv("cdn.assets")
 
+	// Server Bindings
 	viper.BindEnv("server.temp_dir")
 	viper.BindEnv("server.polling_interval_seconds")
 	viper.BindEnv("server.metrics_port")
@@ -120,7 +127,7 @@ func Load() *Config {
 	viper.BindEnv("radio.prefetch_count")
 	viper.BindEnv("radio.provider")
 
-	// Database, Redis, Services, Worker, Auth bindings...
+	// Infrastructure Bindings
 	viper.BindEnv("database.host")
 	viper.BindEnv("database.port")
 	viper.BindEnv("database.user")
@@ -145,8 +152,12 @@ func Load() *Config {
 	viper.SetDefault("server.metrics_port", ":9091")
 	viper.SetDefault("server.timezone", "UTC")
 
+	// CDN Defaults
 	viper.SetDefault("cdn.enabled", false)
-	viper.SetDefault("cdn.domain", "")
+	viper.SetDefault("cdn.stream", "")
+	viper.SetDefault("cdn.master", "")
+	viper.SetDefault("cdn.public_page", "")
+	viper.SetDefault("cdn.assets", "")
 
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", "6379")
@@ -210,10 +221,23 @@ func validateConfig(cfg *Config) {
 	if cfg.Supabase.JWTPublicKey == "" {
 		log.Fatal("Critical: Supabase JWT Public Key is missing (SUPABASE_JWT_PUBLIC_KEY)")
 	}
-	if cfg.CDN.Enabled && cfg.CDN.Domain == "" {
-		log.Fatal("Critical: CDN is enabled but CDN Domain is missing")
-	}
 	if cfg.Storage.Provider == "s3" && cfg.Storage.BucketPublicPage == "" {
 		log.Fatal("Critical: Public Page bucket is missing (RADIO_STORAGE_BUCKET_PUBLIC_PAGE)")
+	}
+
+	// Comprehensive CDN Field Validation
+	if cfg.CDN.Enabled {
+		if cfg.CDN.Stream == "" {
+			log.Fatal("Critical: CDN is enabled but Stream CDN URL is missing (RADIO_CDN_STREAM)")
+		}
+		if cfg.CDN.Master == "" {
+			log.Fatal("Critical: CDN is enabled but Master CDN URL is missing (RADIO_CDN_MASTER)")
+		}
+		if cfg.CDN.PublicPage == "" {
+			log.Fatal("Critical: CDN is enabled but Public Page CDN URL is missing (RADIO_CDN_PUBLIC_PAGE)")
+		}
+		if cfg.CDN.Assets == "" {
+			log.Fatal("Critical: CDN is enabled but Assets CDN URL is missing (RADIO_CDN_ASSETS)")
+		}
 	}
 }
