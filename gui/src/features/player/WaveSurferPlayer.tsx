@@ -1,19 +1,18 @@
 import { useEffect, useRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Box } from '@chakra-ui/react';
-import { getCdnUrl } from '../../utils/Storage'; 
 
 interface WaveSurferPlayerProps {
   trackId: number;
-  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   isPlaying: boolean;
-  waveformKey?: string; 
+  waveformUrl?: string; 
   orgId: string; 
 }
 
 export const WaveSurferPlayer = ({ 
   audioRef, 
-  waveformKey, 
+  waveformUrl, 
   orgId 
 }: WaveSurferPlayerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,7 +47,7 @@ export const WaveSurferPlayer = ({
       progressColor = progGradient;
     }
 
-    // 4. Initialize Wavesurfer (Notice: barWidth/barGap removed for a continuous line)
+    // 4. Initialize Wavesurfer
     wavesurfer.current = WaveSurfer.create({
       container: containerRef.current,
       media: audioRef.current, 
@@ -65,13 +64,11 @@ export const WaveSurferPlayer = ({
       const audioUrl = audioRef.current?.src;
       if (!audioUrl) return;
 
-      if (waveformKey) {
+      // 2. Check for the full URL instead of the key
+      if (waveformUrl) {
         try {
-          // Safely build the URL
-          const jsonUrl = getCdnUrl(waveformKey, orgId); 
-          
-          // Send the exact header the backend is expecting
-          const response = await fetch(jsonUrl, {
+          // 3. Fetch directly from the provided URL
+          const response = await fetch(waveformUrl, {
             headers: {
               'X-Organization-Id': orgId
             }
@@ -83,7 +80,6 @@ export const WaveSurferPlayer = ({
           
           const bbcData = await response.json();
 
-          // Stop if the component was unmounted while we were fetching!
           if (!isMounted) return;
 
           // CONVERT BBC 8-bit INT to WAVESURFER FLOATS (-1.0 to 1.0)
@@ -94,7 +90,6 @@ export const WaveSurferPlayer = ({
           
           const normalizedPeaks = bbcData.data.map((val: number) => val / maxPeak);
 
-          // Catch the AbortError silently so it doesn't pollute the console
           try {
             await wavesurfer.current?.load(audioUrl, [normalizedPeaks]);
           } catch (e: any) {
@@ -113,7 +108,7 @@ export const WaveSurferPlayer = ({
           }
         }
       } else {
-        // No waveform key in DB? Let wavesurfer calculate it natively
+        // No waveform URL? Let wavesurfer calculate it natively
         if (!isMounted) return;
         try {
           await wavesurfer.current?.load(audioUrl);
@@ -132,14 +127,13 @@ export const WaveSurferPlayer = ({
         wavesurfer.current.destroy();
       }
     };
-  }, [audioRef, waveformKey, orgId]);
+  }, [audioRef, waveformUrl, orgId]); // Updated dependency array
 
   return (
     <Box 
       ref={containerRef} 
       w="100%" 
       h="100%" 
-      // Prevent clicking the waveform from bubbling up if wrapped in other buttons
       onClick={(e) => e.stopPropagation()} 
     />
   );

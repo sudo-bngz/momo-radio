@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,13 +15,15 @@ import (
 type AlbumHandler struct {
 	db      *gorm.DB
 	storage *storage.Client
+	cdn     *utils.CDNBuilder
 }
 
 // NewAlbumHandler creates a new AlbumHandler instance
-func NewAlbumHandler(db *gorm.DB, st *storage.Client) *AlbumHandler {
+func NewAlbumHandler(db *gorm.DB, st *storage.Client, cdn *utils.CDNBuilder) *AlbumHandler {
 	return &AlbumHandler{
 		db:      db,
 		storage: st,
+		cdn:     cdn,
 	}
 }
 
@@ -53,7 +56,7 @@ func (h *AlbumHandler) GetAlbums(c *gin.Context) {
 
 	for i := range albums {
 		if albums[i].CoverKey != "" {
-			albums[i].CoverURL = h.storage.GetPublicURL(albums[i].CoverKey)
+			albums[i].CoverURL = h.cdn.BuildAssetURL(albums[i].CoverKey, orgID.String())
 		}
 	}
 
@@ -88,7 +91,7 @@ func (h *AlbumHandler) GetAlbumByID(c *gin.Context) {
 	}
 
 	if album.CoverKey != "" {
-		album.CoverURL = h.storage.GetPublicURL(album.CoverKey)
+		h.cdn.BuildAssetURL(album.CoverKey, orgID.String())
 	}
 
 	c.JSON(http.StatusOK, album)

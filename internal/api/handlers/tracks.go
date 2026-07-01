@@ -23,7 +23,6 @@ import (
 
 	"github.com/dhowden/tag"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
@@ -36,15 +35,17 @@ type TrackHandler struct {
 	storage *storage.Client
 	config  *config.Config
 	redis   *redis.Client
+	cdn     *utils.CDNBuilder
 }
 
 // NewTrackHandler creates a new TrackHandler instance
-func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisClient *redis.Client) *TrackHandler {
+func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisClient *redis.Client, cdn *utils.CDNBuilder) *TrackHandler {
 	return &TrackHandler{
 		db:      db,
 		storage: st,
 		config:  c,
 		redis:   redisClient,
+		cdn:     cdn,
 	}
 }
 
@@ -66,16 +67,6 @@ type LibraryTrack struct {
 	MLMoods           pq.StringArray `json:"ml_moods"`
 	MLGenres          pq.StringArray `json:"ml_genres"`
 	MLCharacteristics pq.StringArray `json:"ml_characteristics"`
-}
-
-// ⚡️ Safely extract Organization ID from Gin Context
-func getOrgID(c *gin.Context) (uuid.UUID, bool) {
-	orgIDRaw, exists := c.Get("organizationID")
-	if !exists {
-		return uuid.Nil, false
-	}
-	orgID, ok := orgIDRaw.(uuid.UUID)
-	return orgID, ok
 }
 
 // GetTracks returns a paginated, lightweight list of tracks scoped by Tenant
@@ -155,7 +146,7 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 
 		var coverURL string
 		if t.Album.ID != 0 && t.Album.CoverKey != "" {
-			coverURL = h.storage.GetPublicURL(t.Album.CoverKey)
+			coverURL = h.cdn.BuildAssetURL(t.Album.CoverKey, orgID.String())
 		}
 
 		libraryTracks = append(libraryTracks, LibraryTrack{

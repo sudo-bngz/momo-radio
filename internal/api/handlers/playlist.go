@@ -6,6 +6,7 @@ import (
 
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -15,11 +16,12 @@ import (
 type PlaylistHandler struct {
 	db      *gorm.DB
 	storage *storage.Client
+	cdn     *utils.CDNBuilder
 }
 
 // NewPlaylistHandler creates a new PlaylistHandler instance
-func NewPlaylistHandler(db *gorm.DB, st *storage.Client) *PlaylistHandler {
-	return &PlaylistHandler{db: db, storage: st}
+func NewPlaylistHandler(db *gorm.DB, st *storage.Client, cdn *utils.CDNBuilder) *PlaylistHandler {
+	return &PlaylistHandler{db: db, storage: st, cdn: cdn}
 }
 
 // CreatePlaylist creates a new empty playlist container scoped to the Tenant
@@ -87,7 +89,7 @@ func (h *PlaylistHandler) GetPlaylist(c *gin.Context) {
 
 	for i := range orderedTracks {
 		if orderedTracks[i].Album.ID != 0 && orderedTracks[i].Album.CoverKey != "" {
-			orderedTracks[i].Album.CoverURL = h.storage.GetPublicURL(orderedTracks[i].Album.CoverKey)
+			orderedTracks[i].Album.CoverURL = h.cdn.BuildAssetURL(orderedTracks[i].Album.CoverKey, orgID.String())
 		}
 	}
 	playlist.Tracks = orderedTracks
@@ -108,7 +110,7 @@ func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	// ⚡️ Scope to Tenant
 	result := h.db.
 		Preload("Tracks").
-		Preload("Tracks.Artists"). // ⚡️ FIXED: Pluralized to match new Many2Many relation
+		Preload("Tracks.Artists").
 		Preload("Tracks.Album").
 		Where("organization_id = ?", orgID).
 		Order("name asc").
@@ -122,7 +124,7 @@ func (h *PlaylistHandler) GetPlaylists(c *gin.Context) {
 	for i := range playlists {
 		for j := range playlists[i].Tracks {
 			if playlists[i].Tracks[j].Album.ID != 0 && playlists[i].Tracks[j].Album.CoverKey != "" {
-				url := h.storage.GetPublicURL(playlists[i].Tracks[j].Album.CoverKey)
+				url := h.cdn.BuildAssetURL(playlists[i].Tracks[j].Album.CoverKey, orgID.String())
 				if url != "" {
 					playlists[i].Tracks[j].Album.CoverURL = url
 				}

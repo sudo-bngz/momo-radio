@@ -14,8 +14,8 @@ type Config struct {
 		AppKey           string `mapstructure:"app_key"`
 		Endpoint         string `mapstructure:"endpoint"`
 		Region           string `mapstructure:"region"`
-		BucketIngest     string `mapstructure:"bucket_ingest"`
-		BucketProd       string `mapstructure:"bucket_prod"`
+		BucketIngest     string `mapstructure:"bucket_assets"`
+		BucketAssets     string `mapstructure:"bucket_prod"`
 		BucketStream     string `mapstructure:"bucket_stream_live"`
 		BucketMaster     string `mapstructure:"bucket_master"`
 		BucketPublicPage string `mapstructure:"bucket_public_page"`
@@ -91,7 +91,7 @@ func Load() *Config {
 	viper.BindEnv("storage.endpoint")
 	viper.BindEnv("storage.region")
 	viper.BindEnv("storage.bucket_ingest")
-	viper.BindEnv("storage.bucket_prod")
+	viper.BindEnv("storage.bucket_assets")
 	viper.BindEnv("storage.bucket_stream_live")
 	viper.BindEnv("storage.bucket_master")
 	viper.BindEnv("storage.bucket_public_page")

@@ -7,6 +7,7 @@ import (
 
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -15,14 +16,16 @@ import (
 // ArtistHandler handles artist-related requests
 type ArtistHandler struct {
 	db      *gorm.DB
-	storage *storage.Client // ⚡️ ADDED: Storage client to generate public URLs
+	storage *storage.Client
+	cdn     *utils.CDNBuilder
 }
 
 // NewArtistHandler creates a new ArtistHandler instance with its required dependencies
-func NewArtistHandler(db *gorm.DB, st *storage.Client) *ArtistHandler { // ⚡️ ADDED: Storage param
+func NewArtistHandler(db *gorm.DB, st *storage.Client, cdn *utils.CDNBuilder) *ArtistHandler { // ⚡️ ADDED: Storage param
 	return &ArtistHandler{
 		db:      db,
 		storage: st,
+		cdn:     cdn,
 	}
 }
 
@@ -59,10 +62,8 @@ func (h *ArtistHandler) GetArtists(c *gin.Context) {
 	for _, a := range artists {
 		var publicURL string
 
-		// Note: Replace "AvatarKey" below if your models.Artist struct uses a different
-		// field name for the image path (e.g., ImageKey, Picture, or CoverKey)
 		if a.AvatarURL != "" {
-			publicURL = h.storage.GetPublicURL(a.AvatarURL)
+			publicURL = h.cdn.BuildAssetURL(a.AvatarURL, orgID.String())
 		}
 
 		response = append(response, LibraryArtist{
@@ -111,7 +112,7 @@ func (h *ArtistHandler) GetArtistByName(c *gin.Context) {
 	// attach it dynamically using a Map before sending it back!
 	var publicURL string
 	if artist.AvatarURL != "" {
-		publicURL = h.storage.GetPublicURL(artist.AvatarURL)
+		publicURL = h.cdn.BuildAssetURL(artist.AvatarURL, orgID.String())
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -157,11 +158,9 @@ func (h *ArtistHandler) GetArtistByID(c *gin.Context) {
 		return
 	}
 
-	// 4. Attach Public URL
-	// 1. Attach Public URL for the Artist Avatar
 	var publicURL string
-	if artist.AvatarURL != "" { // (Use whatever your model uses: ImageKey/AvatarKey)
-		publicURL = h.storage.GetPublicURL(artist.AvatarURL)
+	if artist.AvatarURL != "" {
+		publicURL = h.cdn.BuildAssetURL(artist.AvatarURL, orgID.String())
 	}
 
 	// Loop through the albums and generate their Public URLs!
@@ -169,7 +168,8 @@ func (h *ArtistHandler) GetArtistByID(c *gin.Context) {
 	for _, a := range artist.Albums {
 		albumCoverURL := ""
 		if a.CoverKey != "" {
-			albumCoverURL = h.storage.GetPublicURL(a.CoverKey)
+
+			albumCoverURL = h.cdn.BuildAssetURL(a.CoverKey, orgID.String())
 		}
 
 		formattedAlbums = append(formattedAlbums, map[string]interface{}{

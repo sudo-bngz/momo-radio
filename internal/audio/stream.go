@@ -39,12 +39,12 @@ func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startS
 		"-re",
 		"-i", "pipe:0",
 
-		// Audio Configuration (Now using dynamic DB bitrate)
+		// Audio Configuration
 		"-c:a", codec,
 		"-b:a", bitrate,
 		"-ar", sampleRate,
 
-		// HLS Configuration via Viper
+		// HLS Configuration
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(hlsTime),
 		"-hls_list_size", strconv.Itoa(hlsListSize),

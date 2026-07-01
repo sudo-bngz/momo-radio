@@ -3,11 +3,10 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
-	"momo-radio/internal/config"
 	"momo-radio/internal/models"
+	"momo-radio/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -18,13 +17,15 @@ import (
 type BroadcastHandler struct {
 	db  *gorm.DB
 	rdb *redis.Client
+	cdn *utils.CDNBuilder
 }
 
 // NewBroadcastHandler initializes the broadcast controller with DB and Redis
-func NewBroadcastHandler(db *gorm.DB, rdb *redis.Client) *BroadcastHandler {
+func NewBroadcastHandler(db *gorm.DB, rdb *redis.Client, cdn *utils.CDNBuilder) *BroadcastHandler {
 	return &BroadcastHandler{
 		db:  db,
 		rdb: rdb,
+		cdn: cdn,
 	}
 }
 
@@ -39,13 +40,11 @@ func (h *BroadcastHandler) ToggleStream(c *gin.Context) {
 		return
 	}
 
-	// 1. Update the Database (Source of Truth)
 	newState := "offline"
 	if req.Action == "start" {
 		newState = "online"
 	}
 
-	// ⚡️ USE h.db DIRECTLY
 	err := h.db.Model(&models.StreamState{}).
 		Where("organization_id = ?", orgID).
 		Update("broadcast_mode", newState).Error
@@ -55,39 +54,14 @@ func (h *BroadcastHandler) ToggleStream(c *gin.Context) {
 		return
 	}
 
-	// 2. Fire the Signal via Redis Pub/Sub
 	payload := fmt.Sprintf(`{"org_id": "%s", "action": "%s"}`, orgID, req.Action)
 	h.rdb.Publish(c.Request.Context(), "radio.control", payload)
 
 	c.JSON(http.StatusOK, gin.H{"status": "signaled", "state": newState})
 }
 
-// generateHlsURL dynamically routes between the CDN, direct S3, or a local fallback
-func generateHlsURL(cfg *config.Config, slug string, orgID string) string {
-	// The exact physical path your worker uses to save the manifest
-	objectPath := fmt.Sprintf("/%s/%s/stream.m3u8", orgID, slug)
-
-	// 1. Production: CDN is toggled ON
-	if cfg.CDN.Enabled && cfg.CDN.Stream != "" {
-		domain := strings.TrimRight(cfg.CDN.Stream, "/")
-		return fmt.Sprintf("https://%s%s", domain, objectPath)
-	}
-
-	// 2. Testing: CDN is OFF, return direct B2/S3 Virtual-Hosted Bucket URL
-	if cfg.Storage.Provider == "s3" {
-		cleanEndpoint := strings.TrimPrefix(cfg.Storage.Endpoint, "https://")
-		cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "http://")
-		cleanEndpoint = strings.TrimRight(cleanEndpoint, "/")
-		return fmt.Sprintf("https://%s.%s%s", cfg.Storage.BucketStream, cleanEndpoint, objectPath)
-	}
-
-	// 3. Fallback: Local testing without S3
-	domain := strings.TrimRight(cfg.Radio.PublicDomain, "/")
-	return fmt.Sprintf("https://%s%s", domain, objectPath)
-}
-
-// GetMountPoints fetches streams and injects the dynamic HLS URL
-func GetMountPoints(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+// GetMountPoints fetches streams and injects the dynamic HLS URL using CDNBuilder
+func GetMountPoints(db *gorm.DB, cdn *utils.CDNBuilder) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		orgID, ok := getOrgID(c)
 		if !ok {
@@ -101,11 +75,12 @@ func GetMountPoints(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		// Ensure orgID is a string for the URL generator
 		orgIDStr := fmt.Sprintf("%v", orgID)
 
 		for i := range org.MountPoints {
-			org.MountPoints[i].HlsUrl = generateHlsURL(cfg, org.MountPoints[i].Slug, orgIDStr)
+			streamKey := fmt.Sprintf("%s/%s/stream.m3u8", orgIDStr, org.MountPoints[i].Slug)
+			// ⚡️ Only use what the handler knows
+			org.MountPoints[i].HlsUrl = cdn.BuildLiveURL(streamKey, orgIDStr)
 		}
 
 		c.JSON(http.StatusOK, gin.H{"mount_points": org.MountPoints})
@@ -113,7 +88,7 @@ func GetMountPoints(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 }
 
 // CreateMountPoint provisions a new stream profile
-func CreateMountPoint(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+func CreateMountPoint(db *gorm.DB, cdn *utils.CDNBuilder) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		orgID, ok := getOrgID(c)
 		if !ok {
@@ -161,7 +136,10 @@ func CreateMountPoint(db *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 				return err
 			}
 
-			mount.HlsUrl = generateHlsURL(cfg, mount.Slug, parsedOrgID.String())
+			streamKey := fmt.Sprintf("%s/%s/stream.m3u8", parsedOrgID.String(), mount.Slug)
+			// ⚡️ Only use what the handler knows
+			mount.HlsUrl = cdn.BuildLiveURL(streamKey, parsedOrgID.String())
+
 			c.JSON(http.StatusCreated, mount)
 			return nil
 		})
@@ -222,7 +200,6 @@ func (h *BroadcastHandler) GetStreamState(c *gin.Context) {
 	err := h.db.Select("broadcast_mode").Where("organization_id = ?", orgID).First(&state).Error
 
 	if err != nil {
-		// If no state exists yet, default to offline rather than throwing a 500
 		c.JSON(http.StatusOK, gin.H{"state": "offline"})
 		return
 	}

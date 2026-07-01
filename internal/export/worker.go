@@ -199,7 +199,7 @@ func (w *Worker) HandlePlaylistExportTask(ctx context.Context, t *asynq.Task) er
 	}
 
 	// 7. Complete
-	downloadURL := w.storage.GetPublicURL(b2ExportKey)
+	downloadURL := w.storage.GetDirectPublicURL(w.cfg.Storage.BucketAssets, b2ExportKey)
 	updateStatus("completed", 100, downloadURL)
 	jobs.WithLabelValues("success", "m3u").Inc()
 	log.Printf("Job Completed: M3U Export %s", downloadURL)

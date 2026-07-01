@@ -16,7 +16,7 @@ import (
 
 type Client struct {
 	backend          StorageProvider
-	bucketProd       string
+	bucketAssets     string
 	bucketIngest     string
 	bucketStream     string
 	bucketMaster     string
@@ -50,7 +50,7 @@ func New(cfg *config.Config) *Client {
 
 	return &Client{
 		backend:          backend,
-		bucketProd:       cfg.Storage.BucketProd,
+		bucketAssets:     cfg.Storage.BucketAssets,
 		bucketIngest:     cfg.Storage.BucketIngest,
 		bucketStream:     cfg.Storage.BucketStream,
 		bucketMaster:     cfg.Storage.BucketMaster,
@@ -73,7 +73,7 @@ func (c *Client) ListAudioFiles(prefix string) ([]string, error) {
 		return files, nil
 	}
 
-	keys, err := c.backend.List(c.bucketProd, prefix)
+	keys, err := c.backend.List(c.bucketAssets, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (c *Client) ListAudioFiles(prefix string) ([]string, error) {
 }
 
 func (c *Client) DownloadFile(key string) (*FileObject, error) {
-	return c.backend.Get(c.bucketProd, key)
+	return c.backend.Get(c.bucketAssets, key)
 }
 
 func (c *Client) UploadStreamFile(key string, body io.ReadSeeker, contentType, cacheControl string) error {
@@ -102,7 +102,7 @@ func (c *Client) UploadStreamFile(key string, body io.ReadSeeker, contentType, c
 }
 
 func (c *Client) UploadAssetFile(key string, body io.ReadSeeker, contentType, cacheControl string) error {
-	return c.backend.Put(c.bucketProd, key, body, contentType, cacheControl)
+	return c.backend.Put(c.bucketAssets, key, body, contentType, cacheControl)
 }
 
 // --- Master Vault Methods ---
@@ -142,12 +142,12 @@ func (c *Client) IsPrefixEmpty(prefix string) (bool, error) {
 	return c.backend.Exists(c.bucketIngest, prefix)
 }
 
-func (c *Client) GetPublicURL(key string) string {
+func (c *Client) GetDirectPublicURL(bucket string, key string) string {
 	if key == "" {
 		return ""
 	}
 	if linker, ok := c.backend.(LinkableProvider); ok {
-		return linker.GetPublicURL(c.bucketProd, c.region, key)
+		return linker.GetPublicURL(bucket, c.region, key)
 	}
 
 	return ""

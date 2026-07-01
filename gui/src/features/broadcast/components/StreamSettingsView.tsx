@@ -160,7 +160,6 @@ export const StreamSettingsPanel: React.FC<StreamSettingsPanelProps> = ({
             variant="ghost" color="red.500" _hover={{ bg: "red.50" }} 
             onClick={handleDelete} disabled={isDeleting || mount.is_default}
           >
-            {/* ⚡️ Fixed: Composed Icon instead of leftIcon */}
             {isDeleting ? <Spinner size="sm" mr={2} /> : <Icon as={Trash2} boxSize={4} mr={2} />}
             Delete
           </Button>
@@ -171,7 +170,6 @@ export const StreamSettingsPanel: React.FC<StreamSettingsPanelProps> = ({
               bg="blue.500" color="white" _hover={{ bg: "blue.600" }} 
               onClick={handleSave} disabled={isSaving}
             >
-              {/* ⚡️ Fixed: Composed Icon instead of leftIcon */}
               {isSaving ? <Spinner size="sm" mr={2} /> : <Icon as={Save} boxSize={4} mr={2} />}
               Save Changes
             </Button>

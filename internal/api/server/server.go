@@ -18,6 +18,7 @@ import (
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
 )
 
 type Server struct {
@@ -72,15 +73,17 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
+	cdn := utils.NewCDNBuilder(s.cfg, s.storage)
+
 	authHandler := handlers.NewAuthHandler(s.db.DB)
 	statsHandler := handlers.NewStatsHandler(s.db.DB)
-	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis)
-	playlistHandler := handlers.NewPlaylistHandler(s.db.DB, s.storage)
+	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis, cdn)
+	playlistHandler := handlers.NewPlaylistHandler(s.db.DB, s.storage, cdn)
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
-	artistHandler := handlers.NewArtistHandler(s.db.DB, s.storage)
-	albumHandler := handlers.NewAlbumHandler(s.db.DB, s.storage)
+	artistHandler := handlers.NewArtistHandler(s.db.DB, s.storage, cdn)
+	albumHandler := handlers.NewAlbumHandler(s.db.DB, s.storage, cdn)
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
-	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis)
+	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis, cdn)
 	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
 	settingsHandler := handlers.NewSettingsHandler(s.db.DB)
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
@@ -154,7 +157,7 @@ func (s *Server) setupRoutes() {
 			protected.DELETE("/schedules/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.DeleteScheduleSlot)
 
 			// --- BROADCAST & MOUNT POINTS ---
-			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, s.cfg))
+			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, cdn))
 			protected.GET("/broadcast/state", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), broadcastHandler.GetStreamState)
 			protected.POST("/broadcast/toggle", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), broadcastHandler.ToggleStream)
 
