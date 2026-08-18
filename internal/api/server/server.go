@@ -89,6 +89,9 @@ func (s *Server) setupRoutes() {
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
 	membersHandler := handlers.NewMembersHandler(s.db.DB)
 
+	// ⚡️ Initialize Billing Handler
+	billingHandler := handlers.NewBillingHandler(s.db.DB, s.cfg)
+
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
 	})
@@ -113,15 +116,20 @@ func (s *Server) setupRoutes() {
 			// --- PERSONAL PROFILE ---
 			jwtOnly.GET("/profile", profileHandler.GetProfile)
 			jwtOnly.PUT("/profile", profileHandler.UpdateProfile)
-
 		}
 
+		// --- WEBHOOKS (Bypass auth, they have their own signature verification) ---
 		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
+		v1.POST("/webhooks/stripe", billingHandler.HandleWebhook) // ⚡️ Stripe Webhook route
 
 		protected := v1.Group("/")
 		{
 			// --- STATS ---
 			protected.GET("/stats", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), statsHandler.GetStats)
+
+			// --- BILLING ---
+			protected.POST("/billing/checkout", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), billingHandler.CreateCheckout)
+			protected.POST("/billing/portal", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), billingHandler.CreatePortal)
 
 			// --- TRACKS ---
 			protected.GET("/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTracks)
@@ -166,7 +174,7 @@ func (s *Server) setupRoutes() {
 			protected.PUT("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UpdateSettings)
 			protected.POST("/public-page/upload", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UploadImage)
 
-			// --- SETTINGS
+			// --- SETTINGS ---
 			protected.GET("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
 			protected.PUT("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.UpdateOrgSettings)
 

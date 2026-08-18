@@ -7,7 +7,9 @@ export interface Organization {
   id: string;
   name: string;
   role: string;
-  plan: string;
+  // ⚡️ ADDED: Billing and plan fields from the Go backend
+  plan_tier?: string;
+  billing_status?: string;
 }
 
 interface AuthState {
@@ -15,6 +17,7 @@ interface AuthState {
   user: User | null;
   organizations: Organization[];
   activeOrganizationId: string | null;
+  activeOrganization: Organization | null; // ⚡️ ADDED: The active organization object
   isAuthenticated: boolean;
   isInitialized: boolean;
   isSessionExpired: boolean;
@@ -28,7 +31,6 @@ interface AuthState {
   setSessionExpired: (expired: boolean) => void;
   clearState: () => void; 
 
-  // ⚡️ ADDED: The missing Supabase Auth update methods
   updateProfile: (firstName: string, lastName: string) => Promise<void>;
   updateEmail: (newEmail: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -41,6 +43,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       organizations: [],
       activeOrganizationId: null,
+      activeOrganization: null, // ⚡️ Initial state
       isAuthenticated: false,
       isInitialized: false, 
       isSessionExpired: false,
@@ -78,12 +81,23 @@ export const useAuthStore = create<AuthState>()(
         isSessionExpired: false
       }),
 
-      setOrganizations: (organizations) => set((state) => ({ 
-        organizations,
-        activeOrganizationId: state.activeOrganizationId || (organizations.length > 0 ? organizations[0].id : null)
-      })),
+      setOrganizations: (organizations) => set((state) => {
+        const activeId = state.activeOrganizationId || (organizations.length > 0 ? organizations[0].id : null);
+        // ⚡️ Automatically compute the active organization object
+        const activeOrg = organizations.find(o => o.id === activeId) || null;
+        
+        return { 
+          organizations,
+          activeOrganizationId: activeId,
+          activeOrganization: activeOrg
+        };
+      }),
 
-      setActiveOrganization: (id) => set({ activeOrganizationId: id }),
+      setActiveOrganization: (id) => set((state) => ({ 
+        activeOrganizationId: id,
+        // ⚡️ Keep the object in sync when the ID changes
+        activeOrganization: state.organizations.find(o => o.id === id) || null
+      })),
 
       clearState: () => {
         set({ 
@@ -91,6 +105,7 @@ export const useAuthStore = create<AuthState>()(
           user: null, 
           organizations: [], 
           activeOrganizationId: null,
+          activeOrganization: null,
           isAuthenticated: false,
           isSessionExpired: false 
         });
@@ -109,6 +124,7 @@ export const useAuthStore = create<AuthState>()(
           user: null, 
           organizations: [], 
           activeOrganizationId: null,
+          activeOrganization: null,
           isAuthenticated: false,
           isSessionExpired: false 
         });
@@ -121,7 +137,6 @@ export const useAuthStore = create<AuthState>()(
         set({ isSessionExpired: expired });
       },
 
-      // ⚡️ ADDED: Implementations for the update methods
       updateProfile: async (firstName: string, lastName: string) => {
         const { data, error } = await supabase.auth.updateUser({
           data: { first_name: firstName, last_name: lastName }
@@ -144,6 +159,7 @@ export const useAuthStore = create<AuthState>()(
       name: 'momo-auth-storage',
       partialize: (state) => ({ 
         activeOrganizationId: state.activeOrganizationId,
+        activeOrganization: state.activeOrganization, // ⚡️ Added to persisted state to survive refreshes
         organizations: state.organizations
       })
     }

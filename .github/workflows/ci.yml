@@ -41,8 +41,6 @@ jobs:
           cache: true
 
       - name: Install System Dependencies
-        # We install ffmpeg because the code imports packages that might rely on CGO 
-        # or if you add unit tests later that execute the ffmpeg binary.
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
@@ -57,22 +55,14 @@ jobs:
       - name: Verify Build (Radio Engine)
         run: go build -v ./cmd/radio/
 
-      # NEW: Verify the API build (which will now successfully embed the UI)
       - name: Verify Build (API Server)
         run: go build -v ./cmd/api/
-
-      # Optional: Run Linter (Uncomment if you want strict code style checks)
-      # - name: Run golangci-lint
-      #   uses: golangci/golangci-lint-action@v6
-      #   with:
-      #     version: latest
 
   # --- JOB 2: Build & Push Docker Images ---
   docker-build:
     name: Docker Build & Push
     needs: go-check
     runs-on: ubuntu-latest
-    # Permissions required to push to GHCR
     permissions:
       contents: read
       packages: write
@@ -108,6 +98,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=main-${{ github.run_number }}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=sha-,format=short
             type=ref,event=tag
 
@@ -116,7 +107,6 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          # Push only on 'main' branch or tags (don't push PR builds)
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

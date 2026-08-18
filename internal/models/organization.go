@@ -18,6 +18,11 @@ type Organization struct {
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
+	PlanTier             string `gorm:"default:'free'"` // 'free', 'pro'
+	StripeCustomerID     string `gorm:"index"`
+	StripeSubscriptionID string `gorm:"index"`
+	BillingStatus        string `gorm:"default:'active'"` // 'active', 'past_due', 'canceled'
+
 	// Relationships
 	Members     []OrganizationUser `json:"members,omitempty"`
 	MountPoints []MountPoint       `json:"mount_points,omitempty"`

@@ -77,6 +77,13 @@ type Config struct {
 	Supabase struct {
 		JWTPublicKey string `mapstructure:"jwt_public_key"`
 	} `mapstructure:"supabase"`
+	Stripe struct {
+		SecretKey     string
+		WebhookSecret string
+		ProPriceID    string // Injected from Terraform outputs
+		SuccessURL    string // e.g., https://momosbasement.com/settings/billing?success=true
+		CancelURL     string
+	}
 }
 
 func Load() *Config {

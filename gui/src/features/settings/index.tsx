@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Flex, VStack, Text, Icon, Heading, Center, Spinner, HStack } from '@chakra-ui/react';
-import { Settings as SettingsIcon, Radio, HardDrive, Users, CreditCard, ArrowLeft, Activity } from 'lucide-react';
+import { Settings as SettingsIcon, Radio, HardDrive, Users, CreditCard, ArrowLeft, Activity, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Hook
@@ -13,10 +13,10 @@ import { StorageSettings } from './components/StorageSettings';
 import { UsersManagement } from './components/UsersManagement';
 import { StreamSettings } from './components/StreamSettings';
 import { AccountSettings } from './components/AccountSettings';
-import { User } from 'lucide-react'; // Add User to your lucide-react imports
+import { BillingSettings } from './components/BillingSettings'; // ⚡️ Import the new component
 
 const TABS = [
-  { id: 'account', label: 'Account', icon: User }, // ⚡️ Added Account tab
+  { id: 'account', label: 'Account', icon: User },
   { id: 'general', label: 'Workspace', icon: Radio },
   { id: 'engine', label: 'Broadcast Engine', icon: SettingsIcon },
   { id: 'stream', label: 'Stream Config', icon: Activity }, 
@@ -94,22 +94,15 @@ export const SettingsFeature: React.FC = () => {
       {/* RIGHT: Main Content Area */}
       <Box flex="1" p={10} overflowY="auto" bg="gray.50">
         <Box maxW="800px" mx="auto">
-          {/* ⚡️ REPLACED PLACEHOLDERS WITH ACTUAL COMPONENTS */}
           {activeTab === 'account' && <AccountSettings />}
           {activeTab === 'general' && <GeneralSettings />}
           {activeTab === 'engine' && <AdvancedFfmpegSettings />}
           {activeTab === 'stream' && <StreamSettings />}
           {activeTab === 'storage' && <StorageSettings />}
           {activeTab === 'team' && <UsersManagement />}
-          {activeTab === 'billing' && (
-            <Box>
-              <Heading size="lg" color="gray.900" mb={2}>Billing</Heading>
-              <Text fontSize="sm" color="gray.500" mb={8}>Manage your subscription and payment methods.</Text>
-              <Box bg="white" p={6} borderRadius="xl" border="1px solid" borderColor="gray.200" shadow="sm">
-                <Text fontSize="sm" color="gray.600">Billing configuration coming soon.</Text>
-              </Box>
-            </Box>
-          )}
+          
+          {/* ⚡️ Render the new Billing Component */}
+          {activeTab === 'billing' && <BillingSettings />} 
         </Box>
       </Box>
     </Flex>

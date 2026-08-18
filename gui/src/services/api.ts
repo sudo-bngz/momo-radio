@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { useAuthStore, type Organization } from '../store/useAuthStore';
-// ⚡️ ADDED: Import the network store
 import { useNetworkStore } from '../store/useNetworkStore';
 import { supabase } from './../services/client';
 import type { 
@@ -376,6 +375,15 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
 
   updateProfile: async (data: Partial<UserProfile>): Promise<UserProfile> => {
     const response = await apiClient.put('/profile', data);
+    return response.data;
+  },
+  createCheckoutSession: async (): Promise<{ url: string }> => {
+    const response = await apiClient.post<{ url: string }>('/billing/checkout');
+    return response.data;
+  },
+
+  createPortalSession: async (): Promise<{ url: string }> => {
+    const response = await apiClient.post<{ url: string }>('/billing/portal');
     return response.data;
   },
 };

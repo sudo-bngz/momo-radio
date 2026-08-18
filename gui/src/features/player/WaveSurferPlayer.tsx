@@ -7,16 +7,19 @@ interface WaveSurferPlayerProps {
   audioRef: React.RefObject<HTMLAudioElement | null>;
   isPlaying: boolean;
   waveformUrl?: string; 
+  waveformKey?: string;
   orgId: string; 
 }
 
 export const WaveSurferPlayer = ({ 
   audioRef, 
   waveformUrl, 
+  waveformKey, // ⚡️ DESTRUCTURED
   orgId 
 }: WaveSurferPlayerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurfer = useRef<WaveSurfer | null>(null);
+  const targetWaveformUrl = waveformUrl || waveformKey;
 
   useEffect(() => {
     // 1. Guard check to ensure the DOM and Audio element exist
@@ -64,11 +67,11 @@ export const WaveSurferPlayer = ({
       const audioUrl = audioRef.current?.src;
       if (!audioUrl) return;
 
-      // 2. Check for the full URL instead of the key
-      if (waveformUrl) {
+      // 2. Check for the full URL using our resolved target
+      if (targetWaveformUrl) {
         try {
           // 3. Fetch directly from the provided URL
-          const response = await fetch(waveformUrl, {
+          const response = await fetch(targetWaveformUrl, {
             headers: {
               'X-Organization-Id': orgId
             }
@@ -127,7 +130,7 @@ export const WaveSurferPlayer = ({
         wavesurfer.current.destroy();
       }
     };
-  }, [audioRef, waveformUrl, orgId]); // Updated dependency array
+  }, [audioRef, targetWaveformUrl, orgId]);
 
   return (
     <Box 
