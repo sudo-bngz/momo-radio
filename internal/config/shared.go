@@ -64,6 +64,7 @@ type Config struct {
 		Port     string `mapstructure:"port"`
 		Password string `mapstructure:"password"`
 		DB       int    `mapstructure:"db"`
+		TLS      bool   `mapstructure:"tls"`
 	} `mapstructure:"redis"`
 	Services struct {
 		DiscogsToken string `mapstructure:"discogs_token"`
@@ -145,6 +146,7 @@ func Load() *Config {
 	viper.BindEnv("redis.port")
 	viper.BindEnv("redis.password")
 	viper.BindEnv("redis.db")
+	viper.BindEnv("redis.tls")
 
 	viper.BindEnv("services.discogs_token")
 	viper.BindEnv("services.contact_email")
@@ -170,6 +172,7 @@ func Load() *Config {
 	viper.SetDefault("redis.port", "6379")
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
+	viper.SetDefault("redis.tls", false)
 
 	// Radio Defaults
 	viper.SetDefault("radio.public_domain", "momo.radio")

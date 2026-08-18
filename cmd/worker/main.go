@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -48,16 +49,29 @@ func main() {
 
 	// 4. Initialize Redis Client
 	redisAddr := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
+
+	var tlsConfig *tls.Config
+	if cfg.Redis.TLS {
+		tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		log.Println("Redis TLS Enabled (Upstash/Production mode)")
+	} else {
+		log.Println("Redis TLS Disabled (Local Development mode)")
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+		Addr:      redisAddr,
+		Password:  cfg.Redis.Password,
+		DB:        cfg.Redis.DB,
+		TLSConfig: tlsConfig,
 	})
 
 	redisOpt := asynq.RedisClientOpt{
-		Addr:     redisAddr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+		Addr:      redisAddr,
+		Password:  cfg.Redis.Password,
+		DB:        cfg.Redis.DB,
+		TLSConfig: tlsConfig, // ⚡️ Applied here
 	}
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
@@ -106,7 +120,7 @@ func main() {
 
 	// 9. Setup Metrics for ALL domains
 	ingest.RegisterMetrics()
-	export.RegisterMetrics() // ⚡️ Register export metrics
+	export.RegisterMetrics()
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
@@ -119,9 +133,10 @@ func main() {
 	// 10. Start the Unified Asynq Server
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{
-			Addr:     redisAddr,
-			Password: cfg.Redis.Password,
-			DB:       cfg.Redis.DB,
+			Addr:      redisAddr,
+			Password:  cfg.Redis.Password,
+			DB:        cfg.Redis.DB,
+			TLSConfig: tlsConfig,
 		},
 		asynq.Config{
 			Concurrency: cfg.Worker.Concurrency,
