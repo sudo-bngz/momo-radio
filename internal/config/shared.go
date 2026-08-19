@@ -72,8 +72,11 @@ type Config struct {
 		AcoustIDKey  string `mapstructure:"acoustid_key"`
 	} `mapstructure:"services"`
 	Worker struct {
-		Concurrency int            `mapstructure:"concurrency"`
-		Queues      map[string]int `mapstructure:"queues"`
+		Concurrency             int            `mapstructure:"concurrency"`
+		Queues                  map[string]int `mapstructure:"queues"`
+		DelayedCheckIntervalSec int            `mapstructure:"delayed_check_interval_sec"`
+		HealthCheckIntervalSec  int            `mapstructure:"health_check_interval_sec"`
+		RedisPoolSize           int            `mapstructure:"redis_pool_size"`
 	} `mapstructure:"worker"`
 	Supabase struct {
 		JWTPublicKey string `mapstructure:"jwt_public_key"`
@@ -198,6 +201,9 @@ func Load() *Config {
 		"ingest":  7,
 		"exports": 3,
 	})
+	viper.SetDefault("worker.delayed_check_interval_sec", 15)
+	viper.SetDefault("worker.health_check_interval_sec", 30)
+	viper.SetDefault("worker.redis_pool_size", 10)
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")

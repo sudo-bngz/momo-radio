@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -65,13 +66,15 @@ func main() {
 		Password:  cfg.Redis.Password,
 		DB:        cfg.Redis.DB,
 		TLSConfig: tlsConfig,
+		PoolSize:  cfg.Worker.RedisPoolSize,
 	})
 
 	redisOpt := asynq.RedisClientOpt{
 		Addr:      redisAddr,
 		Password:  cfg.Redis.Password,
 		DB:        cfg.Redis.DB,
-		TLSConfig: tlsConfig, // ⚡️ Applied here
+		TLSConfig: tlsConfig,
+		PoolSize:  cfg.Worker.RedisPoolSize,
 	}
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
@@ -139,8 +142,10 @@ func main() {
 			TLSConfig: tlsConfig,
 		},
 		asynq.Config{
-			Concurrency: cfg.Worker.Concurrency,
-			Queues:      cfg.Worker.Queues,
+			Concurrency:              cfg.Worker.Concurrency,
+			Queues:                   cfg.Worker.Queues,
+			DelayedTaskCheckInterval: time.Duration(cfg.Worker.DelayedCheckIntervalSec) * time.Second,
+			HealthCheckInterval:      time.Duration(cfg.Worker.HealthCheckIntervalSec) * time.Second,
 		},
 	)
 
