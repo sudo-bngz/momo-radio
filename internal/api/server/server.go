@@ -89,7 +89,6 @@ func (s *Server) setupRoutes() {
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
 	membersHandler := handlers.NewMembersHandler(s.db.DB)
 
-	// ⚡️ Initialize Billing Handler
 	billingHandler := handlers.NewBillingHandler(s.db.DB, s.cfg)
 
 	s.router.GET("/health", func(c *gin.Context) {
@@ -120,7 +119,7 @@ func (s *Server) setupRoutes() {
 
 		// --- WEBHOOKS (Bypass auth, they have their own signature verification) ---
 		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
-		v1.POST("/webhooks/stripe", billingHandler.HandleWebhook) // ⚡️ Stripe Webhook route
+		v1.POST("/webhooks/stripe", billingHandler.HandleWebhook)
 
 		protected := v1.Group("/")
 		{
@@ -178,11 +177,25 @@ func (s *Server) setupRoutes() {
 			protected.GET("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
 			protected.PUT("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.UpdateOrgSettings)
 
-			// TEAM MANAGEMENT (Owner/Admin only)
+			// TEAM MANAGEMENT
 			protected.GET("/settings/members", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), membersHandler.GetMembers)
 			protected.POST("/settings/members/invite", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), membersHandler.InviteMember)
 		}
 	}
+
+	// ==========================================
+	// DYNAMIC RUNTIME CONFIG FOR EMBEDDED GUI
+	// ==========================================
+	// ⚡️ Injecting backend environment variables into the React app
+	s.router.GET("/env.js", func(c *gin.Context) {
+		c.Header("Content-Type", "application/javascript")
+		js := fmt.Sprintf(`window.__RUNTIME_CONFIG__ = {
+            SUPABASE_URL: "%s",
+            SUPABASE_ANON_KEY: "%s"
+        };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey)
+
+		c.String(http.StatusOK, js)
+	})
 
 	// ==========================================
 	// EMBEDDED REACT UI (SPA Fallback)

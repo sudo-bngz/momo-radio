@@ -79,13 +79,15 @@ type Config struct {
 		RedisPoolSize           int            `mapstructure:"redis_pool_size"`
 	} `mapstructure:"worker"`
 	Supabase struct {
+		URL          string `mapstructure:"url"`
+		AnonKey      string `mapstructure:"anon_key"`
 		JWTPublicKey string `mapstructure:"jwt_public_key"`
 	} `mapstructure:"supabase"`
 	Stripe struct {
 		SecretKey     string
 		WebhookSecret string
-		ProPriceID    string // Injected from Terraform outputs
-		SuccessURL    string // e.g., https://momosbasement.com/settings/billing?success=true
+		ProPriceID    string
+		SuccessURL    string
 		CancelURL     string
 	}
 }
@@ -156,6 +158,9 @@ func Load() *Config {
 	viper.BindEnv("services.acoustid_key")
 
 	viper.BindEnv("worker.concurrency")
+
+	viper.BindEnv("supabase.url", "SUPABASE_URL")
+	viper.BindEnv("supabase.anon_key", "SUPABASE_ANON_KEY")
 	viper.BindEnv("supabase.jwt_public_key", "SUPABASE_JWT_PUBLIC_KEY")
 
 	// Defaults
@@ -234,11 +239,18 @@ func validateConfig(cfg *Config) {
 	if cfg.Storage.Provider == "local" && cfg.Storage.LocalStorage == "" {
 		log.Fatal("Critical: Local storage path is missing (RADIO_STORAGE_LOCAL_STORAGE_PATH)")
 	}
-	if cfg.Supabase.JWTPublicKey == "" {
-		log.Fatal("Critical: Supabase JWT Public Key is missing (SUPABASE_JWT_PUBLIC_KEY)")
-	}
 	if cfg.Storage.Provider == "s3" && cfg.Storage.BucketPublicPage == "" {
 		log.Fatal("Critical: Public Page bucket is missing (RADIO_STORAGE_BUCKET_PUBLIC_PAGE)")
+	}
+
+	if cfg.Supabase.URL == "" {
+		log.Fatal("Critical: Supabase URL is missing (SUPABASE_URL)")
+	}
+	if cfg.Supabase.AnonKey == "" {
+		log.Fatal("Critical: Supabase Anon Key is missing (SUPABASE_ANON_KEY)")
+	}
+	if cfg.Supabase.JWTPublicKey == "" {
+		log.Fatal("Critical: Supabase JWT Public Key is missing (SUPABASE_JWT_PUBLIC_KEY)")
 	}
 
 	// Comprehensive CDN Field Validation
