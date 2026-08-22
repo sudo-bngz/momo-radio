@@ -512,7 +512,15 @@ func (h *TrackHandler) StreamTrack(c *gin.Context) {
 
 	obj, err := h.storage.DownloadFile(track.Key)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Audio file missing from storage"})
+		slog.Error("Failed to download audio file from storage",
+			"track_id", trackID,
+			"key", track.Key,
+			"error", err,
+		)
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("Audio file missing from storage: %v", err),
+		})
 		return
 	}
 	defer obj.Body.Close()

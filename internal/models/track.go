@@ -74,7 +74,7 @@ type Track struct {
 	Artists []Artist `gorm:"many2many:track_artists;" json:"artists,omitempty"`
 
 	AlbumID *uint `gorm:"index" json:"album_id"`
-	Album   Album `json:"album,omitempty"`
+	Album   Album `json:"album"`
 
 	// Curation Tags
 	Genre string `gorm:"index" json:"genre"`

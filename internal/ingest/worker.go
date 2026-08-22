@@ -26,7 +26,6 @@ const TypeTrackProcess = "track:process"
 const TypeTrackEnrich = "track:enrich"
 const TypeArtistEnrich = "artist:enrich"
 
-// ⚡️ FIXED: Added MusicBrainzID to payload so the background worker receives it
 type TrackEnrichPayload struct {
 	TrackID       uint   `json:"track_id"`
 	ArtistName    string `json:"artist_name"`
