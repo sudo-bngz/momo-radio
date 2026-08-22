@@ -14,8 +14,8 @@ type Config struct {
 		AppKey           string `mapstructure:"app_key"`
 		Endpoint         string `mapstructure:"endpoint"`
 		Region           string `mapstructure:"region"`
-		BucketIngest     string `mapstructure:"bucket_assets"`
-		BucketAssets     string `mapstructure:"bucket_prod"`
+		BucketIngest     string `mapstructure:"bucket_ingest"`
+		BucketAssets     string `mapstructure:"bucket_assets"`
 		BucketStream     string `mapstructure:"bucket_stream_live"`
 		BucketMaster     string `mapstructure:"bucket_master"`
 		BucketPublicPage string `mapstructure:"bucket_public_page"`
@@ -233,14 +233,23 @@ func Load() *Config {
 }
 
 func validateConfig(cfg *Config) {
-	if cfg.Storage.Provider == "s3" && cfg.Storage.KeyID == "" {
-		log.Fatal("Critical: S3/B2 KeyID is missing (RADIO_STORAGE_KEY_ID)")
+	if cfg.Storage.Provider == "s3" {
+		if cfg.Storage.KeyID == "" {
+			log.Fatal("Critical: S3/B2 KeyID is missing (RADIO_STORAGE_KEY_ID)")
+		}
+		if cfg.Storage.BucketIngest == "" {
+			log.Fatal("Critical: Ingest bucket is missing (RADIO_STORAGE_BUCKET_INGEST)")
+		}
+		if cfg.Storage.BucketMaster == "" {
+			log.Fatal("Critical: Master bucket is missing (RADIO_STORAGE_BUCKET_MASTER)")
+		}
+		if cfg.Storage.BucketPublicPage == "" {
+			log.Fatal("Critical: Public Page bucket is missing (RADIO_STORAGE_BUCKET_PUBLIC_PAGE)")
+		}
 	}
+
 	if cfg.Storage.Provider == "local" && cfg.Storage.LocalStorage == "" {
 		log.Fatal("Critical: Local storage path is missing (RADIO_STORAGE_LOCAL_STORAGE_PATH)")
-	}
-	if cfg.Storage.Provider == "s3" && cfg.Storage.BucketPublicPage == "" {
-		log.Fatal("Critical: Public Page bucket is missing (RADIO_STORAGE_BUCKET_PUBLIC_PAGE)")
 	}
 
 	if cfg.Supabase.URL == "" {
