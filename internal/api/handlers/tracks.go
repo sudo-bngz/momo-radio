@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -354,19 +355,21 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 
 	err = h.storage.UploadIngestFile(b2Key, finalFile, contentType)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Storage upload failed"})
+		slog.Error("UploadIngestFile failed", "key", b2Key, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Storage upload failed: %v", err),
+		})
 		return
 	}
-
 	rawArtistStr := strings.TrimSpace(c.PostForm("artist"))
 	if rawArtistStr == "" {
 		rawArtistStr = "Unknown Artist"
 	}
 
 	var trackArtists []models.Artist
-	artistNames := strings.Split(rawArtistStr, ",")
+	artistNames := strings.SplitSeq(rawArtistStr, ",")
 
-	for _, name := range artistNames {
+	for name := range artistNames {
 		cleanName := strings.TrimSpace(name)
 		if cleanName == "" {
 			continue
@@ -454,10 +457,17 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 	}
 
 	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
+
+	var tlsConf *tls.Config
+	if h.config.Redis.TLS {
+		tlsConf = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
-		Addr:     redisAddr,
-		Password: h.config.Redis.Password,
-		DB:       h.config.Redis.DB,
+		Addr:      redisAddr,
+		Password:  h.config.Redis.Password,
+		DB:        h.config.Redis.DB,
+		TLSConfig: tlsConf,
 	})
 	defer asynqClient.Close()
 
@@ -470,6 +480,7 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 
 	_, err = asynqClient.Enqueue(task)
 	if err != nil {
+		slog.Error("Failed to queue processing job", "error", err)
 		h.db.Model(&newTrack).Update("processing_status", "failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue processing job"})
 		return
@@ -631,10 +642,17 @@ func (h *TrackHandler) Analysis(c *gin.Context) {
 	})
 
 	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
+
+	var tlsConf *tls.Config
+	if h.config.Redis.TLS {
+		tlsConf = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
 	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
-		Addr:     redisAddr,
-		Password: h.config.Redis.Password,
-		DB:       h.config.Redis.DB,
+		Addr:      redisAddr,
+		Password:  h.config.Redis.Password,
+		DB:        h.config.Redis.DB,
+		TLSConfig: tlsConf, // ⚡️ Applied
 	})
 	defer asynqClient.Close()
 
