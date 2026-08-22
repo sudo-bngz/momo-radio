@@ -186,7 +186,6 @@ func (s *Server) setupRoutes() {
 	// ==========================================
 	// DYNAMIC RUNTIME CONFIG FOR EMBEDDED GUI
 	// ==========================================
-	// ⚡️ Injecting backend environment variables into the React app
 	s.router.GET("/env.js", func(c *gin.Context) {
 		c.Header("Content-Type", "application/javascript")
 		js := fmt.Sprintf(`window.__RUNTIME_CONFIG__ = {

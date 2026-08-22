@@ -398,8 +398,8 @@ func (e *Engine) recordTrackPlay(orgID uuid.UUID, t *models.Track) {
 		err := tx.Model(&models.Track{}).
 			Where("id = ? AND organization_id = ?", t.ID, orgID).
 			Updates(map[string]any{
-				"play_count":     gorm.Expr("play_count + 1"),
-				"last_played_at": now,
+				"play_count":  gorm.Expr("play_count + 1"),
+				"last_played": now,
 			}).Error
 		if err != nil {
 			return err
