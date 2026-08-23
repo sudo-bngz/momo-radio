@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, Flex, Heading, Text, Table, Badge, Button, Icon, HStack, Spinner, Center 
 } from '@chakra-ui/react';
@@ -7,7 +7,8 @@ import { Copy, Check, Plus, Settings, Trash2, Play, Square } from 'lucide-react'
 import { api } from '../../../services/api'; 
 import type { MountPoint } from '../../../services/api'; 
 import { StreamSettingsPanel } from './StreamSettingsView';
-import { useBroadcastStore } from '../../../store/useBroadcast'; // ⚡️ IMPORT STORE
+import { useBroadcastStore } from '../../../store/useBroadcast';
+import { usePlayer } from '../../../context/PlayerContext'; // Adjust path if needed
 
 export const MountPoints: React.FC = () => {
   const [mounts, setMounts] = useState<MountPoint[]>([]);
@@ -16,20 +17,16 @@ export const MountPoints: React.FC = () => {
   
   // UI States
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
   const [editingMount, setEditingMount] = useState<MountPoint | null>(null);
+  const [isToggling, setIsToggling] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
   
-  // ⚡️ USE GLOBAL STATE INSTEAD OF LOCAL STATE
+  // Broadcast Store
   const isLive = useBroadcastStore((state) => state.isLive);
   const setLive = useBroadcastStore((state) => state.setLive);
-  
-  const [isToggling, setIsToggling] = useState(false);
-  
-  // Modal State
-  const [showStopConfirm, setShowStopConfirm] = useState(false);
 
-  // Hidden audio element for pre-listening
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Global Player Context
+  const { currentTrack, isPlaying, playTrack, togglePlayPause } = usePlayer();
 
   const fetchMountsAndState = async () => {
     try {
@@ -40,8 +37,7 @@ export const MountPoints: React.FC = () => {
       ]);
       
       setMounts(mountsData);
-      setLive(stateData.state === 'online'); // ⚡️ Update global store
-
+      setLive(stateData.state === 'online');
     } catch (err) {
       console.error("Failed to load stream data:", err);
       setError("Failed to load transmission configurations.");
@@ -66,10 +62,11 @@ export const MountPoints: React.FC = () => {
       const action = isLive ? 'stop' : 'start';
       const response = await api.toggleBroadcast(action);
       
-      setLive(response.state === 'online'); // ⚡️ Instantly syncs global store and TopNav
+      setLive(response.state === 'online');
       
-      if (isLive && playingId) {
-        handlePlayStop(playingId, ""); 
+      // Pause player if broadcast is stopped while playing the live stream
+      if (isLive && String(currentTrack?.id).startsWith('live-') && isPlaying) {
+        togglePlayPause();
       }
     } catch (error) {
       console.error("Failed to toggle broadcast state:", error);
@@ -78,17 +75,20 @@ export const MountPoints: React.FC = () => {
     }
   };
 
-  const handlePlayStop = (id: string, url: string) => {
-    if (!audioRef.current) return;
+  const handlePlayStop = (mount: MountPoint) => {
+    const streamId = `live-${mount.id}`;
 
-    if (playingId === id) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      setPlayingId(null);
+    if (String(currentTrack?.id) === streamId) {
+      togglePlayPause();
     } else {
-      audioRef.current.src = url;
-      audioRef.current.play().catch(e => console.warn("Browser blocked autoplay or format unsupported:", e));
-      setPlayingId(id);
+      playTrack({
+        id: streamId as any,
+        title: mount.slug ? `${mount.slug} (Live)` : "Live Broadcast",
+        artist: "Momo Radio",
+        url: mount.hls_url,
+        duration: 0,
+        cover_url: "/logo.png"
+      } as any);
     }
   };
 
@@ -120,10 +120,20 @@ export const MountPoints: React.FC = () => {
         `}
       </style>
 
-      <audio ref={audioRef} style={{ display: 'none' }} />
-
       {showStopConfirm && (
-        <Box position="fixed" top={0} left={0} right={0} bottom={0} zIndex={9999} display="flex" alignItems="center" justifyContent="center" bg="blackAlpha.400" backdropFilter="blur(2px)">
+        <Box 
+          position="fixed" 
+          top={0} 
+          left={0} 
+          right={0} 
+          bottom={0} 
+          zIndex={9999} 
+          display="flex" 
+          alignItems="center" 
+          justifyContent="center" 
+          bg="blackAlpha.400" 
+          backdropFilter="blur(2px)"
+        >
           <Box bg="white" p={6} borderRadius="2xl" shadow="2xl" maxW="400px" w="90%" border="1px solid" borderColor="gray.100">
             <Heading size="md" color="gray.900" mb={3}>Stop Broadcast?</Heading>
             <Text color="gray.600" fontSize="sm" mb={6}>
@@ -134,7 +144,10 @@ export const MountPoints: React.FC = () => {
                 Cancel
               </Button>
               <Button 
-                bg="red.500" color="white" _hover={{ bg: "red.600" }} size="sm" 
+                bg="red.500" 
+                color="white" 
+                _hover={{ bg: "red.600" }} 
+                size="sm" 
                 onClick={() => {
                   setShowStopConfirm(false);
                   handleBroadcastToggle();
@@ -179,6 +192,9 @@ export const MountPoints: React.FC = () => {
             ) : (
               mounts.map((mount) => {
                 const isRowLive = isLive && mount.is_default;
+                const streamId = `live-${mount.id}`;
+                const isThisStreamActive = String(currentTrack?.id) === streamId;
+                const isThisStreamPlaying = isThisStreamActive && isPlaying;
 
                 return (
                   <Table.Row 
@@ -192,17 +208,23 @@ export const MountPoints: React.FC = () => {
                         <Button 
                           size="sm" 
                           variant="ghost" 
-                          color={playingId === mount.id ? "red.600" : "gray.400"}
-                          bg={playingId === mount.id ? "red.50" : "transparent"}
-                          _hover={isRowLive ? { bg: playingId === mount.id ? "red.100" : "gray.100", color: "red.500" } : {}}
-                          onClick={() => handlePlayStop(mount.id, mount.hls_url)}
+                          color={isThisStreamActive ? "red.600" : "gray.400"}
+                          bg={isThisStreamActive ? "red.50" : "transparent"}
+                          _hover={isRowLive ? { bg: isThisStreamActive ? "red.100" : "gray.100", color: "red.500" } : {}}
+                          onClick={() => handlePlayStop(mount)}
                           borderRadius="full"
-                          w="32px" h="32px" p={0}
+                          w="32px" 
+                          h="32px" 
+                          p={0}
                           disabled={!isRowLive}
                           cursor={isRowLive ? "pointer" : "not-allowed"}
                           opacity={isRowLive ? 1 : 0.5}
                         >
-                          <Icon as={playingId === mount.id ? Square : Play} boxSize={4} fill={playingId === mount.id ? "currentColor" : "none"} />
+                          <Icon 
+                            as={isThisStreamPlaying ? Square : Play} 
+                            boxSize={4} 
+                            fill={isThisStreamPlaying ? "currentColor" : "none"} 
+                          />
                         </Button>
 
                         <HStack gap={2}>
@@ -226,7 +248,8 @@ export const MountPoints: React.FC = () => {
                       {mount.is_default ? (
                         <HStack gap={2}>
                           <Box 
-                            w="8px" h="8px" 
+                            w="8px" 
+                            h="8px" 
                             borderRadius="full" 
                             bg={isLive ? "red.500" : "gray.300"} 
                             boxShadow={isLive ? "0 0 8px rgba(229, 62, 62, 0.6)" : "none"}
@@ -269,18 +292,28 @@ export const MountPoints: React.FC = () => {
                           </>
                         )}
 
-                        <Button size="sm" variant="ghost" color="gray.500" _hover={{ bg: "gray.100", color: "gray.800" }} onClick={() => copyToClipboard(mount.hls_url, mount.id)}>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          color="gray.500" 
+                          _hover={{ bg: "gray.100", color: "gray.800" }} 
+                          onClick={() => copyToClipboard(mount.hls_url, mount.id)}
+                        >
                           <Icon as={copiedId === mount.id ? Check : Copy} boxSize={4} color={copiedId === mount.id ? "green.500" : "inherit"} />
                         </Button>
                         <Button 
-                          size="sm" variant="ghost" color="gray.500" 
+                          size="sm" 
+                          variant="ghost" 
+                          color="gray.500" 
                           _hover={{ bg: "gray.100", color: "gray.800" }} 
                           onClick={() => setEditingMount(mount)} 
                         >
                           <Icon as={Settings} boxSize={4} />
                         </Button>
                         <Button 
-                          size="sm" variant="ghost" color="red.400" 
+                          size="sm" 
+                          variant="ghost" 
+                          color="red.400" 
                           _hover={{ bg: "red.50", color: "red.600" }} 
                           disabled={mount.is_default}
                           onClick={() => setEditingMount(mount)} 
@@ -289,7 +322,6 @@ export const MountPoints: React.FC = () => {
                         </Button>
                       </HStack>
                     </Table.Cell>
-
                   </Table.Row>
                 );
               })

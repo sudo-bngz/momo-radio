@@ -16,7 +16,6 @@ export const useBroadcastStore = create<BroadcastStore>((set) => ({
   checkState: async () => {
     try {
       const res = await api.getBroadcastState();
-      // ⚡️ FIX: Check for the exact string returned by your API
       set({ isLive: res.state === 'online' }); 
     } catch {
       set({ isLive: false });

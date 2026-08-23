@@ -100,6 +100,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const trackId = currentTrack?.id || (currentTrack as any)?.ID;
+  
+  const directUrl = (currentTrack as any)?.url; 
+  
+  const audioSrc = directUrl 
+    ? directUrl 
+    : `${API_BASE_URL}/tracks/${trackId}/stream?token=${token}&org_id=${activeOrgId}`;
 
   return (
     <PlayerContext.Provider value={{ 
@@ -113,7 +119,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         <audio 
           key={trackId}
           ref={audioRef}
-          src={`${API_BASE_URL}/tracks/${trackId}/stream?token=${token}&org_id=${activeOrgId}`}
+          src={audioSrc} // ⚡️ Use our smart URL logic here
           crossOrigin="anonymous"
           autoPlay 
           onEnded={handleEnded} 
