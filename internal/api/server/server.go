@@ -190,8 +190,9 @@ func (s *Server) setupRoutes() {
 		c.Header("Content-Type", "application/javascript")
 		js := fmt.Sprintf(`window.__RUNTIME_CONFIG__ = {
             SUPABASE_URL: "%s",
-            SUPABASE_ANON_KEY: "%s"
-        };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey)
+            SUPABASE_ANON_KEY: "%s",
+			API_URL: "%s"
+        };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey, s.cfg.Server.PublicAPIURL)
 
 		c.String(http.StatusOK, js)
 	})

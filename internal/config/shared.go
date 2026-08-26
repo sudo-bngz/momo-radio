@@ -33,6 +33,7 @@ type Config struct {
 		PollingInterval int    `mapstructure:"polling_interval_seconds"`
 		MetricsPort     string `mapstructure:"metrics_port"`
 		Timezone        string `mapstructure:"timezone"`
+		PublicAPIURL    string `mapstructure:"public_api_url"`
 	} `mapstructure:"server"`
 	Radio struct {
 		PublicDomain  string `mapstructure:"public_domain"`
@@ -122,6 +123,7 @@ func Load() *Config {
 	viper.BindEnv("server.polling_interval_seconds")
 	viper.BindEnv("server.metrics_port")
 	viper.BindEnv("server.timezone")
+	viper.BindEnv("server.public_api_url")
 
 	// Radio Config Bindings
 	viper.BindEnv("radio.public_domain")
@@ -168,6 +170,7 @@ func Load() *Config {
 	viper.SetDefault("server.temp_dir", "/tmp/")
 	viper.SetDefault("server.metrics_port", ":9091")
 	viper.SetDefault("server.timezone", "UTC")
+	viper.SetDefault("server.public_api_url", "")
 
 	// CDN Defaults
 	viper.SetDefault("cdn.enabled", false)

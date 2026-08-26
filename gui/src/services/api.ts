@@ -55,10 +55,11 @@ export interface UserProfile {
   updated_at: string;
 }
 
-const API_URL = '/api/v1';
+const runtimeApiUrl = (window as any).__RUNTIME_CONFIG__?.API_URL || "";
+const API_BASE_URL = runtimeApiUrl ? `${runtimeApiUrl}/api/v1` : "/api/v1";
 
 export const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
 });
 
 apiClient.interceptors.request.use((config) => {
