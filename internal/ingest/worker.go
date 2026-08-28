@@ -137,8 +137,8 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		&NormalizeStep{},
 		&UploadStep{},
 		&DatabaseSaveStep{},
-		&IndexStep{},
 		&EnrichStep{},
+		&IndexStep{},
 	}
 
 	for _, step := range steps {
