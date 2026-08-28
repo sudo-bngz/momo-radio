@@ -6,7 +6,6 @@ import (
 	"momo-radio/internal/models"
 )
 
-// ⚡️ FIXED: Added the pipeline context structs here so they are globally available
 type ProcessingContext struct {
 	Worker        *Worker
 	Ctx           context.Context

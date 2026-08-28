@@ -18,6 +18,7 @@ import (
 	database "momo-radio/internal/db"
 	"momo-radio/internal/export"
 	"momo-radio/internal/ingest"
+	"momo-radio/internal/search"
 	"momo-radio/internal/storage"
 )
 
@@ -33,7 +34,7 @@ func main() {
 
 	var targetArtists []string
 	flag.Func("artists", "Comma-separated list of artists to target (e.g. -artists='Daft Punk,Justice')", func(s string) error {
-		for _, a := range strings.Split(s, ",") {
+		for a := range strings.SplitSeq(s, ",") {
 			targetArtists = append(targetArtists, strings.TrimSpace(a))
 		}
 		return nil
@@ -87,8 +88,10 @@ func main() {
 		log.Fatalf("Failed to create temp dir: %v", err)
 	}
 
+	meiliClient := search.InitMeilisearch(cfg)
+
 	// 6. Instantiate the Domain Workers
-	ingestWorker := ingest.New(cfg, store, db, redisClient, asynqClient)
+	ingestWorker := ingest.New(cfg, store, db, redisClient, asynqClient, meiliClient)
 	exportWorker := export.New(cfg, store, db, redisClient)
 
 	// 7. MODE SELECTION (CLI Maintenance)

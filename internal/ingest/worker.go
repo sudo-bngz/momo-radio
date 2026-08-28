@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/hibiken/asynq"
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 
@@ -81,16 +82,25 @@ type Worker struct {
 	storage     *storage.Client
 	db          *database.Client
 	redis       *redis.Client
+	meili       meilisearch.ServiceManager
 	analysisSem chan struct{}
 	asynqClient *asynq.Client
 }
 
-func New(cfg *config.Config, store *storage.Client, db *database.Client, redisClient *redis.Client, asynqClient *asynq.Client) *Worker {
+func New(
+	cfg *config.Config,
+	store *storage.Client,
+	db *database.Client,
+	redisClient *redis.Client,
+	asynqClient *asynq.Client,
+	meili meilisearch.ServiceManager,
+) *Worker {
 	return &Worker{
 		cfg:         cfg,
 		storage:     store,
 		db:          db,
 		redis:       redisClient,
+		meili:       meili,
 		analysisSem: make(chan struct{}, 2),
 		asynqClient: asynqClient,
 	}
@@ -127,6 +137,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		&NormalizeStep{},
 		&UploadStep{},
 		&DatabaseSaveStep{},
+		&IndexStep{},
 		&EnrichStep{},
 	}
 

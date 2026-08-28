@@ -91,6 +91,10 @@ type Config struct {
 		SuccessURL    string
 		CancelURL     string
 	}
+	Meilisearch struct {
+		Host      string `mapstructure:"host"`
+		MasterKey string `mapstructure:"master_key"`
+	} `mapstructure:"meilisearch"`
 }
 
 func Load() *Config {
@@ -165,6 +169,9 @@ func Load() *Config {
 	viper.BindEnv("supabase.anon_key", "SUPABASE_ANON_KEY")
 	viper.BindEnv("supabase.jwt_public_key", "SUPABASE_JWT_PUBLIC_KEY")
 
+	viper.BindEnv("meilisearch.host", "RADIO_MEILISEARCH_HOST")
+	viper.BindEnv("meilisearch.master_key", "RADIO_MEILISEARCH_MASTER_KEY")
+
 	// Defaults
 	viper.SetDefault("server.polling_interval_seconds", 10)
 	viper.SetDefault("server.temp_dir", "/tmp/")
@@ -212,6 +219,8 @@ func Load() *Config {
 	viper.SetDefault("worker.delayed_check_interval_sec", 15)
 	viper.SetDefault("worker.health_check_interval_sec", 30)
 	viper.SetDefault("worker.redis_pool_size", 10)
+
+	viper.SetDefault("meilisearch.host", "http://localhost:7700")
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -265,7 +274,6 @@ func validateConfig(cfg *Config) {
 		log.Fatal("Critical: Supabase JWT Public Key is missing (SUPABASE_JWT_PUBLIC_KEY)")
 	}
 
-	// Comprehensive CDN Field Validation
 	if cfg.CDN.Enabled {
 		if cfg.CDN.Stream == "" {
 			log.Fatal("Critical: CDN is enabled but Stream CDN URL is missing (RADIO_CDN_STREAM)")
@@ -279,5 +287,12 @@ func validateConfig(cfg *Config) {
 		if cfg.CDN.Assets == "" {
 			log.Fatal("Critical: CDN is enabled but Assets CDN URL is missing (RADIO_CDN_ASSETS)")
 		}
+	}
+
+	cfg.Meilisearch.Host = strings.TrimSpace(cfg.Meilisearch.Host)
+	cfg.Meilisearch.MasterKey = strings.TrimSpace(cfg.Meilisearch.MasterKey)
+
+	if cfg.Meilisearch.MasterKey == "" {
+		log.Fatal("Critical: Meilisearch Master Key is missing (RADIO_MEILISEARCH_MASTER_KEY)")
 	}
 }
