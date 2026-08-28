@@ -10,6 +10,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/redis/go-redis/v9"
 
 	"momo-radio/gui"
@@ -26,11 +27,18 @@ type Server struct {
 	db          *database.Client
 	storage     *storage.Client
 	redis       *redis.Client
+	meili       meilisearch.ServiceManager
 	asynqClient *asynq.Client
 	router      *gin.Engine
 }
 
-func New(cfg *config.Config, db *database.Client, storage *storage.Client, redisClient *redis.Client) *Server {
+func New(
+	cfg *config.Config,
+	db *database.Client,
+	storage *storage.Client,
+	redisClient *redis.Client,
+	meili meilisearch.ServiceManager,
+) *Server {
 	if cfg.Radio.LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -47,6 +55,7 @@ func New(cfg *config.Config, db *database.Client, storage *storage.Client, redis
 		db:          db,
 		storage:     storage,
 		redis:       redisClient,
+		meili:       meili,
 		asynqClient: asynqClient,
 		router:      gin.Default(),
 	}
@@ -88,8 +97,8 @@ func (s *Server) setupRoutes() {
 	settingsHandler := handlers.NewSettingsHandler(s.db.DB)
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
 	membersHandler := handlers.NewMembersHandler(s.db.DB)
-
 	billingHandler := handlers.NewBillingHandler(s.db.DB, s.cfg)
+	searchHandler := handlers.NewSearchHandler(s.meili)
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
@@ -130,8 +139,9 @@ func (s *Server) setupRoutes() {
 			protected.POST("/billing/checkout", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), billingHandler.CreateCheckout)
 			protected.POST("/billing/portal", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), billingHandler.CreatePortal)
 
-			// --- TRACKS ---
+			// --- TRACKS & SEARCH ---
 			protected.GET("/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTracks)
+			protected.GET("/tracks/search", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), searchHandler.SearchLibrary)
 			protected.GET("/tracks/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTrack)
 			protected.GET("/tracks/:id/stream", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.StreamTrack)
 			protected.GET("/tracks/:id/status-stream", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.TrackStatusStream)
@@ -177,7 +187,7 @@ func (s *Server) setupRoutes() {
 			protected.GET("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
 			protected.PUT("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.UpdateOrgSettings)
 
-			// TEAM MANAGEMENT
+			// --- TEAM MANAGEMENT ---
 			protected.GET("/settings/members", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), membersHandler.GetMembers)
 			protected.POST("/settings/members/invite", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), membersHandler.InviteMember)
 		}
@@ -191,7 +201,7 @@ func (s *Server) setupRoutes() {
 		js := fmt.Sprintf(`window.__RUNTIME_CONFIG__ = {
             SUPABASE_URL: "%s",
             SUPABASE_ANON_KEY: "%s",
-			API_URL: "%s"
+            API_URL: "%s"
         };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey, s.cfg.Server.PublicAPIURL)
 
 		c.String(http.StatusOK, js)

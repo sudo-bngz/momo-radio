@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Box, HStack, Text, Flex, Icon, Spinner, Input } from '@chakra-ui/react';
+import { Box, HStack, Text, Flex, Icon, Spinner } from '@chakra-ui/react';
 import { Avatar, Menu } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
-import { LogOut, Settings, BookOpen, Music, ChevronDown, Search } from 'lucide-react';
+import { LogOut, Settings, BookOpen, Music, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { useAuthStore } from '../store/useAuthStore';
 import { useDashboard } from '../features/dashboard/hook/useDashboard';
-import { useSearchStore } from '../store/useSearchStore';
-import { api } from '../services/api'; 
-
+import { api } from '../services/api';
+import { LibrarySearch } from './LibrairySearch'
 const scrollAnimation = keyframes`
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
@@ -17,7 +16,6 @@ const scrollAnimation = keyframes`
 
 export const TopNav: React.FC = () => {
   const user = useAuthStore((state) => state.user);
-  const { globalSearch, setGlobalSearch } = useSearchStore();
   const logout = useAuthStore((state) => state.logout);
   const { nowPlaying, isLoading } = useDashboard(); 
   
@@ -62,15 +60,16 @@ export const TopNav: React.FC = () => {
     <Box w="100%" px={8} py={4} zIndex={50} bg="white">
       <Flex justify="space-between" align="center" gap={4}>
         
-        {/* SEARCH BAR */}
-        <Box position="relative" w="100%" maxW="400px" ml={2}>
-          <Icon as={Search} position="absolute" left={4} top="50%" transform="translateY(-50%)" color="gray.400" boxSize={4} zIndex={2} />
-          <Input 
-            pl={10} h="42px" fontSize="sm" placeholder="Search songs, albums, artists..."
-            value={globalSearch} 
-            onChange={(e) => setGlobalSearch(e.target.value)}
-            borderRadius="full" bg="gray.50" border="1px solid" borderColor="transparent"
-            _focus={{ bg: "white", shadow: "sm", borderColor: "gray.200" }} 
+{/* ⚡️ UPDATE THIS IN TopNav.tsx */}
+        <Box w="100%" maxW="400px" ml={2}>
+          <LibrarySearch 
+            onSelectTrack={(track) => {
+              // 1. Remove the "track-" prefix
+              const trackId = track.id.replace('track-', '');
+              
+              // 2. Navigate to the track's page (adjust this route to match your app!)
+              navigate(`/tracks/${trackId}`); 
+            }} 
           />
         </Box>
 
@@ -120,13 +119,11 @@ export const TopNav: React.FC = () => {
             <Menu.Positioner zIndex={100}>
               <Menu.Content minW="180px" bg="white" borderRadius="xl" boxShadow="xl" p={2} border="1px solid" borderColor="gray.100">
                 
-                {/* ⚡️ ROUTER NAVIGATION ADDED HERE */}
                 <Menu.Item value="settings" onClick={() => navigate('/settings')} _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
                   <Icon as={Settings} boxSize={4} /> 
                   <Text>Settings</Text>
                 </Menu.Item>
                 
-                {/* ⚡️ EXTERNAL LINK FOR DOCS */}
                 <Menu.Item value="docs" onClick={() => window.open('https://docs.momo.radio', '_blank')} _hover={{ bg: "gray.50" }} cursor="pointer" display="flex" alignItems="center" gap={3}>
                   <Icon as={BookOpen} boxSize={4} /> 
                   <Text>Docs</Text>

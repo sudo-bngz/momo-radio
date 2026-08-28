@@ -55,6 +55,29 @@ export interface UserProfile {
   updated_at: string;
 }
 
+export interface SearchHit {
+  id: string;
+  organization_id: string;
+  title: string;
+  artists_names: string[];
+  album_title?: string;
+  genre?: string;
+  style?: string;
+  mood?: string;
+  scale?: string;
+  musical_key?: string;
+  bpm?: number;
+  ml_characteristics?: string[];
+  duration?: number;
+  cover_url?: string;
+}
+
+export interface SearchResponse {
+  hits: SearchHit[];
+  estimated_total_hits: number;
+  query: string;
+}
+
 const runtimeApiUrl = (window as any).__RUNTIME_CONFIG__?.API_URL || "";
 const API_BASE_URL = runtimeApiUrl ? `${runtimeApiUrl}/api/v1` : "/api/v1";
 
@@ -177,7 +200,18 @@ export const api = {
     return response.data;
   },
 
-  // 2. LIBRARY MANAGEMENT
+  searchLibrary: async (query: string, params?: { scale?: string; genre?: string; limit?: number }): Promise<SearchHit[]> => {
+    if (!query.trim()) return [];
+    
+    const searchParams = new URLSearchParams({ q: query });
+    if (params?.scale) searchParams.set('scale', params.scale);
+    if (params?.genre) searchParams.set('genre', params.genre);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+
+    const { data } = await apiClient.get<SearchResponse>(`/tracks/search?${searchParams.toString()}`);
+    return data.hits || [];
+  },
+
   getTracks: async (params?: { 
     limit?: number; 
     offset?: number; 
@@ -311,7 +345,7 @@ export const api = {
     await apiClient.post('/organizations/invites', data);
   },
 
-  // ⚡️ 6. BROADCAST & MOUNTS
+  // 6. BROADCAST & MOUNTS
   getMountPoints: async (): Promise<MountPoint[]> => {
     const response = await apiClient.get('/mounts');
     return response.data.mount_points;
@@ -322,7 +356,6 @@ export const api = {
     return response.data;
   },
 
-  // ⚡️ NEW: Control the Radio Daemon Stream State
   toggleBroadcast: async (action: 'start' | 'stop'): Promise<{ status: string; state: string }> => {
     const response = await apiClient.post('/broadcast/toggle', { action });
     return response.data;
@@ -387,4 +420,5 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
     const response = await apiClient.post<{ url: string }>('/billing/portal');
     return response.data;
   },
+
 };

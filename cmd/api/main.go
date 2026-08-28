@@ -8,11 +8,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
+	apiserver "momo-radio/internal/api/server"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/search"
 	"momo-radio/internal/storage"
-
-	apiserver "momo-radio/internal/api/server"
 )
 
 func main() {
@@ -33,16 +33,19 @@ func main() {
 		DB:       cfg.Redis.DB,
 	})
 
-	// 4. Run Database Migrations
+	// 4. Initialize Search Engine
+	meili := search.InitMeilisearch(cfg)
+
+	// 5. Run Database Migrations
 	db.AutoMigrate()
 
-	// 5. Seeding users
+	// 6. Seeding users
 	database.SeedDatabase(db.DB)
 
-	// 6. Storage
+	// 7. Storage
 	store := storage.New(cfg)
 
-	// 7. Setup Metrics
+	// 8. Setup Metrics
 	go func() {
 		http.Handle("/_metrics", promhttp.Handler())
 		log.Printf("Metrics exposed at http://localhost%s/_metrics", cfg.Server.MetricsPort)
@@ -51,8 +54,8 @@ func main() {
 		}
 	}()
 
-	// 8. Start Server
-	srv := apiserver.New(cfg, db, store, redisClient)
+	// 9. Start Server
+	srv := apiserver.New(cfg, db, store, redisClient, meili)
 
 	port := ":8081"
 	log.Printf("API Server starting on %s", port)
