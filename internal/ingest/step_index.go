@@ -15,7 +15,7 @@ func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 		return fmt.Errorf("track context missing before indexing")
 	}
 
-	// 1. Extract pure artist name strings from the Artists relationship
+	// 1. Extract pure artist name strings
 	var artistNames []string
 	for _, a := range ctx.Track.Artists {
 		if a.Name != "" {
@@ -23,17 +23,17 @@ func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 		}
 	}
 
-	// 2. Extract album title and cover safely from the Album relationship
+	// 2. Extract album title and cover safely
 	albumTitle := ""
-	coverURL := ""
+	coverStr := ""
 	if ctx.Track.Album.Title != "" {
 		albumTitle = ctx.Track.Album.Title
-		coverURL = ctx.Track.Album.CoverURL
+		coverStr = ctx.Track.Album.CoverKey
 	}
 
 	// 3. Fallback to primary artist avatar if the album has no cover
-	if coverURL == "" && len(ctx.Track.Artists) > 0 {
-		coverURL = ctx.Track.Artists[0].AvatarURL
+	if coverStr == "" && len(ctx.Track.Artists) > 0 {
+		coverStr = ctx.Track.Artists[0].AvatarURL
 	}
 
 	// 4. Build the flat document
@@ -49,9 +49,9 @@ func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 		"scale":              ctx.Track.Scale,
 		"musical_key":        ctx.Track.MusicalKey,
 		"bpm":                ctx.Track.BPM,
-		"ml_characteristics": []string(ctx.Track.MLCharacteristics), // Cast pq.StringArray to native slice
+		"ml_characteristics": []string(ctx.Track.MLCharacteristics),
 		"duration":           ctx.Track.Duration,
-		"cover_url":          coverURL,
+		"cover_url":          coverStr,
 	}
 
 	pk := "id"
