@@ -148,5 +148,15 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	})
 
 	// Save the Many-to-Many associations explicitly
-	return db.Save(track).Error
+	if err := db.Save(track).Error; err != nil {
+		return err
+	}
+
+	// ⚡️ HYDRATE THE TRACK FOR THE INDEXER
+	// Force GORM to fetch the related Album and Artists from the DB into memory
+	if err := db.Preload("Album").Preload("Artists").First(ctx.Track, ctx.Track.ID).Error; err != nil {
+		return fmt.Errorf("failed to reload track associations: %w", err)
+	}
+
+	return nil
 }

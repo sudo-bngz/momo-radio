@@ -15,34 +15,36 @@ func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 		return fmt.Errorf("track context missing before indexing")
 	}
 
-	// 1. Extract pure artist name strings
 	var artistNames []string
-	for _, a := range ctx.Track.Artists {
-		if a.Name != "" {
-			artistNames = append(artistNames, a.Name)
+	for _, artist := range ctx.Track.Artists {
+		if artist.Name != "" {
+			artistNames = append(artistNames, artist.Name)
 		}
 	}
 
-	// 2. Extract album title and cover safely
 	albumTitle := ""
-	coverStr := ""
+	coverKey := ""
+
+	// Safely check if the Album struct actually has data
 	if ctx.Track.Album.Title != "" {
 		albumTitle = ctx.Track.Album.Title
-		coverStr = ctx.Track.Album.CoverKey
+		coverKey = ctx.Track.Album.CoverKey
 	}
 
-	// 3. Fallback to primary artist avatar if the album has no cover
-	if coverStr == "" && len(ctx.Track.Artists) > 0 {
-		coverStr = ctx.Track.Artists[0].AvatarURL
+	// Fallback to primary artist avatar if the album has no cover
+	if coverKey == "" && len(ctx.Track.Artists) > 0 {
+		coverKey = ctx.Track.Artists[0].AvatarURL
 	}
 
-	// 4. Build the flat document
 	doc := map[string]any{
-		"id":                 fmt.Sprintf("track-%d", ctx.Track.ID),
-		"organization_id":    ctx.Track.OrganizationID.String(),
-		"title":              ctx.Track.Title,
-		"artists_names":      artistNames,
-		"album_title":        albumTitle,
+		"id":              fmt.Sprintf("track-%d", ctx.Track.ID),
+		"organization_id": ctx.Track.OrganizationID.String(),
+		"title":           ctx.Track.Title,
+
+		"artists_names": artistNames,
+		"album_title":   albumTitle,
+		"cover_url":     coverKey,
+
 		"genre":              ctx.Track.Genre,
 		"style":              ctx.Track.Style,
 		"mood":               ctx.Track.Mood,
@@ -51,13 +53,13 @@ func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 		"bpm":                ctx.Track.BPM,
 		"ml_characteristics": []string(ctx.Track.MLCharacteristics),
 		"duration":           ctx.Track.Duration,
-		"cover_url":          coverStr,
 	}
 
 	pk := "id"
 	_, err := ctx.Worker.meili.Index("tracks").AddDocuments([]map[string]any{doc}, &meilisearch.DocumentOptions{
 		PrimaryKey: &pk,
 	})
+
 	if err != nil {
 		return fmt.Errorf("failed to push track to meilisearch: %w", err)
 	}
