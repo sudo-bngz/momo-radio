@@ -35,8 +35,6 @@ export const LibraryView: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation(); 
   
-  // ⚡️ Matcher to detect if we are viewing a specific Album
-  // (Artist matching is removed since it has its own dedicated page now)
   const albumDetailMatch = useMatch('/library/albums/:id');
   
   const [activeTab, setActiveTab] = useState<LibraryTab>(
@@ -64,7 +62,6 @@ export const LibraryView: React.FC = () => {
     }
   };
 
-  // ⚡️ Only checking for Album details now
   const isDetailViewActive = !!albumDetailMatch;
 
   return (
