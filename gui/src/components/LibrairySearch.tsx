@@ -12,6 +12,7 @@ const parseString = (val: any, fallback = ''): string => {
   return String(val);
 };
 
+// Safely constructs the full image URL using the CDN if available
 const getCoverUrl = (urlObj: any): string | null => {
   const url = parseString(urlObj);
   if (!url) return null;
@@ -25,13 +26,22 @@ const getCoverUrl = (urlObj: any): string | null => {
 
   // 1. Prefer CDN_URL if it is configured
   if (config.CDN_URL) {
-    const cdnBase = config.CDN_URL.replace(/\/$/, '');
+    let cdnBase = config.CDN_URL.replace(/\/$/, '');
+
+    if (!cdnBase.startsWith('http')) {
+      cdnBase = `https://${cdnBase}`;
+    }
+    
     return `${cdnBase}${url.startsWith('/') ? '' : '/'}${url}`;
   }
   
   // 2. Fallback to API_URL (for local development without a CDN)
   const runtimeApiUrl = config.API_URL || "";
-  const baseUrl = runtimeApiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+  let baseUrl = runtimeApiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+  
+  if (baseUrl && !baseUrl.startsWith('http')) {
+    baseUrl = `https://${baseUrl}`;
+  }
   
   return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
 };
