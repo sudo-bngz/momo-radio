@@ -126,7 +126,7 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	}
 
 	// 5. Finalize Track Updates
-	db.Model(track).Updates(map[string]interface{}{
+	db.Model(track).Updates(map[string]any{
 		"key":                 ctx.DestKey,
 		"title":               meta.Title,
 		"album_id":            albumID,
@@ -151,8 +151,6 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	if err := db.Save(track).Error; err != nil {
 		return err
 	}
-
-	// ⚡️ HYDRATE THE TRACK FOR THE INDEXER
 	// Force GORM to fetch the related Album and Artists from the DB into memory
 	if err := db.Preload("Album").Preload("Artists").First(ctx.Track, ctx.Track.ID).Error; err != nil {
 		return fmt.Errorf("failed to reload track associations: %w", err)

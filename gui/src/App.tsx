@@ -26,6 +26,7 @@ import { ScheduleFeature } from './features/schedule';
 import { SettingsFeature } from './features/settings';
 import { ArtistView } from './features/library/components/ArtistView';
 import { LibraryView } from './features/library/components/LibraryView';
+import { TrackDetailView } from './features/library/components/TrackDetailView';
 import { ApiDownScreen } from './layouts/ApiDownScreen';
 import { BroadcastView } from './features/broadcast/components/BroadcastView';
 
@@ -72,11 +73,13 @@ export const App = () => {
                 
                 <Route path="/library" element={<LibraryFeature />} />
                 <Route path="/library/*" element={<LibraryView />} />
+                
                 <Route path="/artists/:artistName" element={<ArtistView />} />
+                <Route path="/tracks/:id" element={<TrackDetailView />} />
+                
                 <Route path="/ingest" element={<IngestFeature />} />
                 <Route path="/schedule" element={<ScheduleFeature />} />
                 
-                {/* ⚡️ THE NEW BROADCAST ROUTE */}
                 <Route path="/broadcast" element={<BroadcastView />} />
               </Route>
               
