@@ -12,6 +12,30 @@ const parseString = (val: any, fallback = ''): string => {
   return String(val);
 };
 
+const getCoverUrl = (urlObj: any): string | null => {
+  const url = parseString(urlObj);
+  if (!url) return null;
+  
+  // If it's already a full HTTP URL or base64 data, return it directly
+  if (url.startsWith('http') || url.startsWith('data:')) {
+    return url;
+  }
+  
+  const config = (window as any).__RUNTIME_CONFIG__ || {};
+
+  // 1. Prefer CDN_URL if it is configured
+  if (config.CDN_URL) {
+    const cdnBase = config.CDN_URL.replace(/\/$/, '');
+    return `${cdnBase}${url.startsWith('/') ? '' : '/'}${url}`;
+  }
+  
+  // 2. Fallback to API_URL (for local development without a CDN)
+  const runtimeApiUrl = config.API_URL || "";
+  const baseUrl = runtimeApiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+  
+  return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 interface LibrarySearchProps {
   onSelectTrack?: (track: SearchHit) => void;
 }
@@ -122,68 +146,73 @@ export const LibrarySearch: React.FC<LibrarySearchProps> = ({ onSelectTrack }) =
               No matching tracks found for "{query}"
             </Text>
           ) : (
-            results.map((track) => (
-              <Flex
-                key={track.id}
-                p={3}
-                gap={4}
-                align="center"
-                cursor="pointer"
-                _hover={{ bg: "gray.50" }}
-                transition="background 0.2s"
-                onClick={() => {
-                  onSelectTrack?.(track);
-                  setIsOpen(false);
-                }}
-              >
-                {/* Artwork */}
-                {track.cover_url ? (
-                  <Image
-                    src={track.cover_url}
-                    alt={track.title}
-                    boxSize="40px"
-                    borderRadius="md"
-                    objectFit="cover"
-                    bg="gray.100"
-                    flexShrink={0}
-                  />
-                ) : (
-                  <Flex boxSize="40px" borderRadius="md" bg="gray.100" align="center" justify="center" flexShrink={0}>
-                    <Icon as={Music} color="gray.400" boxSize={5} />
+            results.map((track) => {
+              // ⚡️ Safely resolve the CDN cover URL for this track
+              const coverSrc = getCoverUrl(track.cover_url);
+
+              return (
+                <Flex
+                  key={track.id}
+                  p={3}
+                  gap={4}
+                  align="center"
+                  cursor="pointer"
+                  _hover={{ bg: "gray.50" }}
+                  transition="background 0.2s"
+                  onClick={() => {
+                    onSelectTrack?.(track);
+                    setIsOpen(false);
+                  }}
+                >
+                  {/* Artwork */}
+                  {coverSrc ? (
+                    <Image
+                      src={coverSrc}
+                      alt={track.title}
+                      boxSize="40px"
+                      borderRadius="md"
+                      objectFit="cover"
+                      bg="gray.100"
+                      flexShrink={0}
+                    />
+                  ) : (
+                    <Flex boxSize="40px" borderRadius="md" bg="gray.100" align="center" justify="center" flexShrink={0}>
+                      <Icon as={Music} color="gray.400" boxSize={5} />
+                    </Flex>
+                  )}
+
+                  {/* Track Details */}
+                  <Box flex="1" minW={0}>
+                    <Text fontSize="sm" fontWeight="600" color="gray.800" truncate>
+                      {track.title}
+                    </Text>
+                    <Text fontSize="xs" color="gray.500" truncate mt={0.5}>
+                      {parseString(track.artists_names, 'Unknown Artist')}
+                      {track.album_title && typeof track.album_title !== 'undefined' && parseString(track.album_title) !== ''
+                        ? ` • ${parseString(track.album_title)}` 
+                        : ''}
+                    </Text>
+                  </Box>
+
+                  {/* Acoustic Metadata */}
+                  <Flex align="center" gap={2} flexShrink={0}>
+                    {track.scale && (
+                      <Box px={2} py={0.5} bg="indigo.50" color="indigo.600" border="1px solid" borderColor="indigo.100" borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono">
+                        {track.scale}
+                      </Box>
+                    )}
+                    {track.bpm && (
+                      <Box px={2} py={0.5} bg="gray.100" color="gray.700" borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono">
+                        {Math.round(track.bpm)}
+                      </Box>
+                    )}
+                    <Text fontSize="xs" color="gray.400" w="40px" textAlign="right" display={{ base: "none", sm: "block" }}>
+                      {formatDuration(track.duration)}
+                    </Text>
                   </Flex>
-                )}
-
-                {/* Track Details */}
-                <Box flex="1" minW={0}>
-                  <Text fontSize="sm" fontWeight="600" color="gray.800" truncate>
-                    {track.title}
-                  </Text>
-                  <Text fontSize="xs" color="gray.500" truncate mt={0.5}>
-                    {parseString(track.artists_names, 'Unknown Artist')}
-                    {track.album_title && typeof track.album_title !== 'undefined' 
-                      ? ` • ${parseString(track.album_title)}` 
-                      : ''}
-                  </Text>
-                </Box>
-
-                {/* Acoustic Metadata */}
-                <Flex align="center" gap={2} flexShrink={0}>
-                  {track.scale && (
-                    <Box px={2} py={0.5} bg="indigo.50" color="indigo.600" border="1px solid" borderColor="indigo.100" borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono">
-                      {track.scale}
-                    </Box>
-                  )}
-                  {track.bpm && (
-                    <Box px={2} py={0.5} bg="gray.100" color="gray.700" borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono">
-                      {Math.round(track.bpm)}
-                    </Box>
-                  )}
-                  <Text fontSize="xs" color="gray.400" w="40px" textAlign="right" display={{ base: "none", sm: "block" }}>
-                    {formatDuration(track.duration)}
-                  </Text>
                 </Flex>
-              </Flex>
-            ))
+              );
+            })
           )}
         </Box>
       )}

@@ -78,8 +78,13 @@ export interface SearchResponse {
   query: string;
 }
 
-const runtimeApiUrl = (window as any).__RUNTIME_CONFIG__?.API_URL || "";
-const API_BASE_URL = runtimeApiUrl ? `${runtimeApiUrl}/api/v1` : "/api/v1";
+const runtimeConfig = (window as any).__RUNTIME_CONFIG__ || {};
+const runtimeApiUrl = runtimeConfig.API_URL || "";
+
+export const API_BASE_URL = runtimeApiUrl ? `${runtimeApiUrl}/api/v1` : "/api/v1";
+export const CDN_BASE_URL = runtimeConfig.CDN_URL 
+  ? runtimeConfig.CDN_URL.replace(/\/$/, '') 
+  : runtimeApiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
