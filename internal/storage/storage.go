@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -105,10 +107,16 @@ func (c *Client) UploadAssetFile(key string, body io.ReadSeeker, contentType, ca
 	return c.backend.Put(c.bucketAssets, key, body, contentType, cacheControl)
 }
 
+func (c *Client) GeneratePresignedUrl(ctx context.Context, key, contentType string, expiry time.Duration) (string, error) {
+	if presigner, ok := c.backend.(PresignableProvider); ok {
+		return presigner.GeneratePresignedPutURL(ctx, c.bucketIngest, key, contentType, expiry)
+	}
+	return "", fmt.Errorf("current storage provider does not support presigned URLs")
+}
+
 // --- Master Vault Methods ---
 
 func (c *Client) UploadMasterFile(key string, body io.ReadSeeker, contentType string) error {
-	// No cache control needed for private files
 	return c.backend.Put(c.bucketMaster, key, body, contentType, "")
 }
 

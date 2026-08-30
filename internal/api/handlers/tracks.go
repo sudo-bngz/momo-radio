@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -10,14 +9,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"momo-radio/internal/config"
-	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
 	"momo-radio/internal/utils"
@@ -30,7 +27,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TrackHandler handles track-related requests and file uploads
 type TrackHandler struct {
 	db      *gorm.DB
 	storage *storage.Client
@@ -39,7 +35,6 @@ type TrackHandler struct {
 	cdn     *utils.CDNBuilder
 }
 
-// NewTrackHandler creates a new TrackHandler instance
 func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisClient *redis.Client, cdn *utils.CDNBuilder) *TrackHandler {
 	return &TrackHandler{
 		db:      db,
@@ -50,7 +45,6 @@ func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisCli
 	}
 }
 
-// LibraryTrack prevents sending massive payloads
 type LibraryTrack struct {
 	ID                uint           `json:"id"`
 	Title             string         `json:"title"`
@@ -70,7 +64,113 @@ type LibraryTrack struct {
 	MLCharacteristics pq.StringArray `json:"ml_characteristics"`
 }
 
-// GetTracks returns a paginated, lightweight list of tracks scoped by Tenant
+type PresignRequest struct {
+	Filename    string `json:"filename" binding:"required"`
+	ContentType string `json:"content_type" binding:"required"`
+}
+
+func (h *TrackHandler) HandlePresign(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
+	var req PresignRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	// Generate a unique, collision-proof storage key
+	safeFilename := strings.ReplaceAll(filepath.Base(req.Filename), " ", "_")
+	fileKey := fmt.Sprintf("incoming/%s/%d_%s", orgID.String(), time.Now().Unix(), safeFilename)
+
+	// Generate the URL directly to Backblaze (Valid for 15 minutes)
+	url, err := h.storage.GeneratePresignedUrl(c.Request.Context(), fileKey, req.ContentType, 15*time.Minute)
+	if err != nil {
+		slog.Error("Failed to generate presigned URL", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate upload URL"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"url": url,
+		"key": fileKey,
+	})
+}
+
+type UploadConfirmPayload struct {
+	FileKey string `json:"file_key" binding:"required"`
+}
+
+func (h *TrackHandler) UploadTrack(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
+		return
+	}
+
+	var req UploadConfirmPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload"})
+		return
+	}
+
+	// 1. Create a "Skeleton" Track in the database
+	newTrack := models.Track{
+		OrganizationID:     orgID,
+		Title:              "Processing Upload...",
+		Key:                req.FileKey,
+		MasterKey:          req.FileKey,
+		ProcessingStatus:   "pending",
+		ProcessingProgress: 0,
+	}
+
+	if err := h.db.Create(&newTrack).Error; err != nil {
+		slog.Error("Failed to create track DB record", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database insert failed"})
+		return
+	}
+
+	// 2. Enqueue Asynq Task for the background worker
+	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
+	var tlsConf *tls.Config
+	if h.config.Redis.TLS {
+		tlsConf = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
+		Addr:      redisAddr,
+		Password:  h.config.Redis.Password,
+		DB:        h.config.Redis.DB,
+		TLSConfig: tlsConf,
+	})
+	defer asynqClient.Close()
+
+	payloadData := map[string]any{
+		"track_id": newTrack.ID,
+		"file_key": req.FileKey,
+	}
+	payloadBytes, _ := json.Marshal(payloadData)
+	task := asynq.NewTask("track:process", payloadBytes)
+
+	_, err := asynqClient.Enqueue(task)
+	if err != nil {
+		slog.Error("Failed to queue processing job", "error", err)
+		h.db.Model(&newTrack).Update("processing_status", "failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue processing job"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"status":   "queued",
+		"message":  "File safely in storage, processing started.",
+		"track_id": newTrack.ID,
+		"key":      req.FileKey,
+	})
+}
+
 func (h *TrackHandler) GetTracks(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -82,26 +182,21 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	search := c.Query("search")
 	sortBy := c.DefaultQuery("sort", "newest")
-
-	// 1. Extract album_id from the query parameters
 	albumID := c.Query("album_id")
 
 	if limit > 200 {
 		limit = 200
 	}
 
-	// 2. Build the base query, PRELOAD, and SCOPE TO TENANT
 	query := h.db.Model(&models.Track{}).
 		Preload("Artists").
 		Preload("Album").
 		Where("tracks.organization_id = ?", orgID)
 
-	// 3. Apply the Album Filter (Must be done BEFORE counting)
 	if albumID != "" {
 		query = query.Where("tracks.album_id = ?", albumID)
 	}
 
-	// 4. Apply Search
 	if search != "" {
 		searchTerm := "%" + search + "%"
 		query = query.Where(
@@ -110,11 +205,9 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		)
 	}
 
-	// 5. Get Total Count (Now accurately reflects the album filter)
 	var total int64
 	query.Count(&total)
 
-	// 6. Apply Sorting
 	switch sortBy {
 	case "alphabetical":
 		query = query.Order("tracks.title ASC")
@@ -124,7 +217,6 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 		query = query.Order("tracks.id DESC")
 	}
 
-	// 7. Fetch Models
 	var tracks []models.Track
 	result := query.Limit(limit).Offset(offset).Find(&tracks)
 
@@ -184,7 +276,6 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 	})
 }
 
-// GetTrack returns the FULL metadata for a single track
 func (h *TrackHandler) GetTrack(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -207,7 +298,6 @@ func (h *TrackHandler) GetTrack(c *gin.Context) {
 	c.JSON(http.StatusOK, track)
 }
 
-// UpdateTrack scopes the update query to the specific organization
 func (h *TrackHandler) UpdateTrack(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -242,7 +332,8 @@ func (h *TrackHandler) UpdateTrack(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Track updated successfully"})
 }
 
-// PreAnalyzeFile extracts local ID3 tags and splits the artist string
+// NOTE: If you are using this from the frontend, it still sends the file to the server!
+// Consider using a JS library like 'music-metadata-browser' to extract tags locally.
 func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -289,212 +380,6 @@ func (h *TrackHandler) PreAnalyzeFile(c *gin.Context) {
 	})
 }
 
-// UploadTrack creates Artists, Albums, and Tracks strictly attached to the Tenant
-func (h *TrackHandler) UploadTrack(c *gin.Context) {
-	orgID, ok := getOrgID(c)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing"})
-		return
-	}
-
-	fileHeader, err := c.FormFile("file")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
-		return
-	}
-
-	meta := map[string]string{
-		"TITLE":  c.PostForm("title"),
-		"ARTIST": c.PostForm("artist"),
-		"ALBUM":  c.PostForm("album"),
-		"GENRE":  c.PostForm("genre"),
-		"DATE":   c.PostForm("year"),
-		"BPM":    c.PostForm("bpm"),
-		"KEY":    c.PostForm("key"),
-	}
-
-	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-	tempFile, err := os.CreateTemp("", "momo-upload-*"+ext)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Server storage error"})
-		return
-	}
-	defer os.Remove(tempFile.Name())
-
-	uploadedFile, err := fileHeader.Open()
-	if err != nil {
-		tempFile.Close()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "File open error"})
-		return
-	}
-	io.Copy(tempFile, uploadedFile)
-	uploadedFile.Close()
-	tempFile.Close()
-
-	switch ext {
-	case ".mp3":
-		if err := metadata.StampMP3(tempFile.Name(), meta); err != nil {
-			slog.Error("failed to tag mp3", "error", err)
-		}
-	case ".flac":
-		if err := metadata.StampFLAC(tempFile.Name(), meta); err != nil {
-			slog.Error("failed to tag flac", "error", err)
-		}
-	}
-
-	finalFile, err := os.Open(tempFile.Name())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read processed file"})
-		return
-	}
-	defer finalFile.Close()
-
-	safeFilename := strings.ReplaceAll(filepath.Base(fileHeader.Filename), " ", "_")
-	b2Key := fmt.Sprintf("incoming/%s/%d_%s", orgID.String(), time.Now().Unix(), safeFilename)
-	contentType := fileHeader.Header.Get("Content-Type")
-
-	err = h.storage.UploadIngestFile(b2Key, finalFile, contentType)
-	if err != nil {
-		slog.Error("UploadIngestFile failed", "key", b2Key, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": fmt.Sprintf("Storage upload failed: %v", err),
-		})
-		return
-	}
-	rawArtistStr := strings.TrimSpace(c.PostForm("artist"))
-	if rawArtistStr == "" {
-		rawArtistStr = "Unknown Artist"
-	}
-
-	var trackArtists []models.Artist
-	artistNames := strings.SplitSeq(rawArtistStr, ",")
-
-	for name := range artistNames {
-		cleanName := strings.TrimSpace(name)
-		if cleanName == "" {
-			continue
-		}
-		var artist models.Artist
-		h.db.Where("name = ? AND organization_id = ?", cleanName, orgID).
-			FirstOrCreate(&artist, models.Artist{Name: cleanName, OrganizationID: orgID})
-
-		trackArtists = append(trackArtists, artist)
-	}
-
-	if len(trackArtists) == 0 {
-		var defaultArtist models.Artist
-		h.db.Where("name = ? AND organization_id = ?", "Unknown Artist", orgID).
-			FirstOrCreate(&defaultArtist, models.Artist{Name: "Unknown Artist", OrganizationID: orgID})
-		trackArtists = append(trackArtists, defaultArtist)
-	}
-
-	albumTitle := strings.TrimSpace(c.PostForm("album"))
-	var album models.Album
-	var albumIDPtr *uint
-
-	if albumTitle != "" {
-		h.db.Where("title = ? AND organization_id = ?", albumTitle, orgID).
-			FirstOrCreate(&album, models.Album{Title: albumTitle, OrganizationID: orgID})
-
-		h.db.Model(&album).Association("Artists").Append(trackArtists)
-
-		albumUpdates := map[string]any{}
-		if label := strings.TrimSpace(c.PostForm("label")); label != "" {
-			albumUpdates["Publisher"] = label
-		}
-		if cat := strings.TrimSpace(c.PostForm("catalog_number")); cat != "" {
-			albumUpdates["CatalogNumber"] = cat
-		}
-		if country := strings.TrimSpace(c.PostForm("country")); country != "" {
-			albumUpdates["ReleaseCountry"] = country
-		}
-		if year := strings.TrimSpace(c.PostForm("year")); year != "" {
-			albumUpdates["Year"] = year
-		}
-
-		if album.CoverKey == "" {
-			f, _ := os.Open(tempFile.Name())
-			m, tagErr := tag.ReadFrom(f)
-			f.Close()
-
-			if tagErr == nil && m.Picture() != nil {
-				pic := m.Picture()
-				picExt := pic.Ext
-				if picExt == "" {
-					picExt = "jpg"
-				}
-
-				coverKey := fmt.Sprintf("covers/%s/album_%d.%s", orgID.String(), album.ID, picExt)
-				uploadErr := h.storage.UploadAssetFile(coverKey, bytes.NewReader(pic.Data), pic.MIMEType, "public, max-age=31536000")
-				if uploadErr == nil {
-					albumUpdates["CoverKey"] = coverKey
-				}
-			}
-		}
-
-		if len(albumUpdates) > 0 {
-			h.db.Model(&album).Updates(albumUpdates)
-		}
-		albumIDPtr = &album.ID
-	}
-
-	newTrack := models.Track{
-		OrganizationID:     orgID,
-		Title:              c.PostForm("title"),
-		Artists:            trackArtists,
-		AlbumID:            albumIDPtr,
-		Genre:              c.PostForm("genre"),
-		Key:                b2Key,
-		MasterKey:          b2Key,
-		ProcessingStatus:   "pending",
-		ProcessingProgress: 0,
-	}
-
-	if err := h.db.Create(&newTrack).Error; err != nil {
-		slog.Error("Failed to create track DB record", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database insert failed"})
-		return
-	}
-
-	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
-
-	var tlsConf *tls.Config
-	if h.config.Redis.TLS {
-		tlsConf = &tls.Config{MinVersion: tls.VersionTLS12}
-	}
-
-	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
-		Addr:      redisAddr,
-		Password:  h.config.Redis.Password,
-		DB:        h.config.Redis.DB,
-		TLSConfig: tlsConf,
-	})
-	defer asynqClient.Close()
-
-	payloadData := map[string]any{
-		"track_id": newTrack.ID,
-		"file_key": b2Key,
-	}
-	payloadBytes, _ := json.Marshal(payloadData)
-	task := asynq.NewTask("track:process", payloadBytes)
-
-	_, err = asynqClient.Enqueue(task)
-	if err != nil {
-		slog.Error("Failed to queue processing job", "error", err)
-		h.db.Model(&newTrack).Update("processing_status", "failed")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue processing job"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"status":   "queued",
-		"message":  "Upload successful, processing started.",
-		"track_id": newTrack.ID,
-		"key":      b2Key,
-	})
-}
-
-// StreamTrack ensures the user actually owns the file they are trying to stream
 func (h *TrackHandler) StreamTrack(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -537,7 +422,6 @@ func (h *TrackHandler) StreamTrack(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, obj.ContentLength, obj.ContentType, obj.Body, extraHeaders)
 }
 
-// TrackStatusStream validates ownership before subscribing to Redis
 func (h *TrackHandler) TrackStatusStream(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -579,7 +463,6 @@ func (h *TrackHandler) TrackStatusStream(c *gin.Context) {
 	}
 }
 
-// GetQueue fetches recent processing jobs scoped to the tenant
 func (h *TrackHandler) GetQueue(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -628,7 +511,6 @@ func (h *TrackHandler) GetQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, queue)
 }
 
-// Analysis safely restarts processing for a tenant-owned track
 func (h *TrackHandler) Analysis(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -660,7 +542,7 @@ func (h *TrackHandler) Analysis(c *gin.Context) {
 		Addr:      redisAddr,
 		Password:  h.config.Redis.Password,
 		DB:        h.config.Redis.DB,
-		TLSConfig: tlsConf, // ⚡️ Applied
+		TLSConfig: tlsConf,
 	})
 	defer asynqClient.Close()
 

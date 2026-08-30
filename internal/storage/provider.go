@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"io"
 	"time"
 )
@@ -16,6 +17,10 @@ type StorageProvider interface {
 
 type LinkableProvider interface {
 	GetPublicURL(bucket, region, key string) string
+}
+
+type PresignableProvider interface {
+	GeneratePresignedPutURL(ctx context.Context, bucket, key, contentType string, expiry time.Duration) (string, error)
 }
 
 // Object is the provider-agnostic representation of a file.

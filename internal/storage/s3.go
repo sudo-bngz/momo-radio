@@ -1,8 +1,10 @@
 package storage
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -91,4 +93,21 @@ func (s *S3Provider) GetPublicURL(bucket string, region string, key string) stri
 		region,
 		key,
 	)
+}
+
+func (s *S3Provider) GeneratePresignedPutURL(ctx context.Context, bucket, key, contentType string, expiry time.Duration) (string, error) {
+	// 1. Create the standard PutObject request
+	req, _ := s.api.PutObjectRequest(&s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String(contentType),
+	})
+
+	// 2. Presign the request with the specified expiration time
+	url, err := req.Presign(expiry)
+	if err != nil {
+		return "", err
+	}
+
+	return url, nil
 }

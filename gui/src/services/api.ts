@@ -4,7 +4,6 @@ import { useNetworkStore } from '../store/useNetworkStore';
 import { supabase } from './../services/client';
 import type { 
   AnalyzeResponse, 
-  TrackMetadata, 
   Track, 
   Playlist, 
   ScheduleSlot,
@@ -186,17 +185,36 @@ export const api = {
     return response.data;
   },
 
-  uploadTrack: async (file: File, metadata: TrackMetadata): Promise<any> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    (Object.keys(metadata) as Array<keyof TrackMetadata>).forEach((key) => {
-      formData.append(key, (metadata as any)[key]);
+  getPresignedUrl: async (filename: string, fileType: string): Promise<{ url: string, key: string }> => {
+    const response = await apiClient.post('/upload/presign', {
+      filename: filename,
+      content_type: fileType
+    });
+    return response.data;
+  },
+
+  uploadTrack: async (file: File, onProgress?: (percent: number) => void): Promise<any> => {
+    // A. Ask backend for permission and a direct link
+    const { url, key } = await api.getPresignedUrl(file.name, file.type);
+
+    // B. Upload DIRECTLY to Backblaze B2
+    await axios.put(url, file, {
+      headers: {
+        'Content-Type': file.type,
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percentCompleted);
+        }
+      },
     });
 
-    const response = await apiClient.post('/upload/confirm', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+    // C. Tell your backend the file is ready in B2
+    const response = await apiClient.post('/upload/confirm-direct', {
+      file_key: key, 
     });
+    
     return response.data;
   },
 

@@ -1,11 +1,14 @@
 package storage
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type LocalProvider struct {
@@ -115,4 +118,8 @@ func (l *LocalProvider) Exists(bucket, prefix string) (bool, error) {
 func (l *LocalProvider) GetPublicURL(bucket, region, key string) string {
 	// For local, bucket/region might be ignored
 	return fmt.Sprintf("%s/%s", l.RootPath, key)
+}
+
+func (p *LocalProvider) GeneratePresignedPutURL(ctx context.Context, bucket, key, contentType string, expiry time.Duration) (string, error) {
+	return "", errors.New("presigned URLs are not supported by the local storage provider")
 }

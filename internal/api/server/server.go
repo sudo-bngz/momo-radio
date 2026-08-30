@@ -149,9 +149,9 @@ func (s *Server) setupRoutes() {
 			protected.GET("/tracks/queue", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetQueue)
 			protected.POST("/tracks/:id/analysis", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.Analysis)
 
-			// --- UPLOAD / CURATION ---
-			protected.POST("/upload/analyze", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.PreAnalyzeFile)
-			protected.POST("/upload/confirm", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.UploadTrack)
+			// --- NEW UPLOAD / CURATION ---
+			protected.POST("/upload/presign", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.HandlePresign)
+			protected.POST("/upload/confirm-direct", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.UploadTrack)
 
 			// --- ARTISTS & ALBUMS ---
 			protected.GET("/artists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), artistHandler.GetArtists)

@@ -131,6 +131,7 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	steps := []Step{
 		&SetupStep{},
 		&DownloadStep{},
+		&MetadataStep{},
 		&VaultStep{},
 		&AnalysisStep{},
 		&WaveformStep{},

@@ -21,7 +21,6 @@ import { PlaylistsFeature } from "./features/playlists";
 import { PlaylistList } from "./features/playlists/components/PlaylistList";
 import { PlaylistBuilder } from "./features/playlists/components/PlaylistBuilder";
 import { LibraryFeature } from "./features/library";
-import { IngestFeature } from './features/ingest';
 import { ScheduleFeature } from './features/schedule';
 import { SettingsFeature } from './features/settings';
 import { ArtistView } from './features/library/components/ArtistView';
@@ -77,7 +76,6 @@ export const App = () => {
                 <Route path="/artists/:artistName" element={<ArtistView />} />
                 <Route path="/tracks/:id" element={<TrackDetailView />} />
                 
-                <Route path="/ingest" element={<IngestFeature />} />
                 <Route path="/schedule" element={<ScheduleFeature />} />
                 
                 <Route path="/broadcast" element={<BroadcastView />} />
