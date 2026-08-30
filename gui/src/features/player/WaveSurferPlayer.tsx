@@ -14,7 +14,7 @@ interface WaveSurferPlayerProps {
 export const WaveSurferPlayer = ({ 
   audioRef, 
   waveformUrl, 
-  waveformKey, // ⚡️ DESTRUCTURED
+  waveformKey,
   orgId 
 }: WaveSurferPlayerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);

@@ -8,6 +8,7 @@ import { Play, Pause, Music, Activity, Zap, Disc3, Clock, Hash } from 'lucide-re
 import { api, CDN_BASE_URL } from '../../../services/api';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { WaveSurferPlayer } from '../../../features/player/WaveSurferPlayer';
+import { usePlayer } from '../../../context/PlayerContext';
 
 const buildCdnUrl = (key?: string) => {
   if (!key) return undefined;
@@ -21,11 +22,13 @@ export const TrackDetailView: React.FC = () => {
   const navigate = useNavigate();
   const orgId = useAuthStore((state) => state.activeOrganizationId);
 
+  const { playTrack, togglePlayPause, currentTrack, isPlaying } = usePlayer();
+
   const [track, setTrack] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   
+  // Dummy audio ref for WaveSurfer visual generation only
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     const fetchTrack = async () => {
@@ -42,19 +45,6 @@ export const TrackDetailView: React.FC = () => {
     };
     fetchTrack();
   }, [id]);
-
-  const togglePlay = () => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
-    }
-  };
-
-  const handleAudioEnded = () => setIsPlaying(false);
 
   if (isLoading) {
     return (
@@ -79,31 +69,32 @@ export const TrackDetailView: React.FC = () => {
   const audioUrl = buildCdnUrl(track.master_key);
   const waveformUrl = buildCdnUrl(track.waveform_key);
 
-  // ⚡️ Exactly matches the LibraryView outer container structure
+  const isThisTrackPlaying = currentTrack?.id === track.id;
+  const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
+
+  const handlePlayClick = () => {
+    if (isThisTrackPlaying) {
+      togglePlayPause();
+    } else {
+      // Send track to the global auto-DJ / bottom player
+      playTrack(track, [track]); 
+    }
+  };
+
   return (
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
       
-      {/* =========================================
-          1. HEADER & BREADCRUMB (Matched to LibraryView)
-          ========================================= */}
+      {/* 1. HEADER & BREADCRUMB */}
       <VStack align="start" gap={1}>
         <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
           <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
             <Icon as={Music} boxSize={3} strokeWidth={3} />
           </Box>
-          <Text 
-            cursor="pointer" 
-            _hover={{ textDecoration: "underline", color: "gray.900" }} 
-            onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}
-          >
+          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "gray.900" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>
             Library
           </Text>
           <Text color="gray.300">/</Text>
-          <Text 
-            cursor="pointer" 
-            _hover={{ textDecoration: "underline", color: "gray.900" }} 
-            onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}
-          >
+          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "gray.900" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>
             Tracks
           </Text>
           <Text color="gray.300">/</Text>
@@ -113,9 +104,7 @@ export const TrackDetailView: React.FC = () => {
 
       <Box flex="1" overflowY="auto" pb={8} css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
         
-        {/* =========================================
-            2. TRACK INFO HEADER (Compact & Professional)
-            ========================================= */}
+        {/* 2. TRACK INFO HEADER */}
         <HStack align="end" gap={6} mb={8} flexWrap={{ base: 'wrap', md: 'nowrap' }}>
           
           <Box w="140px" h="140px" borderRadius="md" border="1px solid" borderColor="gray.200" overflow="hidden" bg="gray.50" flexShrink={0}>
@@ -152,30 +141,28 @@ export const TrackDetailView: React.FC = () => {
           </VStack>
         </HStack>
 
-        {/* =========================================
-            3. PLAYER BAR (Slim & Sleek)
-            ========================================= */}
+        {/* 3. PLAYER BAR */}
         <Box border="1px solid" borderColor="gray.200" borderRadius="md" p={3} mb={8} bg="gray.50">
           <HStack gap={4}>
             <Button 
-              size="sm"
-              w="40px" h="40px" 
+              size="sm" w="40px" h="40px" 
               colorPalette="blue" 
-              onClick={togglePlay}
+              onClick={handlePlayClick}
               flexShrink={0}
               disabled={!audioUrl}
             >
-              <Icon as={isPlaying ? Pause : Play} boxSize={4} ml={isPlaying ? 0 : 0.5} />
+              <Icon as={isThisTrackActiveAndPlaying ? Pause : Play} boxSize={4} ml={isThisTrackActiveAndPlaying ? 0 : 0.5} />
             </Button>
 
             <Box flex="1" h="40px" position="relative" bg="white" border="1px solid" borderColor="gray.200" borderRadius="sm" overflow="hidden">
-              <audio ref={audioRef} src={audioUrl} onEnded={handleAudioEnded} crossOrigin="anonymous" />
+              {/* Muted dummy audio ref to allow WaveSurferPlayer to render visually without duplicate playback */}
+              <audio ref={audioRef} src={audioUrl} preload="metadata" muted />
               
               {orgId && (
                 <WaveSurferPlayer 
                   trackId={track.id}
                   audioRef={audioRef}
-                  isPlaying={isPlaying}
+                  isPlaying={isThisTrackActiveAndPlaying}
                   waveformUrl={waveformUrl}
                   orgId={orgId}
                 />
@@ -184,9 +171,7 @@ export const TrackDetailView: React.FC = () => {
           </HStack>
         </Box>
 
-        {/* =========================================
-            4. ACOUSTIC PROFILE 
-            ========================================= */}
+        {/* 4. ACOUSTIC PROFILE */}
         <Box>
           <Text fontSize="10px" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="widest" mb={3}>
             Acoustic Profile
@@ -220,7 +205,6 @@ export const TrackDetailView: React.FC = () => {
   );
 };
 
-// Sleek, compact stats box
 const StatBox = ({ icon, label, value }: { icon: any, label: string, value: string }) => (
   <Box p={3} border="1px solid" borderColor="gray.200" borderRadius="md" bg="white">
     <HStack color="gray.400" mb={1.5}>

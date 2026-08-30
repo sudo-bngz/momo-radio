@@ -198,12 +198,18 @@ func (s *Server) setupRoutes() {
 	// ==========================================
 	s.router.GET("/env.js", func(c *gin.Context) {
 		c.Header("Content-Type", "application/javascript")
+
+		cdnUrl := ""
+		if s.cfg.CDN.Enabled {
+			cdnUrl = s.cfg.CDN.Assets
+		}
+
 		js := fmt.Sprintf(`window.__RUNTIME_CONFIG__ = {
             SUPABASE_URL: "%s",
             SUPABASE_ANON_KEY: "%s",
             API_URL: "%s",
-			CDN_URL: "%s"
-        };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey, s.cfg.Server.PublicAPIURL, s.cfg.CDN.Assets)
+            CDN_URL: "%s"
+        };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey, s.cfg.Server.PublicAPIURL, cdnUrl)
 
 		c.String(http.StatusOK, js)
 	})
