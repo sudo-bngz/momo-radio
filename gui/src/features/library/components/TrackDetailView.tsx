@@ -4,7 +4,7 @@ import {
   Box, VStack, HStack, Text, Heading, Spinner, 
   Button, Icon, SimpleGrid, Badge, Flex, Image
 } from '@chakra-ui/react';
-import { Play, Pause, Music, Activity, Zap, Disc3, Clock, Hash } from 'lucide-react';
+import { Play, Pause, Music, Activity, Zap, Disc3, Clock, Hash, Tag } from 'lucide-react';
 import { api, CDN_BASE_URL } from '../../../services/api';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { WaveSurferPlayer } from '../../../features/player/WaveSurferPlayer';
@@ -21,13 +21,11 @@ export const TrackDetailView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const orgId = useAuthStore((state) => state.activeOrganizationId);
-
   const { playTrack, togglePlayPause, currentTrack, isPlaying } = usePlayer();
 
   const [track, setTrack] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Dummy audio ref for WaveSurfer visual generation only
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -45,6 +43,31 @@ export const TrackDetailView: React.FC = () => {
     };
     fetchTrack();
   }, [id]);
+
+  const isThisTrackPlaying = currentTrack?.id === track?.id;
+  const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    if (isThisTrackActiveAndPlaying) {
+      audioRef.current.play().catch(() => {});
+    } else {
+      audioRef.current.pause();
+    }
+  }, [isThisTrackActiveAndPlaying]);
+
+  const handlePlayClick = () => {
+    if (isThisTrackPlaying) {
+      togglePlayPause();
+    } else {
+      const trackForPlayer = {
+        ...track,
+        cover_url: buildCdnUrl(track.album?.cover_key),
+        waveform_key: track.waveform_key
+      };
+      playTrack(trackForPlayer, [trackForPlayer]);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -69,22 +92,12 @@ export const TrackDetailView: React.FC = () => {
   const audioUrl = buildCdnUrl(track.master_key);
   const waveformUrl = buildCdnUrl(track.waveform_key);
 
-  const isThisTrackPlaying = currentTrack?.id === track.id;
-  const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
-
-  const handlePlayClick = () => {
-    if (isThisTrackPlaying) {
-      togglePlayPause();
-    } else {
-      // Send track to the global auto-DJ / bottom player
-      playTrack(track, [track]); 
-    }
-  };
-
   return (
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
       
-      {/* 1. HEADER & BREADCRUMB */}
+      {/* =========================================
+          1. HEADER & BREADCRUMB
+          ========================================= */}
       <VStack align="start" gap={1}>
         <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
           <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
@@ -104,115 +117,165 @@ export const TrackDetailView: React.FC = () => {
 
       <Box flex="1" overflowY="auto" pb={8} css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
         
-        {/* 2. TRACK INFO HEADER */}
-        <HStack align="end" gap={6} mb={8} flexWrap={{ base: 'wrap', md: 'nowrap' }}>
-          
-          <Box w="140px" h="140px" borderRadius="md" border="1px solid" borderColor="gray.200" overflow="hidden" bg="gray.50" flexShrink={0}>
-            {coverUrl ? (
-              <Image src={coverUrl} alt={track.title} w="100%" h="100%" objectFit="cover" />
-            ) : (
-              <Flex w="100%" h="100%" align="center" justify="center">
-                <Icon as={Music} boxSize={8} color="gray.300" />
-              </Flex>
-            )}
-          </Box>
-
-          <VStack align="start" justify="flex-end" gap={1} pb={1} flex="1" minW={0}>
-            <Text color="gray.500" fontWeight="600" letterSpacing="widest" fontSize="10px" textTransform="uppercase">
-              {track.album?.title || 'Single'}
-            </Text>
+        {/* =========================================
+            2. HERO SECTION (Light Mode, Compact)
+            ========================================= */}
+        <Box 
+          bg="gray.50" 
+          border="1px solid" borderColor="gray.200"
+          borderRadius="xl" p={6} mb={8}
+        >
+          <Flex direction={{ base: 'column-reverse', md: 'row' }} gap={6} align="stretch" justify="space-between">
             
-            <Heading size="lg" color="gray.900" fontWeight="700" letterSpacing="tight" lineClamp={1}>
-              {track.title}
-            </Heading>
-            
-            <Text fontSize="sm" color="gray.600" fontWeight="500" lineClamp={1}>
-              {artistName}
-            </Text>
-
-            <HStack gap={2} mt={2} flexWrap="wrap">
-              {track.genre && track.genre.split(',').map((g: string) => (
-                <Badge key={g} colorPalette="gray" variant="surface" px={2} py={0.5} borderRadius="sm" fontWeight="500">{g.trim()}</Badge>
-              ))}
-              {track.style && track.style.split(',').map((s: string) => (
-                <Badge key={s} colorPalette="gray" variant="outline" px={2} py={0.5} borderRadius="sm" fontWeight="500">{s.trim()}</Badge>
-              ))}
-            </HStack>
-          </VStack>
-        </HStack>
-
-        {/* 3. PLAYER BAR */}
-        <Box border="1px solid" borderColor="gray.200" borderRadius="md" p={3} mb={8} bg="gray.50">
-          <HStack gap={4}>
-            <Button 
-              size="sm" w="40px" h="40px" 
-              colorPalette="blue" 
-              onClick={handlePlayClick}
-              flexShrink={0}
-              disabled={!audioUrl}
-            >
-              <Icon as={isThisTrackActiveAndPlaying ? Pause : Play} boxSize={4} ml={isThisTrackActiveAndPlaying ? 0 : 0.5} />
-            </Button>
-
-            <Box flex="1" h="40px" position="relative" bg="white" border="1px solid" borderColor="gray.200" borderRadius="sm" overflow="hidden">
-              {/* Muted dummy audio ref to allow WaveSurferPlayer to render visually without duplicate playback */}
-              <audio ref={audioRef} src={audioUrl} preload="metadata" muted />
+            {/* LEFT SIDE: Play, Info, Waveform */}
+            <Flex flex="1" direction="column" justify="space-between" minW={0}>
               
-              {orgId && (
-                <WaveSurferPlayer 
-                  trackId={track.id}
-                  audioRef={audioRef}
-                  isPlaying={isThisTrackActiveAndPlaying}
-                  waveformUrl={waveformUrl}
-                  orgId={orgId}
-                />
+              <HStack align="start" gap={4}>
+                <Button 
+                  w="56px" h="56px" 
+                  borderRadius="full" 
+                  colorPalette="blue" 
+                  onClick={handlePlayClick}
+                  flexShrink={0}
+                  disabled={!audioUrl}
+                  boxShadow="sm"
+                >
+                  <Icon as={isThisTrackActiveAndPlaying ? Pause : Play} boxSize={6} ml={isThisTrackActiveAndPlaying ? 0 : 0.5} />
+                </Button>
+
+                <VStack align="start" gap={0.5} mt={0.5}>
+                  <Text fontSize="10px" fontWeight="700" textTransform="uppercase" letterSpacing="widest" color="gray.500">
+                    {track.album?.title || 'Single'}
+                  </Text>
+                  <Heading size="xl" fontWeight="700" letterSpacing="tight" lineClamp={2} color="gray.900">
+                    {track.title}
+                  </Heading>
+                  <Text fontSize="md" color="gray.600" fontWeight="500">
+                    {artistName}
+                  </Text>
+                </VStack>
+              </HStack>
+
+              {/* WAVEFORM */}
+              <Box w="100%" h="60px" mt={6} position="relative" borderRadius="sm" overflow="hidden">
+                <audio ref={audioRef} src={audioUrl} preload="metadata" muted crossOrigin="anonymous" />
+                {orgId && (
+                  <WaveSurferPlayer 
+                    trackId={track.id}
+                    audioRef={audioRef}
+                    isPlaying={isThisTrackActiveAndPlaying}
+                    waveformUrl={waveformUrl}
+                    orgId={orgId}
+                  />
+                )}
+              </Box>
+            </Flex>
+
+            {/* RIGHT SIDE: Cover Artwork (Reduced Size) */}
+            <Box 
+              w={{ base: "100%", md: "220px" }} 
+              h={{ base: "auto", md: "220px" }} 
+              aspectRatio={1} 
+              flexShrink={0} 
+              borderRadius="md" 
+              overflow="hidden" 
+              bg="white" 
+              border="1px solid" borderColor="gray.200"
+              boxShadow="sm"
+            >
+              {coverUrl ? (
+                <Image src={coverUrl} alt={track.title} w="100%" h="100%" objectFit="cover" />
+              ) : (
+                <Flex w="100%" h="100%" align="center" justify="center">
+                  <Icon as={Music} boxSize={12} color="gray.300" />
+                </Flex>
               )}
             </Box>
-          </HStack>
+          </Flex>
         </Box>
 
-        {/* 4. ACOUSTIC PROFILE */}
-        <Box>
-          <Text fontSize="10px" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="widest" mb={3}>
-            Acoustic Profile
-          </Text>
+        {/* =========================================
+            3. BODY SECTION (Two Columns)
+            ========================================= */}
+        <SimpleGrid columns={{ base: 1, lg: 3 }} gap={8}>
           
-          <SimpleGrid columns={{ base: 2, md: 4 }} gap={4} mb={6}>
-            <StatBox icon={Activity} label="Tempo" value={track.bpm ? `${Math.round(track.bpm)} BPM` : '--'} />
-            <StatBox icon={Hash} label="Key" value={track.musical_key ? `${track.musical_key} ${track.scale}` : '--'} />
-            <StatBox icon={Clock} label="Duration" value={formatDuration(track.duration)} />
-            <StatBox icon={Zap} label="Energy" value={track.energy ? `${Math.round(track.energy * 100)}%` : '--'} />
-          </SimpleGrid>
+          {/* LEFT COLUMN: Artist & Tags */}
+          <Box gridColumn={{ lg: 'span 2' }}>
+            
+            {/* Artist Mini-Profile */}
+            <HStack align="center" mb={8} gap={4}>
+              <Box w="56px" h="56px" borderRadius="full" bg="gray.100" border="1px solid" borderColor="gray.200" display="flex" alignItems="center" justifyContent="center">
+                <Text fontWeight="bold" fontSize="lg" color="gray.400">{artistName.charAt(0)}</Text>
+              </Box>
+              <VStack align="start" gap={0}>
+                <Text fontWeight="700" fontSize="md" color="gray.900">{artistName}</Text>
+                <Text fontSize="xs" color="gray.500">Artist</Text>
+              </VStack>
+            </HStack>
 
-          {track.ml_characteristics && track.ml_characteristics.length > 0 && (
-            <Box pt={4}>
-              <Text fontSize="10px" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="widest" mb={3}>
-                Machine Learning Tags
-              </Text>
-              <HStack flexWrap="wrap" gap={2}>
-                {track.ml_characteristics.map((char: string) => (
-                  <Badge key={char} bg="gray.100" color="gray.600" px={2} py={1} borderRadius="sm" fontWeight="500">
-                    {char}
-                  </Badge>
+            {/* Genres & Styles */}
+            <Box mb={8}>
+              <HStack gap={2} mb={3}>
+                <Icon as={Tag} boxSize={4} color="gray.400" />
+                <Text fontSize="sm" fontWeight="600" color="gray.900">Tags & Genres</Text>
+              </HStack>
+              <HStack gap={2} flexWrap="wrap">
+                {track.genre && track.genre.split(',').map((g: string) => (
+                  <Badge key={g} colorPalette="blue" variant="surface" px={3} py={1} borderRadius="full" fontWeight="500">{g.trim()}</Badge>
+                ))}
+                {track.style && track.style.split(',').map((s: string) => (
+                  <Badge key={s} colorPalette="gray" variant="surface" px={3} py={1} borderRadius="full" fontWeight="500">{s.trim()}</Badge>
                 ))}
               </HStack>
             </Box>
-          )}
-        </Box>
+
+            {/* ML Tags */}
+            {track.ml_characteristics && track.ml_characteristics.length > 0 && (
+              <Box mb={8}>
+                <Text fontSize="xs" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="widest" mb={3}>
+                  Machine Learning Characteristics
+                </Text>
+                <HStack flexWrap="wrap" gap={2}>
+                  {track.ml_characteristics.map((char: string) => (
+                    <Badge key={char} bg="gray.100" color="gray.600" px={3} py={1} borderRadius="sm" fontWeight="500">
+                      {char}
+                    </Badge>
+                  ))}
+                </HStack>
+              </Box>
+            )}
+          </Box>
+
+          {/* RIGHT COLUMN: Acoustic Insights Sidebar */}
+          <Box gridColumn={{ lg: 'span 1' }}>
+            <Text fontSize="xs" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="widest" mb={4}>
+              Acoustic Insights
+            </Text>
+            
+            <VStack align="stretch" gap={3}>
+              <InsightBox icon={Activity} label="Tempo" value={track.bpm ? `${Math.round(track.bpm)} BPM` : '--'} />
+              <InsightBox icon={Hash} label="Musical Key" value={track.musical_key ? `${track.musical_key} ${track.scale}` : '--'} />
+              <InsightBox icon={Clock} label="Duration" value={formatDuration(track.duration)} />
+              <InsightBox icon={Zap} label="Energy" value={track.energy ? `${Math.round(track.energy * 100)}%` : '--'} />
+            </VStack>
+          </Box>
+
+        </SimpleGrid>
 
       </Box>
     </VStack>
   );
 };
 
-const StatBox = ({ icon, label, value }: { icon: any, label: string, value: string }) => (
-  <Box p={3} border="1px solid" borderColor="gray.200" borderRadius="md" bg="white">
-    <HStack color="gray.400" mb={1.5}>
-      <Icon as={icon} boxSize={3.5} />
-      <Text fontSize="10px" fontWeight="700" textTransform="uppercase" letterSpacing="wider">{label}</Text>
+// SoundCloud-style Insight Row (Light Theme)
+const InsightBox = ({ icon, label, value }: { icon: any, label: string, value: string }) => (
+  <HStack p={3} bg="white" borderRadius="md" border="1px solid" borderColor="gray.200" justify="space-between">
+    <HStack color="gray.500" gap={3}>
+      <Icon as={icon} boxSize={4} />
+      <Text fontSize="xs" fontWeight="600">{label}</Text>
     </HStack>
-    <Text fontSize="md" fontWeight="600" color="gray.800" fontFamily="mono">{value}</Text>
-  </Box>
+    <Text fontSize="sm" fontWeight="700" color="gray.900" fontFamily="mono">{value}</Text>
+  </HStack>
 );
 
 const formatDuration = (s: number) => {
