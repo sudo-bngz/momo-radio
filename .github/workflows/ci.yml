@@ -37,7 +37,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24' # Updated to match your Dockerfile
+          go-version: '1.24'
           cache: true
 
       - name: Install System Dependencies
@@ -48,7 +48,11 @@ jobs:
       - name: Download Go Modules
         run: go mod download
 
-      # 3. Verify Builds
+      # 3. Run Tests (This executes testcontainers logic automatically)
+      - name: Run Go Tests
+        run: go test -v ./...
+
+      # 4. Verify Builds
       - name: Verify Build (worker)
         run: go build -v ./cmd/worker/
 
