@@ -99,6 +99,7 @@ func (s *Server) setupRoutes() {
 	membersHandler := handlers.NewMembersHandler(s.db.DB)
 	billingHandler := handlers.NewBillingHandler(s.db.DB, s.cfg)
 	searchHandler := handlers.NewSearchHandler(s.meili)
+	shareHandler := handlers.NewShareHandler(s.db.DB, s.storage, s.cfg, cdn)
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
@@ -117,6 +118,16 @@ func (s *Server) setupRoutes() {
 	// ==========================================
 	v1 := s.router.Group("/api/v1")
 	{
+		// ==========================================
+		// PUBLIC SHARE ROUTES (Unauthenticated)
+		// ==========================================
+		publicShares := v1.Group("/public/shares")
+		{
+			publicShares.GET("/:token", shareHandler.GetPublicShare)
+			publicShares.GET("/:token/stream", shareHandler.StreamPublicShare)
+			publicShares.GET("/:token/download", shareHandler.DownloadPublicShare)
+		}
+
 		jwtOnly := v1.Group("/")
 		jwtOnly.Use(middleware.RequireValidJWT(s.cfg.Supabase.JWTPublicKey))
 		{
@@ -152,6 +163,11 @@ func (s *Server) setupRoutes() {
 			// --- NEW UPLOAD / CURATION ---
 			protected.POST("/upload/presign", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.HandlePresign)
 			protected.POST("/upload/confirm-direct", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.UploadTrack)
+
+			// --- SHARED TRACK MANAGEMENT ---
+			protected.POST("/shares", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), shareHandler.CreateShare)
+			protected.GET("/shares", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), shareHandler.GetShares)
+			protected.DELETE("/shares/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), shareHandler.DeleteShare)
 
 			// --- ARTISTS & ALBUMS ---
 			protected.GET("/artists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), artistHandler.GetArtists)

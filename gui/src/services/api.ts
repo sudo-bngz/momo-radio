@@ -77,6 +77,26 @@ export interface SearchResponse {
   query: string;
 }
 
+export interface ShareItem {
+  id: number;
+  organization_id: string;
+  track_id: number;
+  token: string;
+  allow_download: boolean;
+  expires_at: string | null;
+  play_count: number;
+  download_count: number;
+  created_at: string;
+  track?: {
+    id: number;
+    title: string;
+    duration: number;
+    bpm?: number;
+    artists?: { id: number; name: string }[];
+    album?: { id: number; title: string; cover_key?: string };
+  };
+}
+
 const runtimeConfig = (window as any).__RUNTIME_CONFIG__ || {};
 const runtimeApiUrl = runtimeConfig.API_URL || "";
 
@@ -443,5 +463,22 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
     const response = await apiClient.post<{ url: string }>('/billing/portal');
     return response.data;
   },
+getShares: async (): Promise<ShareItem[]> => {
+    const response = await apiClient.get<{ data: ShareItem[] }>(`/shares`);
+    return response.data.data || [];
+  },
 
+  createShare: async (payload: { track_id: number; allow_download?: boolean; expires_in_days?: number }): Promise<{ share: ShareItem; url: string }> => {
+    const response = await apiClient.post(`/shares`, payload);
+    return response.data;
+  },
+
+  deleteShare: async (shareId: number): Promise<void> => {
+    await apiClient.delete(`/shares/${shareId}`);
+  },
+
+  getPublicShare: async (token: string) => {
+    const response = await apiClient.get(`/public/shares/${token}`);
+    return response.data;
+  },
 };

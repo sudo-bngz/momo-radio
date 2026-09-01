@@ -59,8 +59,6 @@ export const TopNav: React.FC = () => {
   return (
     <Box w="100%" px={8} py={4} zIndex={50} bg="white">
       <Flex justify="space-between" align="center" gap={4}>
-        
-{/* ⚡️ UPDATE THIS IN TopNav.tsx */}
         <Box w="100%" maxW="400px" ml={2}>
           <LibrarySearch 
             onSelectTrack={(track) => {

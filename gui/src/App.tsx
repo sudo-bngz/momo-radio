@@ -28,12 +28,13 @@ import { LibraryView } from './features/library/components/LibraryView';
 import { TrackDetailView } from './features/library/components/TrackDetailView';
 import { ApiDownScreen } from './layouts/ApiDownScreen';
 import { BroadcastView } from './features/broadcast/components/BroadcastView';
+import { SharedListView } from './features/shared/components/ShareListView';
+import { PublicShareView } from './features/shared/components/PublicShareView';
 
 export const App = () => {
 
   // 1. CALL ALL HOOKS FIRST
   const isApiDown = useNetworkStore((state) => state.isApiDown);
-  
   const initializeAuth = useAuthStore((state) => state.initialize);
   
   useEffect(() => {
@@ -50,7 +51,9 @@ export const App = () => {
         // IF API IS UP: Render the normal application router
         <BrowserRouter>
           <Routes>
-            {/* Public Path */}
+            
+            {/* ⚡️ PUBLIC PATHS (No Auth Required) ⚡️ */}
+            <Route path="/s/:token" element={<PublicShareView />} />
             <Route path="/login" element={<LoginView />} />
             <Route path="/signup" element={<SignupView />} />
 
@@ -79,9 +82,10 @@ export const App = () => {
                 <Route path="/schedule" element={<ScheduleFeature />} />
                 
                 <Route path="/broadcast" element={<BroadcastView />} />
+
+                <Route path="/shared" element={<SharedListView />} />
               </Route>
               
-              {/* Keeping settings outside DashboardLayout if intended, or move it inside! */}
               <Route path="/settings" element={<SettingsFeature />} />
             </Route>
 

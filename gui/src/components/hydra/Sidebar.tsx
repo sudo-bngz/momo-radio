@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { VStack, Text, Icon, HStack, Flex, Box, Image } from '@chakra-ui/react'; // ⚡️ Imported Image
+import { VStack, Text, Icon, HStack, Flex, Box, Image } from '@chakra-ui/react';
 import { NavLink } from 'react-router-dom';
 import { 
   Activity, Library, Radio,
-  Settings, PanelLeftClose, PanelLeftOpen 
+  Settings, PanelLeftClose, PanelLeftOpen,
+  Share2 // ⚡️ IMPORTED: Share icon
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -12,6 +13,7 @@ const Sidebar = () => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity, path: '/dashboard' },
     { id: 'library', label: 'Music Library', icon: Library, path: '/library' },
+    { id: 'shared', label: 'Shared', icon: Share2, path: '/shared', color: 'pink.400' }, // ⚡️ ADDED: Shared route
     { id: 'broadcast', label: 'Broadcast', icon: Radio, path: '/broadcast' }
   ];
 
@@ -33,12 +35,10 @@ const Sidebar = () => {
       {/* Brand Logo Section */}
       <HStack mb={10} px={isCollapsed ? 0 : 8} justify={isCollapsed ? "center" : "flex-start"} h="32px" gap={isCollapsed ? 0 : 3}>
         
-        {/* ⚡️ Updated: Replaced Icon with logo.png */}
         <Flex align="center" justify="center" w="32px" h="32px" flexShrink={0}>
           <Image 
-            src="/logo.png" // Pointing to public/logo.png
+            src="/logo.png" 
             alt="Momo Radio Logo"
-            // Set height to fit container, width auto to maintain aspect ratio
             h="100%" 
             w="auto" 
             maxW="100%"
@@ -67,6 +67,7 @@ const Sidebar = () => {
                 label={item.label} 
                 isActive={isActive} 
                 isCollapsed={isCollapsed}
+                activeColor={item.color} // ⚡️ Passed the custom color down
               />
             )}
           </NavLink>
@@ -91,7 +92,7 @@ const Sidebar = () => {
   );
 };
 
-// --- NavItem Helper Component (Unchanged) ---
+// --- NavItem Helper Component ---
 
 interface NavItemProps {
   icon: any;
@@ -99,9 +100,10 @@ interface NavItemProps {
   isActive?: boolean;
   isCollapsed: boolean;
   onClick?: () => void;
+  activeColor?: string; // ⚡️ Added prop for custom active colors
 }
 
-const NavItem = ({ icon, label, isActive = false, isCollapsed, onClick }: NavItemProps) => (
+const NavItem = ({ icon, label, isActive = false, isCollapsed, onClick, activeColor = "blue.500" }: NavItemProps) => (
   <HStack 
     onClick={onClick}
     py={2.5} 
@@ -110,22 +112,22 @@ const NavItem = ({ icon, label, isActive = false, isCollapsed, onClick }: NavIte
     borderRadius="xl" 
     cursor="pointer" 
     bg={isActive ? 'whiteAlpha.100' : 'transparent'} 
-    color={isActive ? 'white' : 'gray.500'} 
-    _hover={{ bg: 'whiteAlpha.100', color: 'white' }}
+    color={isActive ? (activeColor === 'blue.500' ? 'white' : activeColor) : 'gray.500'} // ⚡️ Dynamic icon color
+    _hover={{ bg: 'whiteAlpha.100', color: isActive && activeColor !== 'blue.500' ? activeColor : 'white' }}
     gap={4} 
     transition="all 0.2s"
     title={isCollapsed ? label : undefined}
-    position="relative" // Fixed missing position: relative for active bar
+    position="relative" 
   >
     <Icon as={icon} boxSize={5} flexShrink={0} />
     {!isCollapsed && (
-      <Text fontWeight="bold" fontSize="sm" truncate>
+      <Text fontWeight="bold" fontSize="sm" truncate color={isActive ? 'white' : 'inherit'}>
         {label}
       </Text>
     )}
     {/* Active Indicator Bar */}
     {isActive && !isCollapsed && (
-      <Box position="absolute" left="0" w="3px" h="16px" bg="blue.500" borderRadius="full" />
+      <Box position="absolute" left="0" w="3px" h="16px" bg={activeColor} borderRadius="full" />
     )}
   </HStack>
 );
