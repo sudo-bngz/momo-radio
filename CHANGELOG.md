@@ -1,3 +1,49 @@
+## [0.7.0] - 2026-09-02
+
+### 🚀 Features
+
+- *(broadcast)* Implement global state synchronization for live transmission monitoring
+- *(settings)* Implement global workspace configuration state syncing and persistence handlers
+- *(auth)* Implement persistent user profile management and RGPD-compliant data modeling
+- *(team)* Implement secure workspace invitation workflows and dynamic multi-zone CDN routing
+- *(billing)* Integrate Stripe checkout portal, subscription webhooks, and billing management views
+- *(worker)* Implement TLS support for Redis and Asynq backend connections
+- *(worker)* Optimize Redis polling and connection pool configurations
+- *(gui)* Implement dynamic runtime environment variable injection for embedded SPA
+- *(track)* Add debug during debug
+- *(player)* Integrate live broadcast playback into global player and update settings UI
+- *(config)* Implement dynamic API URL injection for SPA runtime environments
+- *(search)* Implement Meilisearch integration for real-time track metadata indexing
+- *(search)* Implement real-time global library search with Meilisearch integration
+- *(gui)* Implement dedicated track detail view with interactive waveform playback
+- *(player)* Sync track detail playback with global context and guard CDN URL
+- *(track)* Redesign track detail view and sync with global player state
+- *(upload)* Implement presigned S3 URLs for direct-to-storage client file transfers
+- *(share)* Implement secure public track sharing and link management
+
+### 🐛 Bug Fixes
+
+- *(config)* Correct storage bucket mappings and enforce S3 validation constraints
+- *(api)* Enhance stream error observability and enforce strict album serialization
+- *(radio)* Resolve database column mismatch for track playback history
+- *(ingest)* Flatten Meilisearch payload relations and defer indexing post-enrichment
+- *(search)* Index raw storage keys for album artwork instead of empty URLs
+- *(gui)* Resolve dynamic CDN cover URLs for Meilisearch search results
+- *(ingest)* Hydrate track associations post-save to fix missing search metadata
+- *(search)* Fix cdn uri
+
+### 🚜 Refactor
+
+- *(cdn)* Centralize asset URL resolution in the backend and deprecate frontend storage utilities
+- *(gui)* Redesign track detail view to align with library visual hierarchy
+
+### 🧪 Testing
+
+- *(models)* Implement integration tests for core database entities and relationships
+
+### ⚙️ Miscellaneous Tasks
+
+- *(test)* Implement integration testing framework using testcontainers
 ## [0.6.0] - 2026-06-23
 
 ### 🚀 Features
@@ -30,6 +76,10 @@
 
 - *(api)* Resolve stats handler log spam and adapt for many-to-many artists
 - *(ingest)* Standardize and deduplicate genre and style metadata tags
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.6.0
 ## [0.6.0-alpha.1] - 2026-05-15
 
 ### 🐛 Bug Fixes
