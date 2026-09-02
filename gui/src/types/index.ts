@@ -42,10 +42,10 @@ export interface Track {
   // --- Core Metadata ---
   title: string;
   artist: string;
-  album?: string;
+  album?: string | { id: number; title: string; cover_key?: string };
+  album_id?: number | null;
   genre?: string;
   style?: string;
-  year?: string;
   publisher?: string;
   release_country?: string;
   artist_country?: string;

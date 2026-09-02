@@ -50,6 +50,7 @@ type LibraryTrack struct {
 	Title             string         `json:"title"`
 	Artist            string         `json:"artist"`
 	Album             string         `json:"album"`
+	AlbumID           uint           `json:"album_id"`
 	Duration          float64        `json:"duration"`
 	CoverURL          string         `json:"cover_url"`
 	BPM               float64        `json:"bpm"`
@@ -247,6 +248,7 @@ func (h *TrackHandler) GetTracks(c *gin.Context) {
 			Title:             t.Title,
 			Artist:            artistStr,
 			Album:             t.Album.Title,
+			AlbumID:           t.Album.ID,
 			Duration:          t.Duration,
 			CoverURL:          coverURL,
 			BPM:               t.BPM,

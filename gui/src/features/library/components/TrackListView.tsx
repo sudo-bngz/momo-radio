@@ -35,7 +35,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   const [shareTrack, setShareTrack] = useState<any | null>(null);
 
   // =================================================================
-  // ⚡️ 1. CATCH UPLOADS AND INJECT SAFELY
+  // 1. CATCH UPLOADS AND INJECT SAFELY
   // =================================================================
   const tracksRef = useRef(tracks);
   useEffect(() => {
@@ -67,7 +67,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   }, [setTracks]);
 
   // =================================================================
-  // ⚡️ 2. ROBUST BACKGROUND POLLING
+  // 2. ROBUST BACKGROUND POLLING
   // =================================================================
   const pendingIdsStr = useMemo(() => {
     return tracks
@@ -187,16 +187,22 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                   ];
                   const mergedTags = Array.from(new Set(rawTags.map(t => t.trim()).filter(Boolean)));
 
+                  // ⚡️ FIXED: Extract exact integer Album ID safely from string or object
+                  const rawAlbum = track.album as any;
+                  const albumName = typeof rawAlbum === 'object' ? rawAlbum?.title : rawAlbum;
+                  const albumId = (track as any).album_id || (typeof rawAlbum === 'object' ? rawAlbum?.id : null);
+
                   return (
                     <Table.Row 
                       key={track.id} 
                       className="group" 
                       bg={isPending ? "gray.50" : (isThisTrackPlaying ? "blue.50" : "transparent")}
                       opacity={isPending ? 0.6 : 1} 
-                      cursor={isPending ? "not-allowed" : "pointer"}
+                      cursor={isPending ? "not-allowed" : "default"}
                       _hover={isPending ? {} : { bg: "gray.50" }}
                       onDoubleClick={() => { if (!isPending) playTrack(track, tracks); }}
                     >
+                      {/* Play Button */}
                       <Table.Cell px={0}>
                         {isPending ? (
                            <Box w="36px" h="36px" display="flex" alignItems="center" justifyContent="center">
@@ -207,6 +213,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                             w="36px" h="36px" bg={isThisTrackPlaying ? "blue.500" : "gray.100"} 
                             borderRadius="md" display="flex" alignItems="center" justifyContent="center" 
                             color={isThisTrackPlaying ? "white" : "gray.400"} 
+                            cursor="pointer"
                             onClick={(e) => {
                               e.stopPropagation();
                               if (!isPending) isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks);
@@ -217,6 +224,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         )}
                       </Table.Cell>
 
+                      {/* Artwork */}
                       <Table.Cell px={2}>
                         <Box w="36px" h="36px" borderRadius="md" overflow="hidden" bg="gray.50" border="1px solid" borderColor="gray.200" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                           {track.cover_url ? (
@@ -227,14 +235,26 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </Box>
                       </Table.Cell>
 
+                      {/* Title (Progressive Disclosure -> Opens Drawer) */}
                       <Table.Cell 
                         fontWeight={isThisTrackPlaying ? "bold" : "500"} 
                         color={isPending ? "blue.500" : (isThisTrackPlaying ? "blue.600" : "gray.900")} 
                         fontStyle={isPending ? "italic" : "normal"}
-                        onClick={() => !isPending && setSelectedTrack(track)}
                       >
                         <HStack gap={2}>
-                          <Text>{track.title}</Text>
+                          <Text
+                            cursor={isPending ? "not-allowed" : "pointer"}
+                            transition="color 0.2s"
+                            _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }}
+                            onClick={(e) => {
+                              if (!isPending) {
+                                e.stopPropagation();
+                                setSelectedTrack(track); 
+                              }
+                            }}
+                          >
+                            {track.title}
+                          </Text>
                           {track.processing_status === 'failed' && (
                             <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="red.500" onClick={(e) => handleRetry(e, track.id)} _hover={{ bg: "red.50" }}>
                               <Icon as={RefreshCw} boxSize={3.5} />
@@ -243,6 +263,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </HStack>
                       </Table.Cell>
                       
+                      {/* Artist */}
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
                           {track.artist ? (
@@ -252,6 +273,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                                 <React.Fragment key={index}>
                                   <Text 
                                     as="span" color={isThisTrackPlaying ? "blue.500" : "gray.600"} 
+                                    cursor="pointer"
                                     _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }} 
                                     onClick={(e) => { 
                                       if(!isPending) { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(cleanArtist)}`); } 
@@ -269,8 +291,29 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </HStack>
                       </Table.Cell>
 
-                      <Table.Cell color="gray.500">{track.album || '-'}</Table.Cell>
+                      {/* ⚡️ FIXED: Album Link with strictly verified ID */}
+                      <Table.Cell>
+                        {albumName && albumId ? (
+                          <Text
+                            color="gray.600"
+                            cursor={isPending ? "not-allowed" : "pointer"}
+                            transition="color 0.2s"
+                            _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }}
+                            onClick={(e) => {
+                              if (!isPending) {
+                                e.stopPropagation();
+                                navigate(`/library/albums/${albumId}`); 
+                              }
+                            }}
+                          >
+                            {albumName}
+                          </Text>
+                        ) : (
+                          <Text color="gray.500">{albumName || '-'}</Text>
+                        )}
+                      </Table.Cell>
                       
+                      {/* Genre Tags */}
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
                           {mergedTags.length > 0 ? (
@@ -289,12 +332,14 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </HStack>
                       </Table.Cell>
                       
+                      {/* BPM */}
                       <Table.Cell>
                         <Badge size="sm" bg={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).bg} color={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).color} border="none" borderRadius="md" px={2.5} py={0.5} fontWeight="700">
                           {track.bpm ? Math.round(track.bpm) : '-'}
                         </Badge>
                       </Table.Cell>
 
+                      {/* Time */}
                       <Table.Cell textAlign="right" color="gray.500">{formatDuration(track.duration)}</Table.Cell>
 
                       {/* Share Action Button */}
@@ -306,8 +351,9 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                             borderRadius="md"
                             color="gray.400"
                             opacity={0}
-                            _groupHover={{ opacity: 1, bg: "blue.50", color: "blue.600" }}
+                            _groupHover={{ opacity: 1, bg: "pink.50", color: "pink.600" }}
                             transition="all 0.2s"
+                            cursor="pointer"
                             onClick={(e) => {
                               e.stopPropagation();
                               setShareTrack(track);
@@ -333,13 +379,13 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
         )}
       </Box>
 
-      {/* ⚡️ DETAILS DRAWER */}
+      {/* DETAILS DRAWER */}
       <TrackDetailDrawer 
         isOpen={!!selectedTrack} onClose={() => setSelectedTrack(null)} track={selectedTrack} 
         onTrackUpdated={(data) => setTracks(tracksRef.current.map(t => t.id === data.id ? {...t, ...data} : t))}
       />
 
-      {/* ⚡️ NEW SHARE DRAWER */}
+      {/* SHARE DRAWER */}
       <ShareDrawer 
         isOpen={!!shareTrack} 
         onClose={() => setShareTrack(null)} 
