@@ -1,3 +1,10 @@
+## [0.7.1] - 2026-09-02
+
+### 🐛 Bug Fixes
+
+- *(gui)* Enable album routing directly from track list rows
+- *(gui)* Redesign album detail view to align with modern aesthetic and global player
+- *(api)* Implement structured JSON logging with zap and enhance advanced search parsing
 ## [0.7.0] - 2026-09-02
 
 ### 🚀 Features
@@ -44,6 +51,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - *(test)* Implement integration testing framework using testcontainers
+- *(release)* Prepare v0.7.0
 ## [0.6.0] - 2026-06-23
 
 ### 🚀 Features
