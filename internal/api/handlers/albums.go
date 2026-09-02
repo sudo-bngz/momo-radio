@@ -91,7 +91,7 @@ func (h *AlbumHandler) GetAlbumByID(c *gin.Context) {
 	}
 
 	if album.CoverKey != "" {
-		h.cdn.BuildAssetURL(album.CoverKey, orgID.String())
+		album.CoverURL = h.cdn.BuildAssetURL(album.CoverKey, orgID.String())
 	}
 
 	c.JSON(http.StatusOK, album)
