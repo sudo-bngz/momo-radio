@@ -13,6 +13,7 @@ func InitMeilisearch(cfg *config.Config) meilisearch.ServiceManager {
 
 	index := client.Index("tracks")
 
+	// Reverted back to []any to satisfy the compiler
 	filterable := []any{
 		"organization_id",
 		"genre",
@@ -21,6 +22,10 @@ func InitMeilisearch(cfg *config.Config) meilisearch.ServiceManager {
 		"scale",
 		"musical_key",
 		"bpm",
+		"artists_names",
+		"album_title",
+		"year",
+		"publisher",
 	}
 	if _, err := index.UpdateFilterableAttributes(&filterable); err != nil {
 		log.Fatalf("Failed to configure Meilisearch filters: %v", err)

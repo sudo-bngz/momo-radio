@@ -2,22 +2,26 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	apiserver "momo-radio/internal/api/server"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/search"
 	"momo-radio/internal/storage"
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Println("Starting Radio API Server...")
+	// Initialize Zap logger first so it catches startup events immediately
+	logger.Init()
+	defer logger.Sync()
+
+	logger.Log.Info("Starting momo-radio api...")
 
 	// 1. Setup Configuration
 	cfg := config.Load()
@@ -48,9 +52,11 @@ func main() {
 	// 8. Setup Metrics
 	go func() {
 		http.Handle("/_metrics", promhttp.Handler())
-		log.Printf("Metrics exposed at http://localhost%s/_metrics", cfg.Server.MetricsPort)
+		logger.Log.Info("Metrics exposed",
+			zap.String("url", fmt.Sprintf("http://localhost%s/_metrics", cfg.Server.MetricsPort)),
+		)
 		if err := http.ListenAndServe(cfg.Server.MetricsPort, nil); err != nil {
-			log.Printf("Metrics server error: %v", err)
+			logger.Log.Error("Metrics server error", zap.Error(err))
 		}
 	}()
 
@@ -58,9 +64,9 @@ func main() {
 	srv := apiserver.New(cfg, db, store, redisClient, meili)
 
 	port := ":8081"
-	log.Printf("API Server starting on %s", port)
+	logger.Log.Info("API Server starting", zap.String("port", port))
 
 	if err := srv.Start(port); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+		logger.Log.Fatal("Server failed to start", zap.Error(err))
 	}
 }

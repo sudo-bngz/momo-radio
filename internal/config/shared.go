@@ -173,7 +173,7 @@ func Load() *Config {
 	viper.BindEnv("meilisearch.master_key", "RADIO_MEILISEARCH_MASTER_KEY")
 
 	// Defaults
-	viper.SetDefault("server.polling_interval_seconds", 10)
+	viper.SetDefault("server.polling_interval_seconds", 3)
 	viper.SetDefault("server.temp_dir", "/tmp/")
 	viper.SetDefault("server.metrics_port", ":9091")
 	viper.SetDefault("server.timezone", "UTC")
@@ -216,8 +216,8 @@ func Load() *Config {
 		"ingest":  7,
 		"exports": 3,
 	})
-	viper.SetDefault("worker.delayed_check_interval_sec", 15)
-	viper.SetDefault("worker.health_check_interval_sec", 30)
+	viper.SetDefault("worker.delayed_check_interval_sec", 3)
+	viper.SetDefault("worker.health_check_interval_sec", 5)
 	viper.SetDefault("worker.redis_pool_size", 10)
 
 	viper.SetDefault("meilisearch.host", "http://localhost:7700")

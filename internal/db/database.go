@@ -2,14 +2,15 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlogger "gorm.io/gorm/logger"
 
 	"momo-radio/internal/config"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 )
 
@@ -27,10 +28,10 @@ func New(cfg *config.Config) *Client {
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
 	})
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Log.Fatal("Failed to connect to database", zap.Error(err))
 	}
 
 	// Connection Pool Settings
@@ -39,14 +40,14 @@ func New(cfg *config.Config) *Client {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	log.Println("Database Connected")
+	logger.Log.Info("Database Connected")
 
 	return &Client{DB: db}
 }
 
 // AutoMigrate creates/updates tables based on struct definitions
 func (c *Client) AutoMigrate() {
-	log.Println("Running Database Migrations...")
+	logger.Log.Info("Running Database Migrations...")
 	err := c.DB.AutoMigrate(
 		&models.User{},
 		&models.OrganizationUser{},
@@ -67,7 +68,7 @@ func (c *Client) AutoMigrate() {
 		&models.Share{},
 	)
 	if err != nil {
-		log.Fatalf("Migration failed: %v", err)
+		logger.Log.Fatal("Migration failed", zap.Error(err))
 	}
-	log.Println("Migrations Complete")
+	logger.Log.Info("Migrations Complete")
 }

@@ -255,6 +255,16 @@ export const api = {
     return data.hits || [];
   },
 
+  searchTracksByTag: async (query: string, limit: number = 100): Promise<SearchResponse> => {
+    const response = await apiClient.get<SearchResponse>('/tracks/search', {
+      params: {
+        q: query,
+        limit: limit,
+      },
+    });
+    return response.data;
+  },
+
   getTracks: async (params?: { 
     limit?: number; 
     offset?: number; 

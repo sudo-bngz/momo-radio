@@ -19,24 +19,31 @@ interface TrackListViewProps {
 
 export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   const navigate = useNavigate();
-  const { globalSearch } = useSearchStore();
+  
+  const globalSearch = useSearchStore((state: any) => state.globalSearch);
+  const setGlobalSearch = useSearchStore((state: any) => state.setGlobalSearch || state.setSearch); 
+
   const { 
     tracks, setTracks, globalTotal, isLoading, 
     isFetchingMore, setSearchQuery, setSortBy, loadMore, hasMore
   } = useLibrary();
 
-  useEffect(() => { setSearchQuery(globalSearch); }, [globalSearch, setSearchQuery]);
+  // ⚡️ FIXED: Guard against Postgres overwriting MeiliSearch results!
+  // If the search bar starts with "tag:", we stop Postgres from fetching.
+  useEffect(() => { 
+    if (globalSearch && globalSearch.startsWith('tag:')) {
+      return; 
+    }
+    setSearchQuery(globalSearch); 
+  }, [globalSearch, setSearchQuery]);
+  
   useEffect(() => { setSortBy(sortBy as any); }, [sortBy, setSortBy]);
 
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();
   
-  // Drawer States
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
   const [shareTrack, setShareTrack] = useState<any | null>(null);
 
-  // =================================================================
-  // 1. CATCH UPLOADS AND INJECT SAFELY
-  // =================================================================
   const tracksRef = useRef(tracks);
   useEffect(() => {
     tracksRef.current = tracks;
@@ -66,9 +73,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     return () => window.removeEventListener('track_uploaded', handleNewUpload);
   }, [setTracks]);
 
-  // =================================================================
-  // 2. ROBUST BACKGROUND POLLING
-  // =================================================================
   const pendingIdsStr = useMemo(() => {
     return tracks
       .filter(t => ['pending', 'processing'].includes(t.processing_status || '') || ['pending', 'processing'].includes(t.status || ''))
@@ -144,6 +148,47 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     }
   };
 
+  // ⚡️ KILLER FEATURE: Prefill "tag:" in search bar, fetch raw tag from MeiliSearch
+  const handleTagClick = async (e: React.MouseEvent, tag: string) => {
+    e.stopPropagation();
+    
+    // 1. Update the Search Bar UI with the Pro Syntax
+    const uiSyntax = `tag:${tag}`;
+    if (setGlobalSearch) setGlobalSearch(uiSyntax);
+    
+    // 2. Pass the RAW tag to MeiliSearch so it doesn't try to query the word "tag"
+    try {
+      const data = await api.searchTracksByTag(tag, 100);
+      
+      if (data && data.hits) {
+        const mappedTracks = data.hits.map((hit: any) => ({
+          id: Number(hit.id),
+          organization_id: hit.organization_id || '',
+          key: hit.id, 
+          title: hit.title,
+          artist: hit.artists_names?.join(', ') || 'Unknown Artist',
+          album: hit.album_title || '',
+          genre: hit.genre || '',
+          style: hit.style || '',
+          duration: hit.duration || 0,
+          cover_url: hit.cover_url || '',
+          bpm: hit.bpm || 0,
+          musical_key: hit.musical_key || '',
+          scale: hit.scale || '',
+          status: 'completed',
+          processing_status: 'completed'
+        }));
+        
+        setTracks(mappedTracks as any);
+      } else {
+        setTracks([]); // Clear table if no results
+      }
+    } catch (error) {
+      console.error("Failed to execute tag search:", error);
+      toaster.create({ title: "Tag search failed", type: "error" });
+    }
+  };
+
   return (
     <VStack align="stretch" h="100%" gap={0} position="relative">
       <Box flex="1" overflowY="auto" onScroll={handleScroll}
@@ -174,6 +219,18 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                 </Table.Row>
             </Table.Header>
              <Table.Body>
+                {!isLoading && tracks.length === 0 && (
+                  <Table.Row>
+                    <Table.Cell colSpan={9} textAlign="center" py={12} color="gray.500">
+                      <VStack gap={2}>
+                        <Icon as={Music} boxSize={8} color="gray.300" />
+                        <Text fontWeight="500" color="gray.900">No tracks found</Text>
+                        <Text fontSize="sm">Try adjusting your search query.</Text>
+                      </VStack>
+                    </Table.Cell>
+                  </Table.Row>
+                )}
+
                 {tracks.map((track) => {
                   const isThisTrackPlaying = currentTrack?.id === track.id;
                   const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
@@ -187,7 +244,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                   ];
                   const mergedTags = Array.from(new Set(rawTags.map(t => t.trim()).filter(Boolean)));
 
-                  // ⚡️ FIXED: Extract exact integer Album ID safely from string or object
                   const rawAlbum = track.album as any;
                   const albumName = typeof rawAlbum === 'object' ? rawAlbum?.title : rawAlbum;
                   const albumId = (track as any).album_id || (typeof rawAlbum === 'object' ? rawAlbum?.id : null);
@@ -202,7 +258,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                       _hover={isPending ? {} : { bg: "gray.50" }}
                       onDoubleClick={() => { if (!isPending) playTrack(track, tracks); }}
                     >
-                      {/* Play Button */}
                       <Table.Cell px={0}>
                         {isPending ? (
                            <Box w="36px" h="36px" display="flex" alignItems="center" justifyContent="center">
@@ -224,7 +279,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         )}
                       </Table.Cell>
 
-                      {/* Artwork */}
                       <Table.Cell px={2}>
                         <Box w="36px" h="36px" borderRadius="md" overflow="hidden" bg="gray.50" border="1px solid" borderColor="gray.200" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                           {track.cover_url ? (
@@ -235,7 +289,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </Box>
                       </Table.Cell>
 
-                      {/* Title (Progressive Disclosure -> Opens Drawer) */}
                       <Table.Cell 
                         fontWeight={isThisTrackPlaying ? "bold" : "500"} 
                         color={isPending ? "blue.500" : (isThisTrackPlaying ? "blue.600" : "gray.900")} 
@@ -263,7 +316,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </HStack>
                       </Table.Cell>
                       
-                      {/* Artist */}
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
                           {track.artist ? (
@@ -291,7 +343,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </HStack>
                       </Table.Cell>
 
-                      {/* ⚡️ FIXED: Album Link with strictly verified ID */}
                       <Table.Cell>
                         {albumName && albumId ? (
                           <Text
@@ -313,15 +364,17 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         )}
                       </Table.Cell>
                       
-                      {/* Genre Tags */}
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
                           {mergedTags.length > 0 ? (
                             mergedTags.map((cleanTag, index) => (
                               <Badge 
-                                key={index} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"}
+                                key={index} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} 
+                                cursor={isPending ? "not-allowed" : "pointer"}
                                 _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
-                                onClick={(e) => { if(!isPending){ e.stopPropagation(); setSearchQuery(cleanTag); } }}
+                                onClick={(e) => { 
+                                  if (!isPending) handleTagClick(e, cleanTag); 
+                                }}
                               >
                                 {cleanTag}
                               </Badge>
@@ -332,33 +385,20 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                         </HStack>
                       </Table.Cell>
                       
-                      {/* BPM */}
                       <Table.Cell>
                         <Badge size="sm" bg={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).bg} color={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).color} border="none" borderRadius="md" px={2.5} py={0.5} fontWeight="700">
                           {track.bpm ? Math.round(track.bpm) : '-'}
                         </Badge>
                       </Table.Cell>
 
-                      {/* Time */}
                       <Table.Cell textAlign="right" color="gray.500">{formatDuration(track.duration)}</Table.Cell>
 
-                      {/* Share Action Button */}
                       <Table.Cell px={2}>
                         {!isPending && (
                           <Button
-                            size="xs"
-                            variant="ghost"
-                            borderRadius="md"
-                            color="gray.400"
-                            opacity={0}
-                            _groupHover={{ opacity: 1, bg: "pink.50", color: "pink.600" }}
-                            transition="all 0.2s"
-                            cursor="pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShareTrack(track);
-                            }}
-                            title="Share Track"
+                            size="xs" variant="ghost" borderRadius="md" color="gray.400" opacity={0}
+                            _groupHover={{ opacity: 1, bg: "pink.50", color: "pink.600" }} transition="all 0.2s" cursor="pointer"
+                            onClick={(e) => { e.stopPropagation(); setShareTrack(track); }} title="Share Track"
                           >
                             <Icon as={Share2} boxSize={4} />
                           </Button>
@@ -379,19 +419,16 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
         )}
       </Box>
 
-      {/* DETAILS DRAWER */}
       <TrackDetailDrawer 
         isOpen={!!selectedTrack} onClose={() => setSelectedTrack(null)} track={selectedTrack} 
         onTrackUpdated={(data) => setTracks(tracksRef.current.map(t => t.id === data.id ? {...t, ...data} : t))}
       />
 
-      {/* SHARE DRAWER */}
       <ShareDrawer 
         isOpen={!!shareTrack} 
         onClose={() => setShareTrack(null)} 
         track={shareTrack} 
       />
-
     </VStack>
   );
 };

@@ -6,18 +6,21 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	"momo-radio/gui"
 	"momo-radio/internal/api/handlers"
 	"momo-radio/internal/api/middleware"
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/storage"
 	"momo-radio/internal/utils"
 )
@@ -57,7 +60,7 @@ func New(
 		redis:       redisClient,
 		meili:       meili,
 		asynqClient: asynqClient,
-		router:      gin.Default(),
+		router:      gin.New(),
 	}
 
 	s.setupMiddleware()
@@ -73,6 +76,50 @@ func (s *Server) Close() {
 }
 
 func (s *Server) setupMiddleware() {
+	// 1. Recover from panics and write a 500 response instead of crashing
+	s.router.Use(gin.Recovery())
+
+	// 2. Custom Zap Logger Middleware
+	s.router.Use(func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
+
+		// Process request
+		c.Next()
+
+		if path == "/health" || path == "/api/v1/broadcast/state" {
+			return
+		}
+
+		cost := time.Since(start)
+		status := c.Writer.Status()
+
+		// Log errors differently than successes
+		if len(c.Errors) > 0 {
+			logger.Log.Error("HTTP Error",
+				zap.Int("status", status),
+				zap.String("method", c.Request.Method),
+				zap.String("path", path),
+				zap.String("query", query),
+				zap.String("ip", c.ClientIP()),
+				zap.Duration("latency", cost),
+				zap.String("errors", c.Errors.String()),
+			)
+			return
+		}
+
+		logger.Log.Info("HTTP Request",
+			zap.Int("status", status),
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.String("ip", c.ClientIP()),
+			zap.Duration("latency", cost),
+		)
+	})
+
+	// 3. Existing CORS Configuration
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowAllOrigins = true
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
@@ -235,7 +282,7 @@ func (s *Server) setupRoutes() {
 	// ==========================================
 	distFS, err := fs.Sub(gui.DistFS, "dist")
 	if err != nil {
-		panic("Failed to load embedded frontend: " + err.Error())
+		logger.Log.Fatal("Failed to load embedded frontend", zap.Error(err))
 	}
 
 	s.router.NoRoute(func(c *gin.Context) {
@@ -263,6 +310,7 @@ func (s *Server) setupRoutes() {
 
 		indexFile, err := distFS.Open("index.html")
 		if err != nil {
+			logger.Log.Error("Frontend not built properly (index.html missing)", zap.Error(err))
 			c.String(http.StatusInternalServerError, "Frontend not built properly (index.html missing)")
 			return
 		}

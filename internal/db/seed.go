@@ -1,20 +1,21 @@
 package database
 
 import (
-	"log"
 	"os"
 
-	"momo-radio/internal/models"
-
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	"momo-radio/internal/logger"
+	"momo-radio/internal/models"
 )
 
 // SeedDatabase initializes the core multi-tenant requirements:
 // 1. A default organization for orphaned/initial records.
 // 2. An initial admin user linked to that organization (via Supabase UUID).
 func SeedDatabase(db *gorm.DB) error {
-	log.Println("Starting database seeding process...")
+	logger.Log.Info("Starting database seeding process...")
 
 	// 1. Ensure the Default Organization exists
 	// We use a deterministic UUID so it never duplicates on re-runs
@@ -27,22 +28,22 @@ func SeedDatabase(db *gorm.DB) error {
 	}
 
 	if err := db.FirstOrCreate(&defaultOrg, models.Organization{ID: defaultOrgID}).Error; err != nil {
-		log.Printf("Failed to seed default organization: %v", err)
+		logger.Log.Error("Failed to seed default organization", zap.Error(err))
 		return err
 	}
-	log.Println("Default Organization verified.")
+	logger.Log.Info("Default Organization verified.")
 
 	// 2. Check for a Superadmin UUID from the environment
 	// This should be the UUID of your user in the Supabase Dashboard
 	adminUUIDStr := os.Getenv("SUPERADMIN_UUID")
 	if adminUUIDStr == "" {
-		log.Println("No SUPERADMIN_UUID provided in environment. Skipping admin seed.")
+		logger.Log.Info("No SUPERADMIN_UUID provided in environment. Skipping admin seed.")
 		return nil
 	}
 
 	adminUUID, err := uuid.Parse(adminUUIDStr)
 	if err != nil {
-		log.Printf("Invalid SUPERADMIN_UUID format: %v", err)
+		logger.Log.Error("Invalid SUPERADMIN_UUID format", zap.Error(err))
 		return err
 	}
 
@@ -59,7 +60,7 @@ func SeedDatabase(db *gorm.DB) error {
 	}
 
 	if err := db.FirstOrCreate(&adminUser, models.User{ID: adminUUID}).Error; err != nil {
-		log.Printf("Failed to seed admin user: %v", err)
+		logger.Log.Error("Failed to seed admin user", zap.Error(err))
 		return err
 	}
 
@@ -71,16 +72,16 @@ func SeedDatabase(db *gorm.DB) error {
 	}
 
 	if err := db.FirstOrCreate(&orgUser, orgUser).Error; err != nil {
-		log.Printf("Failed to link admin to organization: %v", err)
+		logger.Log.Error("Failed to link admin to organization", zap.Error(err))
 		return err
 	}
 
-	log.Println("=====================================================")
-	log.Printf("SYSTEM ADMIN GRANTED")
-	log.Printf("   User Email: %s", adminEmail)
-	log.Printf("   User UUID:  %s", adminUUIDStr)
-	log.Printf("   Role:       owner")
-	log.Println("=====================================================")
+	// ⚡️ Converted the multi-line banner into a clean structured log
+	logger.Log.Info("SYSTEM ADMIN GRANTED",
+		zap.String("user_email", adminEmail),
+		zap.String("user_uuid", adminUUIDStr),
+		zap.String("role", "owner"),
+	)
 
 	return nil
 }
