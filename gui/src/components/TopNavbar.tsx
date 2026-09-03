@@ -8,7 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 import { useDashboard } from '../features/dashboard/hook/useDashboard';
 import { api } from '../services/api';
-import { LibrarySearch } from './LibrairySearch'
+import { SearchBar } from './SearchBar'; 
+
 const scrollAnimation = keyframes`
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
@@ -59,16 +60,10 @@ export const TopNav: React.FC = () => {
   return (
     <Box w="100%" px={8} py={4} zIndex={50} bg="white">
       <Flex justify="space-between" align="center" gap={4}>
-        <Box w="100%" maxW="400px" ml={2}>
-          <LibrarySearch 
-            onSelectTrack={(track) => {
-              // 1. Remove the "track-" prefix
-              const trackId = track.id.replace('track-', '');
-              
-              // 2. Navigate to the track's page (adjust this route to match your app!)
-              navigate(`/tracks/${trackId}`); 
-            }} 
-          />
+        
+        {/* ⚡️ REPLACED OLD LIBRARY SEARCH WITH ADVANCED SEARCH BAR */}
+        <Box w="100%" maxW="600px" ml={2}>
+          <SearchBar />
         </Box>
 
         {/* RIGHT SIDE GROUP */}

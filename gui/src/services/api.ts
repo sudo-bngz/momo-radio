@@ -255,13 +255,38 @@ export const api = {
     return data.hits || [];
   },
 
-  searchTracksByTag: async (query: string, limit: number = 100): Promise<SearchResponse> => {
+  searchTracksByTag: async (tag: string, limit: number = 100): Promise<SearchResponse> => {
+    // Escape any double quotes in the tag to prevent Meilisearch syntax errors
+    const safeTag = tag.replace(/"/g, '\\"');
+
+    // List all the filterable attributes we configured in the Go backend
+    // Note: We exclude 'bpm' here because it's a numeric field, and Meilisearch 
+    // will throw an error if we try to compare a string tag to a number.
+    const attributes = [
+      'genre',
+      'style',
+      'mood',
+      'scale',
+      'musical_key',
+      'artists_names',
+      'album_title',
+      'year',
+      'publisher'
+    ];
+
+    // This dynamically builds: `genre = "tag" OR style = "tag" OR mood = "tag"...`
+    const filterExpression = attributes
+      .map(attr => `${attr} = "${safeTag}"`)
+      .join(' OR ');
+
     const response = await apiClient.get<SearchResponse>('/tracks/search', {
       params: {
-        q: query,
+        q: "", // Leave full-text search empty so we rely strictly on the filters
+        filter: filterExpression,
         limit: limit,
       },
     });
+    
     return response.data;
   },
 

@@ -28,15 +28,44 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     isFetchingMore, setSearchQuery, setSortBy, loadMore, hasMore
   } = useLibrary();
 
-  // ⚡️ FIXED: Guard against Postgres overwriting MeiliSearch results!
-  // If the search bar starts with "tag:", we stop Postgres from fetching.
+
   useEffect(() => { 
-    if (globalSearch && globalSearch.startsWith('tag:')) {
+    if (!globalSearch) {
+      setSearchQuery('');
+      // Reload legacy list if search is cleared
+      return;
+    }
+
+    // 1. If user typed or clicked "tag:Electronic"
+    if (globalSearch.startsWith('tag:')) {
+      const tag = globalSearch.replace('tag:', '').trim();
+      if (tag) {
+         api.searchTracksByTag(tag, 100).then(data => {
+           setTracks(data?.hits ? data.hits as any : []);
+         });
+      }
       return; 
     }
+
+    // 2. If user manually types "filter: bpm > 120 AND genre = 'dub'"
+    if (globalSearch.startsWith('filter:')) {
+      const rawFilter = globalSearch.replace('filter:', '').trim();
+      if (rawFilter) {
+         // Direct call to Meilisearch using your axios client
+         api.searchTracksByTag("").then(() => {}); // Dummy call to satisfy imports if needed, but better to fetch:
+         fetch(`/api/v1/tracks/search?q=&filter=${encodeURIComponent(rawFilter)}&limit=100`, {
+           headers: { Authorization: `Bearer ${useAuthStore.getState().session?.access_token}` }
+         })
+         .then(res => res.json())
+         .then(data => setTracks(data?.hits ? data.hits as any : []))
+         .catch(err => console.error("Filter error:", err));
+      }
+      return;
+    }
+
+    // 3. Normal text? Send to legacy Postgres hook
     setSearchQuery(globalSearch); 
-  }, [globalSearch, setSearchQuery]);
-  
+  }, [globalSearch, setSearchQuery, setTracks]);
   useEffect(() => { setSortBy(sortBy as any); }, [sortBy, setSortBy]);
 
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();

@@ -3,12 +3,14 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/meilisearch/meilisearch-go"
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
 )
 
 type SearchHandler struct {
@@ -19,7 +21,7 @@ func NewSearchHandler(meili meilisearch.ServiceManager) *SearchHandler {
 	return &SearchHandler{meili: meili}
 }
 
-// SearchLibrary fetches tracks using advanced query parsing
+// SearchLibrary fetches tracks using Meilisearch's native filter expressions
 func (h *SearchHandler) SearchLibrary(c *gin.Context) {
 	orgID, ok := getOrgID(c)
 	if !ok {
@@ -27,86 +29,92 @@ func (h *SearchHandler) SearchLibrary(c *gin.Context) {
 		return
 	}
 
-	rawQuery := c.Query("q")
+	query := c.Query("q")
 	limitStr := c.DefaultQuery("limit", "20")
 	limit, _ := strconv.ParseInt(limitStr, 10, 64)
 
-	// Extract explicit filters and the cleaned text query
-	cleanQuery, filterStr := parseAdvancedQuery(rawQuery, orgID.String())
+	logger.Log.Debug("Incoming search request",
+		zap.String("raw_q", query),
+		zap.String("raw_filter", c.Query("filter")),
+		zap.String("org_id", orgID.String()),
+	)
 
-	// Legacy support for explicit query params
-	if scale := c.Query("scale"); scale != "" {
-		filterStr += fmt.Sprintf(" AND scale = '%s'", scale)
-	}
-	if genre := c.Query("genre"); genre != "" {
-		filterStr += fmt.Sprintf(" AND genre = '%s'", genre)
+	// 1. Always enforce tenant isolation
+	baseFilter := fmt.Sprintf("organization_id = \"%s\"", orgID.String())
+	finalFilter := baseFilter
+
+	// 2. Intercept advanced syntax directly from the 'q' parameter
+	lowerQuery := strings.ToLower(strings.TrimSpace(query))
+
+	if strings.HasPrefix(lowerQuery, "tag:") {
+		// --- TAG MODE ---
+		tag := strings.TrimSpace(query[4:])
+		safeTag := strings.ReplaceAll(tag, `"`, `\"`) // Escape quotes
+
+		logger.Log.Debug("Tag mode detected", zap.String("parsed_tag", safeTag))
+
+		attributes := []string{
+			"genre", "style", "mood", "scale", "musical_key",
+			"artists_names", "album_title", "year", "publisher",
+		}
+
+		var tagFilters []string
+		for _, attr := range attributes {
+			tagFilters = append(tagFilters, fmt.Sprintf("%s = \"%s\"", attr, safeTag))
+		}
+
+		finalFilter = fmt.Sprintf("%s AND (%s)", baseFilter, strings.Join(tagFilters, " OR "))
+		query = "" // Clear text search so Meilisearch relies purely on the filter
+
+	} else if strings.HasPrefix(lowerQuery, "filter:") {
+		// --- RAW NATIVE FILTER MODE ---
+		rawFilter := strings.TrimSpace(query[7:])
+
+		logger.Log.Debug("Raw filter mode detected", zap.String("parsed_filter", rawFilter))
+
+		if rawFilter != "" {
+			finalFilter = fmt.Sprintf("%s AND (%s)", baseFilter, rawFilter)
+		}
+		query = "" // Clear text search
+
+	} else {
+		// --- LEGACY/EXPLICIT FILTER MODE ---
+		userFilter := c.Query("filter")
+		if userFilter != "" {
+			finalFilter = fmt.Sprintf("%s AND (%s)", baseFilter, userFilter)
+		}
 	}
 
-	searchRes, err := h.meili.Index("tracks").Search(cleanQuery, &meilisearch.SearchRequest{
-		Filter: filterStr,
+	logger.Log.Debug("Executing Meilisearch query",
+		zap.String("final_q", query),
+		zap.String("final_filter", finalFilter),
+		zap.Int64("limit", limit),
+	)
+
+	// 3. Execute the search
+	searchRes, err := h.meili.Index("tracks").Search(query, &meilisearch.SearchRequest{
+		Filter: finalFilter,
 		Limit:  limit,
 	})
 
 	if err != nil {
-		fmt.Printf("❌ Meilisearch error: %v\n", err)
+		logger.Log.Error("Meilisearch query failed",
+			zap.Error(err),
+			zap.String("query", query),
+			zap.String("filter", finalFilter),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search library"})
 		return
 	}
 
+	logger.Log.Debug("Meilisearch query successful",
+		zap.Int64("estimated_total_hits", searchRes.EstimatedTotalHits),
+		zap.Int("hits_returned", len(searchRes.Hits)),
+	)
+
 	c.JSON(http.StatusOK, gin.H{
 		"hits":                 searchRes.Hits,
 		"estimated_total_hits": searchRes.EstimatedTotalHits,
-		"query":                cleanQuery, // The stripped text query sent to Meilisearch
-		"raw_query":            rawQuery,   // The original string to preserve frontend UI state
+		"query":                c.Query("q"), // Return original query so UI state doesn't break
 	})
-}
-
-// parseAdvancedQuery extracts key:value pairs and builds a Meilisearch filter string
-func parseAdvancedQuery(rawQuery string, orgID string) (string, string) {
-	filterStr := fmt.Sprintf("organization_id = '%s'", orgID)
-	cleanQuery := rawQuery
-
-	// Matches `key:value` or `key:"value with spaces"`
-	re := regexp.MustCompile(`(?i)(\w+):(".*?"|\S+)`)
-	matches := re.FindAllStringSubmatch(rawQuery, -1)
-
-	// Map UI shortcuts to actual Meilisearch indexed fields
-	fieldMap := map[string]string{
-		"style":  "style",
-		"genre":  "genre",
-		"mood":   "mood",
-		"scale":  "scale",
-		"key":    "musical_key",
-		"tempo":  "bpm",
-		"bpm":    "bpm",
-		"year":   "album.year", // Maps to the nested Album object
-		"label":  "album.publisher",
-		"artist": "artists.name", // Maps to the nested Artists array
-	}
-
-	for _, match := range matches {
-		fullMatch := match[0]
-		key := strings.ToLower(match[1])
-		value := strings.Trim(match[2], `"`)
-
-		// Escape single quotes to prevent Meilisearch syntax errors (e.g. artist:"D'Angelo")
-		value = strings.ReplaceAll(value, "'", "\\'")
-
-		// Remove the parsed filter from the text search query
-		cleanQuery = strings.Replace(cleanQuery, fullMatch, "", 1)
-
-		if mappedKey, ok := fieldMap[key]; ok {
-			// If it's a numeric field, don't wrap it in quotes
-			if _, err := strconv.ParseFloat(value, 64); err == nil && (key == "tempo" || key == "bpm") {
-				filterStr += fmt.Sprintf(" AND %s = %s", mappedKey, value)
-			} else {
-				filterStr += fmt.Sprintf(" AND %s = '%s'", mappedKey, value)
-			}
-		}
-	}
-
-	// Clean up double spaces left behind by the regex replacement
-	cleanQuery = strings.Join(strings.Fields(cleanQuery), " ")
-
-	return cleanQuery, filterStr
 }
