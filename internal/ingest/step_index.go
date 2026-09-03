@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/meilisearch/meilisearch-go"
 )
@@ -9,6 +10,25 @@ import (
 type IndexStep struct{}
 
 func (s *IndexStep) Name() string { return "indexing_search" }
+
+// splitTags takes a comma-separated string, splits it, trims spaces, and returns a clean slice
+func splitTags(input string) []string {
+	if input == "" {
+		return []string{} // Return an empty array instead of nil so Meilisearch indexes it cleanly
+	}
+
+	rawTags := strings.Split(input, ",")
+	var cleanTags []string
+
+	for _, tag := range rawTags {
+		trimmed := strings.TrimSpace(tag)
+		if trimmed != "" {
+			cleanTags = append(cleanTags, trimmed)
+		}
+	}
+
+	return cleanTags
+}
 
 func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 	if ctx.Track == nil {
@@ -45,11 +65,12 @@ func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 		"album_title":   albumTitle,
 		"cover_url":     coverKey,
 
-		"genre":              ctx.Track.Genre,
-		"style":              ctx.Track.Style,
-		"mood":               ctx.Track.Mood,
-		"scale":              ctx.Track.Scale,
-		"musical_key":        ctx.Track.MusicalKey,
+		"genre":       splitTags(ctx.Track.Genre),
+		"style":       splitTags(ctx.Track.Style),
+		"mood":        splitTags(ctx.Track.Mood),
+		"scale":       splitTags(ctx.Track.Scale),
+		"musical_key": splitTags(ctx.Track.MusicalKey),
+
 		"bpm":                ctx.Track.BPM,
 		"ml_characteristics": []string(ctx.Track.MLCharacteristics),
 		"duration":           ctx.Track.Duration,
