@@ -255,6 +255,18 @@ export const api = {
     return data.hits || [];
   },
 
+  searchTracksByFilter: async (filterExpression: string, limit: number = 100): Promise<SearchResponse> => {
+    const response = await apiClient.get<SearchResponse>('/tracks/search', {
+      params: {
+        q: "",
+        filter: filterExpression,
+        limit: limit,
+      },
+    });
+    
+    return response.data;
+  },
+
   searchTracksByTag: async (tag: string, limit: number = 100): Promise<SearchResponse> => {
     // Escape any double quotes in the tag to prevent Meilisearch syntax errors
     const safeTag = tag.replace(/"/g, '\\"');

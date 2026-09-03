@@ -11,11 +11,17 @@ import { ShareDrawer } from '../../shared/components/ShareDrawer';
 import { api } from '../../../services/api';
 import { toaster } from '../../../components/ui/toaster';
 import { useSearchStore } from '../../../store/useSearchStore';
-import { useAuthStore } from '../../../store/useAuthStore';
 
 interface TrackListViewProps {
   sortBy: string;
 }
+
+const ensureArray = (val: any): string[] => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') return val.split(',');
+  return [];
+};
 
 export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   const navigate = useNavigate();
@@ -28,37 +34,60 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     isFetchingMore, setSearchQuery, setSortBy, loadMore, hasMore
   } = useLibrary();
 
+  // ⚡️ CLEANED UP: Now uses your configured Axios client via api.searchTracksByFilter!
+  const executeAdvancedSearch = async (filterStr: string) => {
+    try {
+      const data = await api.searchTracksByFilter(filterStr);
+      
+      if (data && data.hits) {
+        const mappedTracks = data.hits.map((hit: any) => ({
+          id: Number(hit.id),
+          organization_id: hit.organization_id || '',
+          key: hit.id, 
+          title: hit.title,
+          artist: hit.artists_names?.join(', ') || 'Unknown Artist',
+          album: hit.album_title || '',
+          genre: hit.genre || '',
+          style: hit.style || '',
+          duration: hit.duration || 0,
+          cover_url: hit.cover_url || '',
+          bpm: hit.bpm || 0,
+          musical_key: hit.musical_key || '',
+          scale: hit.scale || '',
+          status: 'completed',
+          processing_status: 'completed'
+        }));
+        setTracks(mappedTracks as any);
+      } else {
+        setTracks([]);
+      }
+    } catch (error) {
+      console.error("Filter search failed:", error);
+      toaster.create({ title: "Search failed", type: "error" });
+    }
+  };
 
   useEffect(() => { 
     if (!globalSearch) {
       setSearchQuery('');
-      // Reload legacy list if search is cleared
       return;
     }
 
-    // 1. If user typed or clicked "tag:Electronic"
-    if (globalSearch.startsWith('tag:')) {
-      const tag = globalSearch.replace('tag:', '').trim();
-      if (tag) {
-         api.searchTracksByTag(tag, 100).then(data => {
-           setTracks(data?.hits ? data.hits as any : []);
-         });
-      }
-      return; 
-    }
-
-    // 2. If user manually types "filter: bpm > 120 AND genre = 'dub'"
+    // 1. Raw Filter Mode (filter: bpm > 120)
     if (globalSearch.startsWith('filter:')) {
       const rawFilter = globalSearch.replace('filter:', '').trim();
-      if (rawFilter) {
-         // Direct call to Meilisearch using your axios client
-         api.searchTracksByTag("").then(() => {}); // Dummy call to satisfy imports if needed, but better to fetch:
-         fetch(`/api/v1/tracks/search?q=&filter=${encodeURIComponent(rawFilter)}&limit=100`, {
-           headers: { Authorization: `Bearer ${useAuthStore.getState().session?.access_token}` }
-         })
-         .then(res => res.json())
-         .then(data => setTracks(data?.hits ? data.hits as any : []))
-         .catch(err => console.error("Filter error:", err));
+      if (rawFilter) executeAdvancedSearch(rawFilter);
+      return;
+    }
+
+    // 2. Explicit Genre & Style shortcut Mode (genre: House or style: Techno)
+    const attrMatch = globalSearch.match(/^(genre|style):\s*(.+)/i);
+    if (attrMatch) {
+      const attr = attrMatch[1].toLowerCase(); 
+      const val = attrMatch[2].trim();
+      if (val) {
+        const safeVal = val.replace(/"/g, '\\"');
+        executeAdvancedSearch(`${attr} = "${safeVal}"`);
       }
       return;
     }
@@ -66,6 +95,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     // 3. Normal text? Send to legacy Postgres hook
     setSearchQuery(globalSearch); 
   }, [globalSearch, setSearchQuery, setTracks]);
+  
   useEffect(() => { setSortBy(sortBy as any); }, [sortBy, setSortBy]);
 
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();
@@ -121,15 +151,8 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
           const updated = await api.getTrack(id) as any; 
           
           if (updated.processing_status === 'completed') {
-            const token = useAuthStore.getState().session?.access_token;
-            const orgId = useAuthStore.getState().activeOrganizationId;
-
-            const res = await fetch(`/api/v1/tracks?search=${encodeURIComponent(updated.title)}&org_id=${orgId}`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            const data = await res.json();
-            
-            const formattedTrack = data.data?.find((t: any) => t.id === updated.id);
+            const res = await api.getTracks({ search: updated.title });
+            const formattedTrack = res.data?.find((t: any) => t.id === updated.id);
 
             if (formattedTrack) {
               setTracks(tracksRef.current.map(track => track.id === updated.id ? formattedTrack : track));
@@ -177,45 +200,10 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     }
   };
 
-  // ⚡️ KILLER FEATURE: Prefill "tag:" in search bar, fetch raw tag from MeiliSearch
-  const handleTagClick = async (e: React.MouseEvent, tag: string) => {
+  // ⚡️ TRIGGER search bar injection for either Genre or Style
+  const handleAttributeClick = (e: React.MouseEvent, type: 'genre' | 'style', val: string) => {
     e.stopPropagation();
-    
-    // 1. Update the Search Bar UI with the Pro Syntax
-    const uiSyntax = `tag:${tag}`;
-    if (setGlobalSearch) setGlobalSearch(uiSyntax);
-    
-    // 2. Pass the RAW tag to MeiliSearch so it doesn't try to query the word "tag"
-    try {
-      const data = await api.searchTracksByTag(tag, 100);
-      
-      if (data && data.hits) {
-        const mappedTracks = data.hits.map((hit: any) => ({
-          id: Number(hit.id),
-          organization_id: hit.organization_id || '',
-          key: hit.id, 
-          title: hit.title,
-          artist: hit.artists_names?.join(', ') || 'Unknown Artist',
-          album: hit.album_title || '',
-          genre: hit.genre || '',
-          style: hit.style || '',
-          duration: hit.duration || 0,
-          cover_url: hit.cover_url || '',
-          bpm: hit.bpm || 0,
-          musical_key: hit.musical_key || '',
-          scale: hit.scale || '',
-          status: 'completed',
-          processing_status: 'completed'
-        }));
-        
-        setTracks(mappedTracks as any);
-      } else {
-        setTracks([]); // Clear table if no results
-      }
-    } catch (error) {
-      console.error("Failed to execute tag search:", error);
-      toaster.create({ title: "Tag search failed", type: "error" });
-    }
+    if (setGlobalSearch) setGlobalSearch(`${type}: ${val}`);
   };
 
   return (
@@ -241,7 +229,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                   <Table.ColumnHeader>Track ({globalTotal})</Table.ColumnHeader>
                   <Table.ColumnHeader>Artist</Table.ColumnHeader>
                   <Table.ColumnHeader>Album</Table.ColumnHeader>
-                  <Table.ColumnHeader>Genre</Table.ColumnHeader>
+                  <Table.ColumnHeader>Genre & Style</Table.ColumnHeader>
                   <Table.ColumnHeader>BPM</Table.ColumnHeader>
                   <Table.ColumnHeader textAlign="right">Time</Table.ColumnHeader>
                   <Table.ColumnHeader w="50px"></Table.ColumnHeader>
@@ -266,12 +254,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                   const hasAudioData = track.duration && track.duration > 0;
                   const hasPendingFlag = ['pending', 'processing'].includes(track.status || '') || ['pending', 'processing'].includes(track.processing_status || '');
                   const isPending = !hasAudioData || (hasPendingFlag && !hasAudioData);
-
-                  const rawTags = [
-                    ...(track.genre ? track.genre.split(',') : []),
-                    ...(track.style ? track.style.split(',') : [])
-                  ];
-                  const mergedTags = Array.from(new Set(rawTags.map(t => t.trim()).filter(Boolean)));
 
                   const rawAlbum = track.album as any;
                   const albumName = typeof rawAlbum === 'object' ? rawAlbum?.title : rawAlbum;
@@ -348,7 +330,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
                           {track.artist ? (
-                            track.artist.split(',').map((artistName: string, index: number, arr: string[]) => {
+                            ensureArray(track.artist).map((artistName: string, index: number, arr: string[]) => {
                               const cleanArtist = artistName.trim();
                               return (
                                 <React.Fragment key={index}>
@@ -395,20 +377,35 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                       
                       <Table.Cell>
                         <HStack gap={1} flexWrap="wrap">
-                          {mergedTags.length > 0 ? (
-                            mergedTags.map((cleanTag, index) => (
-                              <Badge 
-                                key={index} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} 
-                                cursor={isPending ? "not-allowed" : "pointer"}
-                                _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
-                                onClick={(e) => { 
-                                  if (!isPending) handleTagClick(e, cleanTag); 
-                                }}
-                              >
-                                {cleanTag}
-                              </Badge>
-                            ))
-                          ) : (
+                          {ensureArray(track.genre).map((cleanTag, index) => (
+                            <Badge 
+                              key={`g-${index}`} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} 
+                              cursor={isPending ? "not-allowed" : "pointer"}
+                              _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
+                              onClick={(e) => { 
+                                if (!isPending) handleAttributeClick(e, 'genre', cleanTag.trim()); 
+                              }}
+                              title="Genre"
+                            >
+                              {cleanTag.trim()}
+                            </Badge>
+                          ))}
+                          
+                          {ensureArray(track.style).map((cleanTag, index) => (
+                            <Badge 
+                              key={`s-${index}`} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="outline" borderRadius="md" px={2} 
+                              cursor={isPending ? "not-allowed" : "pointer"}
+                              _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
+                              onClick={(e) => { 
+                                if (!isPending) handleAttributeClick(e, 'style', cleanTag.trim()); 
+                              }}
+                              title="Style"
+                            >
+                              {cleanTag.trim()}
+                            </Badge>
+                          ))}
+                          
+                          {ensureArray(track.genre).length === 0 && ensureArray(track.style).length === 0 && (
                             <Badge size="sm" bg="gray.100" color="gray.400" variant="subtle" borderRadius="md" px={2}>-</Badge>
                           )}
                         </HStack>
