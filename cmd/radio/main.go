@@ -4,17 +4,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+
+	"github.com/redis/go-redis/v9"
 
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/radio"
 	"momo-radio/internal/storage"
-
-	"github.com/redis/go-redis/v9"
 )
 
 func main() {
+	logger.Init()
+	defer logger.Sync()
+
 	simulate := flag.Bool("simulate", false, "Dry run")
 	flag.Parse()
 
@@ -34,7 +37,7 @@ func main() {
 		DB:       cfg.Redis.DB,
 	})
 
-	log.Println("🚀 Starting Momo Radio Supervisor...")
+	logger.Log.Info("🚀 Starting Momo Radio Supervisor...")
 
 	engine := radio.New(cfg, store, db, rdb)
 

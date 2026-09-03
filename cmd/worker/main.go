@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -13,17 +12,20 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
 	"momo-radio/internal/export"
 	"momo-radio/internal/ingest"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/search"
 	"momo-radio/internal/storage"
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	logger.Init()
+	defer logger.Sync()
 
 	// 1. Define Flags
 	repairMeta := flag.Bool("repair-metadata", false, "Run metadata enrichment on existing tracks")
@@ -57,9 +59,9 @@ func main() {
 		tlsConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		}
-		log.Println("Redis TLS Enabled (Upstash/Production mode)")
+		logger.Log.Info("Redis TLS Enabled (Upstash/Production mode)")
 	} else {
-		log.Println("Redis TLS Disabled (Local Development mode)")
+		logger.Log.Info("Redis TLS Disabled (Local Development mode)")
 	}
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -85,7 +87,7 @@ func main() {
 
 	// Ensure temp directory exists
 	if err := os.MkdirAll(cfg.Server.TempDir, 0755); err != nil {
-		log.Fatalf("Failed to create temp dir: %v", err)
+		logger.Log.Fatal("Failed to create temp dir", zap.Error(err))
 	}
 
 	meiliClient := search.InitMeilisearch(cfg)
@@ -96,33 +98,35 @@ func main() {
 
 	// 7. MODE SELECTION (CLI Maintenance)
 	if *repairMeta || *repairAudio || *repairCountry {
-		log.Println("MAINTENANCE MODE ACTIVE")
-		log.Printf("Storage Provider: %s", cfg.Storage.Provider)
+		logger.Log.Info("MAINTENANCE MODE ACTIVE", zap.String("storage_provider", cfg.Storage.Provider))
 
 		if *repairAudio {
-			log.Println("Starting Audio Repair (Essentia)...")
+			logger.Log.Info("Starting Audio Repair (Essentia)...")
 			ingestWorker.RepairAudio()
 		}
 
 		if *repairMeta {
-			log.Println("Starting Metadata Repair...")
+			logger.Log.Info("Starting Metadata Repair...")
 			ingestWorker.RepairMetadata()
 		}
 
 		if *repairCountry {
 			if *dryRun {
-				log.Println("MODE: DRY RUN (No DB writes)")
+				logger.Log.Info("MODE: DRY RUN (No DB writes)")
 			}
-			log.Printf("Starting Country Repair (%s) for %d targets...", *repairProvider, len(targetArtists))
+			logger.Log.Info("Starting Country Repair",
+				zap.String("provider", *repairProvider),
+				zap.Int("target_count", len(targetArtists)),
+			)
 			ingestWorker.RepairCountry(*dryRun, targetArtists, *repairProvider)
 		}
 
-		log.Println("All maintenance tasks finished. Exiting.")
+		logger.Log.Info("All maintenance tasks finished. Exiting.")
 		return
 	}
 
 	// 8. NORMAL OPERATION
-	log.Printf("Starting Unified Radio Worker [Storage: %s]...", cfg.Storage.Provider)
+	logger.Log.Info("Starting Unified Radio Worker", zap.String("storage_provider", cfg.Storage.Provider))
 
 	// 9. Setup Metrics for ALL domains
 	ingest.RegisterMetrics()
@@ -130,9 +134,10 @@ func main() {
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Printf("Metrics exposed at http://localhost%s/metrics", cfg.Server.MetricsPort)
+		metricsURL := fmt.Sprintf("http://localhost%s/metrics", cfg.Server.MetricsPort)
+		logger.Log.Info("Metrics exposed", zap.String("url", metricsURL))
 		if err := http.ListenAndServe(cfg.Server.MetricsPort, nil); err != nil {
-			log.Printf("Metrics server failed: %v", err)
+			logger.Log.Error("Metrics server failed", zap.Error(err))
 		}
 	}()
 
@@ -160,8 +165,8 @@ func main() {
 
 	mux.HandleFunc(export.TypeExportPlaylist, exportWorker.HandlePlaylistExportTask)
 
-	log.Println("Asynq Multiplexer listening for jobs...")
+	logger.Log.Info("Asynq Multiplexer listening for jobs...")
 	if err := srv.Run(mux); err != nil {
-		log.Fatalf("Failed to start Asynq worker: %v", err)
+		logger.Log.Fatal("Failed to start Asynq worker", zap.Error(err))
 	}
 }
