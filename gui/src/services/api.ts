@@ -320,7 +320,9 @@ export const api = {
   updateTrack: async (id: number | string, data: Partial<Track>): Promise<void> => {
     await apiClient.put(`/tracks/${id}`, data);
   },
-
+  deleteTrack: async (id: number | string): Promise<void> => {
+    await apiClient.delete(`/tracks/${id}`);
+  },
   analysis: async (id: number | string): Promise<void> => {
     await apiClient.post(`/tracks/${id}/analysis`);
   },

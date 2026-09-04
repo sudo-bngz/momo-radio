@@ -168,6 +168,32 @@ func main() {
 		},
 	)
 
+	// Start the Asynq Scheduler for recurring tasks
+	scheduler := asynq.NewScheduler(
+		asynq.RedisClientOpt{
+			Addr:      redisAddr,
+			Password:  cfg.Redis.Password,
+			DB:        cfg.Redis.DB,
+			TLSConfig: tlsConfig,
+		},
+		&asynq.SchedulerOpts{
+			Logger: &zapAsynqLogger{logger: logger.Log},
+		},
+	)
+
+	// Register the sweeper job to run automatically every hour
+	_, err := scheduler.Register(cfg.Worker.SweeperInterval, asynq.NewTask(ingest.TypeSweepOrphanedTracks, nil))
+	if err != nil {
+		logger.Log.Fatal("Failed to register sweeper task", zap.Error(err))
+	}
+
+	// Start the scheduler in a goroutine so it doesn't block the worker server
+	go func() {
+		if err := scheduler.Run(); err != nil {
+			logger.Log.Error("Scheduler failed", zap.Error(err))
+		}
+	}()
+
 	// 11. Wire the tasks to their respective handlers!
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(ingest.TypeTrackProcess, ingestWorker.HandleProcessTask)
@@ -175,6 +201,7 @@ func main() {
 	mux.HandleFunc(ingest.TypeTrackEnrich, ingestWorker.HandleTrackEnrichTask)
 	mux.HandleFunc(export.TypeExportPlaylist, exportWorker.HandlePlaylistExportTask)
 	mux.HandleFunc(ingest.TypeReindexCatalog, ingestWorker.HandleReindexCatalogTask)
+	mux.HandleFunc(ingest.TypeSweepOrphanedTracks, ingestWorker.HandleSweepOrphanedTask)
 
 	logger.Log.Info("Asynq Multiplexer listening for jobs...")
 	if err := srv.Run(mux); err != nil {

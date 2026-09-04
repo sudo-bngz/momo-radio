@@ -78,6 +78,7 @@ type Config struct {
 		DelayedCheckIntervalSec int            `mapstructure:"delayed_check_interval_sec"`
 		HealthCheckIntervalSec  int            `mapstructure:"health_check_interval_sec"`
 		RedisPoolSize           int            `mapstructure:"redis_pool_size"`
+		SweeperInterval         string         `mapstructure:"sweeper_interval"` // ⚡️ ADDED: Configurable sweeper cron schedule
 	} `mapstructure:"worker"`
 	Supabase struct {
 		URL          string `mapstructure:"url"`
@@ -164,6 +165,7 @@ func Load() *Config {
 	viper.BindEnv("services.acoustid_key")
 
 	viper.BindEnv("worker.concurrency")
+	viper.BindEnv("worker.sweeper_interval")
 
 	viper.BindEnv("supabase.url", "SUPABASE_URL")
 	viper.BindEnv("supabase.anon_key", "SUPABASE_ANON_KEY")
@@ -219,6 +221,7 @@ func Load() *Config {
 	viper.SetDefault("worker.delayed_check_interval_sec", 3)
 	viper.SetDefault("worker.health_check_interval_sec", 5)
 	viper.SetDefault("worker.redis_pool_size", 10)
+	viper.SetDefault("worker.sweeper_interval", "@every 10m")
 
 	viper.SetDefault("meilisearch.host", "http://localhost:7700")
 

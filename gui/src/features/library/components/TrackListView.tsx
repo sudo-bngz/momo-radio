@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Box, VStack, HStack, Text, Spinner, Table, Badge, Icon, Button 
 } from '@chakra-ui/react';
-import { Play, Pause, Music, RefreshCw, Share2 } from 'lucide-react';
+import { Play, Pause, Music, RefreshCw, Share2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
@@ -34,7 +34,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     isFetchingMore, setSearchQuery, setSortBy, loadMore, hasMore
   } = useLibrary();
 
-  // ⚡️ CLEANED UP: Now uses your configured Axios client via api.searchTracksByFilter!
   const executeAdvancedSearch = async (filterStr: string) => {
     try {
       const data = await api.searchTracksByFilter(filterStr);
@@ -73,14 +72,12 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       return;
     }
 
-    // 1. Raw Filter Mode (filter: bpm > 120)
     if (globalSearch.startsWith('filter:')) {
       const rawFilter = globalSearch.replace('filter:', '').trim();
       if (rawFilter) executeAdvancedSearch(rawFilter);
       return;
     }
 
-    // 2. Explicit Genre & Style shortcut Mode (genre: House or style: Techno)
     const attrMatch = globalSearch.match(/^(genre|style):\s*(.+)/i);
     if (attrMatch) {
       const attr = attrMatch[1].toLowerCase(); 
@@ -92,7 +89,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       return;
     }
 
-    // 3. Normal text? Send to legacy Postgres hook
     setSearchQuery(globalSearch); 
   }, [globalSearch, setSearchQuery, setTracks]);
   
@@ -200,7 +196,21 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     }
   };
 
-  // ⚡️ TRIGGER search bar injection for either Genre or Style
+  const handleDelete = async (e: React.MouseEvent, trackId: number) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to remove this failed track?")) return;
+    
+    try {
+      // NOTE: Ensure api.deleteTrack is implemented in your src/services/api.ts
+      await api.deleteTrack(trackId);
+      setTracks(tracksRef.current.filter(t => t.id !== trackId));
+      toaster.create({ title: "Track removed", type: "success" });
+    } catch (error) {
+      console.error("Delete failed:", error);
+      toaster.create({ title: "Failed to remove track", type: "error" });
+    }
+  };
+
   const handleAttributeClick = (e: React.MouseEvent, type: 'genre' | 'style', val: string) => {
     e.stopPropagation();
     if (setGlobalSearch) setGlobalSearch(`${type}: ${val}`);
@@ -319,10 +329,16 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                           >
                             {track.title}
                           </Text>
+                          {/* ⚡️ ADDED: Delete button next to Retry */}
                           {track.processing_status === 'failed' && (
-                            <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="red.500" onClick={(e) => handleRetry(e, track.id)} _hover={{ bg: "red.50" }}>
-                              <Icon as={RefreshCw} boxSize={3.5} />
-                            </Button>
+                            <HStack gap={1}>
+                              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="red.500" onClick={(e) => handleRetry(e, track.id)} _hover={{ bg: "red.50" }} title="Retry Analysis">
+                                <Icon as={RefreshCw} boxSize={3.5} />
+                              </Button>
+                              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="gray.500" onClick={(e) => handleDelete(e, track.id)} _hover={{ bg: "gray.100" }} title="Delete Track">
+                                <Icon as={Trash2} boxSize={3.5} />
+                              </Button>
+                            </HStack>
                           )}
                         </HStack>
                       </Table.Cell>
