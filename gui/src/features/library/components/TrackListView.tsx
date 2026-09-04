@@ -40,6 +40,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       
       if (data && data.hits) {
         const mappedTracks = data.hits.map((hit: any) => ({
+          // ⚡️ Strip 'track-' prefix so the ID is a clean number for the Drawer
           id: typeof hit.id === 'string' ? Number(hit.id.replace('track-', '')) : Number(hit.id),
           organization_id: hit.organization_id || '',
           key: hit.id, 
@@ -62,7 +63,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       }
     } catch (error) {
       console.error("Filter search failed:", error);
-      toaster.create({ title: "Search failed", type: "error" });
+      setTracks([]); // Quietly empty the list on bad syntax
     }
   };
 
@@ -73,15 +74,14 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
         return;
       }
 
-      // 1. Raw Filter Mode (User explicitly types "filter: ...")
-      if (globalSearch.startsWith('filter:')) {
-        const rawFilter = globalSearch.replace('filter:', '').trim();
+      // 1. Raw Filter Mode Bypass (User explicitly types "filter: ...")
+      if (globalSearch.toLowerCase().startsWith('filter:')) {
+        const rawFilter = globalSearch.substring(7).trim();
         if (rawFilter) executeAdvancedSearch(rawFilter);
         return;
       }
 
-      // 2. Smart Dictionary Map 
-      // Maps user-friendly search prefixes to actual database columns
+      // 2. Smart Dictionary Map & Token Parser
       const filterMap: Record<string, string> = {
         artist: 'artists_names',
         album: 'album_title',
@@ -94,28 +94,46 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
         duration: 'duration',
         year: 'year'
       };
-
-      // Dynamically build regex: ^(artist|album|genre|style|bpm|...)\s*(:|>=|<=|>|<|=|!=)\s*(.+)
+      const numericFields = ['bpm', 'duration', 'year'];
       const filterKeys = Object.keys(filterMap).join('|');
-      const dynamicRegex = new RegExp(`^(${filterKeys})\\s*(:|>=|<=|>|<|=|!=)\\s*(.+)`, 'i');
-      
-      const match = globalSearch.match(dynamicRegex);
-      
-      if (match) {
-        const userField = match[1].toLowerCase();
-        let operator = match[2];
-        const val = match[3].trim();
 
-        const meiliField = filterMap[userField];
+      // Check if the query contains ANY of our smart filter keys followed by an operator
+      const hasFilter = new RegExp(`\\b(${filterKeys})\\s*(:|>=|<=|>|<|=|!=)`, 'i').test(globalSearch);
+
+      if (hasFilter) {
+        // Normalize compound operators (user 'and' -> Meilisearch 'AND')
+        const normalizedSearch = globalSearch
+          .replace(/\s+and\s+/gi, ' AND ')
+          .replace(/\s+or\s+/gi, ' OR ');
+
+        // Split the string by AND / OR, keeping the separators in the array
+        const tokens = normalizedSearch.split(/\s+(AND|OR)\s+/);
         
-        // Normalize colons to equal signs for Meilisearch
-        if (operator === ':') operator = '=';
+        const parsedTokens = tokens.map((token: string) => {
+          if (token === 'AND' || token === 'OR') return token;
+          
+          // Parse the individual clause (e.g., "style: deep house" or "bpm > 120")
+          const clauseMatch = token.match(new RegExp(`^\\s*(${filterKeys})\\s*(:|>=|<=|>|<|=|!=)\\s*(.+)$`, 'i'));
+          
+          if (clauseMatch) {
+             const field = clauseMatch[1].toLowerCase();
+             const operator = clauseMatch[2] === ':' ? '=' : clauseMatch[2];
+             
+             // Strip existing quotes so we don't double-quote if the user manually typed them
+             let val = clauseMatch[3].trim().replace(/^["'](.*)["']$/, '$1');
 
-        // Numbers don't need quotes, strings do. 
-        const numericFields = ['bpm', 'duration', 'year'];
-        const formattedVal = numericFields.includes(meiliField) ? val : `"${val.replace(/"/g, '\\"')}"`;
+             const meiliField = filterMap[field];
+             const formattedVal = numericFields.includes(meiliField) ? val : `"${val.replace(/"/g, '\\"')}"`;
+             
+             return `${meiliField} ${operator} ${formattedVal}`;
+          }
+          
+          return token; // Fallback for unmatched parts
+        });
 
-        executeAdvancedSearch(`${meiliField} ${operator} ${formattedVal}`);
+        // Stitch it all back together!
+        const meiliFilter = parsedTokens.join(' ');
+        executeAdvancedSearch(meiliFilter);
         return;
       }
 
@@ -249,6 +267,16 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     if (setGlobalSearch) setGlobalSearch(`${type}: ${val}`);
   };
 
+  // ⚡️ Deduplicate the tracks array so React never receives duplicate keys
+  const uniqueTracks = useMemo(() => {
+    const seen = new Set();
+    return tracks.filter(track => {
+      if (!track.id || seen.has(track.id)) return false;
+      seen.add(track.id);
+      return true;
+    });
+  }, [tracks]);
+
   return (
     <VStack align="stretch" h="100%" gap={0} position="relative">
       <Box flex="1" overflowY="auto" onScroll={handleScroll}
@@ -257,7 +285,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
           '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-gray-200)', borderRadius: '4px' },
         }}
       >
-        {isLoading && tracks.length === 0 ? (
+        {isLoading && uniqueTracks.length === 0 ? (
           <VStack justify="center" h="100%"><Spinner size="xl" color="blue.500" /></VStack>
         ) : (
           <>
@@ -279,7 +307,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                 </Table.Row>
             </Table.Header>
              <Table.Body>
-                {!isLoading && tracks.length === 0 && (
+                {!isLoading && uniqueTracks.length === 0 && (
                   <Table.Row>
                     <Table.Cell colSpan={9} textAlign="center" py={12} color="gray.500">
                       <VStack gap={2}>
@@ -291,7 +319,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                   </Table.Row>
                 )}
 
-                {tracks.map((track) => {
+                {uniqueTracks.map((track) => {
                   const isThisTrackPlaying = currentTrack?.id === track.id;
                   const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
                   const hasAudioData = track.duration && track.duration > 0;
