@@ -38,9 +38,8 @@ export const SearchBar = () => {
               </IconButton>
             </Popover.Trigger>
             
-            {/* ⚡️ FIXED: Added required Positioner wrapper for v3 */}
             <Popover.Positioner zIndex={50}>
-              <Popover.Content w="320px" shadow="xl" border="1px solid" borderColor="gray.200" borderRadius="xl" bg="white">
+              <Popover.Content w="340px" shadow="xl" border="1px solid" borderColor="gray.200" borderRadius="xl" bg="white">
                 <Popover.Arrow />
                 <Popover.Body p={4}>
                   <VStack align="stretch" gap={4}>
@@ -51,20 +50,23 @@ export const SearchBar = () => {
                         <Text fontSize="xs" fontWeight="700" textTransform="uppercase">Quick Filters</Text>
                       </HStack>
                       <HStack flexWrap="wrap" gap={2}>
-                        <Badge cursor="pointer" onClick={() => handleSuggestionClick("tag: Electronic")} _hover={{ opacity: 0.8 }} colorPalette="blue">Tag: Electronic</Badge>
-                        <Badge cursor="pointer" onClick={() => handleSuggestionClick("filter: bpm > 120")} _hover={{ opacity: 0.8 }} colorPalette="green">BPM {'>'} 120</Badge>
-                        <Badge cursor="pointer" onClick={() => handleSuggestionClick("filter: year >= 2020")} _hover={{ opacity: 0.8 }} colorPalette="purple">New Releases</Badge>
-                        <Badge cursor="pointer" onClick={() => handleSuggestionClick('filter: genre = "Dub"')} _hover={{ opacity: 0.8 }} colorPalette="orange">Genre: Dub</Badge>
+                        {/* ⚡️ UPDATED: Now using the clean syntax we just built! */}
+                        <Badge cursor="pointer" onClick={() => handleSuggestionClick("style: Techno")} _hover={{ opacity: 0.8 }} colorPalette="blue">Style: Techno</Badge>
+                        <Badge cursor="pointer" onClick={() => handleSuggestionClick("bpm > 120")} _hover={{ opacity: 0.8 }} colorPalette="green">BPM {'>'} 120</Badge>
+                        <Badge cursor="pointer" onClick={() => handleSuggestionClick("year >= 2024")} _hover={{ opacity: 0.8 }} colorPalette="purple">New Releases</Badge>
+                        <Badge cursor="pointer" onClick={() => handleSuggestionClick("artist: I:cube")} _hover={{ opacity: 0.8 }} colorPalette="orange">Artist: I:cube</Badge>
                       </HStack>
                     </Box>
 
                     <Box borderTop="1px solid" borderColor="gray.100" pt={3}>
-                      <Text fontSize="xs" fontWeight="700" color="gray.500" mb={2} textTransform="uppercase">Advanced Syntax</Text>
+                      <Text fontSize="xs" fontWeight="700" color="gray.500" mb={2} textTransform="uppercase">Smart Syntax</Text>
                       <VStack align="stretch" gap={2} fontSize="xs" color="gray.600">
-                        <Text><Text as="span" fontWeight="bold" color="gray.900">tag: [name]</Text> — Broad search across all tags</Text>
-                        <Text><Text as="span" fontWeight="bold" color="gray.900">filter: [expr]</Text> — Use AND/OR logic</Text>
+                        <Text><Text as="span" fontWeight="bold" color="gray.900">[field]: [value]</Text> — Search specific attributes</Text>
+                        <Text><Text as="span" fontWeight="bold" color="gray.900">[field] {'>'} [number]</Text> — Use math for bpm, duration, year</Text>
                         <Box bg="gray.50" p={2} borderRadius="md" fontFamily="monospace" fontSize="2xs">
-                          filter: bpm &gt; 120 AND style = "Techno"
+                          Try: bpm &gt; 125<br/>
+                          Try: duration &lt; 300<br/>
+                          Try: style != House
                         </Box>
                       </VStack>
                     </Box>
@@ -80,7 +82,7 @@ export const SearchBar = () => {
           ref={inputRef}
           value={globalSearch || ''}
           onChange={(e) => setGlobalSearch(e.target.value)}
-          placeholder="Search tracks, artists, or type filter:"
+          placeholder="Search tracks, or type 'bpm > 120'..." // ⚡️ UPDATED placeholder
           bg="gray.50"
           border="1px solid"
           borderColor="gray.200"

@@ -65,31 +65,64 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       toaster.create({ title: "Search failed", type: "error" });
     }
   };
-
   useEffect(() => { 
-    if (!globalSearch) {
-      setSearchQuery('');
-      return;
-    }
-
-    if (globalSearch.startsWith('filter:')) {
-      const rawFilter = globalSearch.replace('filter:', '').trim();
-      if (rawFilter) executeAdvancedSearch(rawFilter);
-      return;
-    }
-
-    const attrMatch = globalSearch.match(/^(genre|style):\s*(.+)/i);
-    if (attrMatch) {
-      const attr = attrMatch[1].toLowerCase(); 
-      const val = attrMatch[2].trim();
-      if (val) {
-        const safeVal = val.replace(/"/g, '\\"');
-        executeAdvancedSearch(`${attr} = "${safeVal}"`);
+    const timeoutId = setTimeout(() => {
+      if (!globalSearch) {
+        setSearchQuery('');
+        return;
       }
-      return;
-    }
 
-    setSearchQuery(globalSearch); 
+      // 1. Raw Filter Mode (User explicitly types "filter: ...")
+      if (globalSearch.startsWith('filter:')) {
+        const rawFilter = globalSearch.replace('filter:', '').trim();
+        if (rawFilter) executeAdvancedSearch(rawFilter);
+        return;
+      }
+
+      // 2. Smart Dictionary Map 
+      // Maps user-friendly search prefixes to actual database columns
+      const filterMap: Record<string, string> = {
+        artist: 'artists_names',
+        album: 'album_title',
+        genre: 'genre',
+        style: 'style',
+        mood: 'mood',
+        scale: 'scale',
+        key: 'musical_key',
+        bpm: 'bpm',
+        duration: 'duration',
+        year: 'year'
+      };
+
+      // Dynamically build regex: ^(artist|album|genre|style|bpm|...)\s*(:|>=|<=|>|<|=|!=)\s*(.+)
+      const filterKeys = Object.keys(filterMap).join('|');
+      const dynamicRegex = new RegExp(`^(${filterKeys})\\s*(:|>=|<=|>|<|=|!=)\\s*(.+)`, 'i');
+      
+      const match = globalSearch.match(dynamicRegex);
+      
+      if (match) {
+        const userField = match[1].toLowerCase();
+        let operator = match[2];
+        const val = match[3].trim();
+
+        const meiliField = filterMap[userField];
+        
+        // Normalize colons to equal signs for Meilisearch
+        if (operator === ':') operator = '=';
+
+        // Numbers don't need quotes, strings do. 
+        const numericFields = ['bpm', 'duration', 'year'];
+        const formattedVal = numericFields.includes(meiliField) ? val : `"${val.replace(/"/g, '\\"')}"`;
+
+        executeAdvancedSearch(`${meiliField} ${operator} ${formattedVal}`);
+        return;
+      }
+
+      // 3. Normal Text Search Fallback
+      setSearchQuery(globalSearch); 
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
   }, [globalSearch, setSearchQuery, setTracks]);
   
   useEffect(() => { setSortBy(sortBy as any); }, [sortBy, setSortBy]);

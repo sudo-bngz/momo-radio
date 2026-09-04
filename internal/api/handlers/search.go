@@ -104,6 +104,18 @@ func (h *SearchHandler) SearchLibrary(c *gin.Context) {
 	})
 
 	if err != nil {
+		if strings.Contains(err.Error(), "invalid_search_filter") {
+			logger.Log.Debug("Incomplete filter syntax from user", zap.String("filter", finalFilter))
+
+			// Gracefully return an empty result set instead of blowing up the app
+			c.JSON(http.StatusOK, gin.H{
+				"hits":                 []map[string]any{},
+				"estimated_total_hits": 0,
+				"query":                c.Query("q"),
+			})
+			return
+		}
+
 		logger.Log.Error("Meilisearch query failed",
 			zap.Error(err),
 			zap.String("query", query),
@@ -118,8 +130,7 @@ func (h *SearchHandler) SearchLibrary(c *gin.Context) {
 		zap.Int("hits_returned", len(searchRes.Hits)),
 	)
 
-	// ⚡️ BULLETPROOF FIX: Convert custom Meilisearch types into standard Go maps
-	var parsedHits []map[string]interface{}
+	var parsedHits []map[string]any
 	hitsBytes, _ := json.Marshal(searchRes.Hits)
 	json.Unmarshal(hitsBytes, &parsedHits)
 
