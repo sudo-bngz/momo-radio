@@ -23,6 +23,16 @@ import (
 	"momo-radio/internal/storage"
 )
 
+type zapAsynqLogger struct {
+	logger *zap.Logger
+}
+
+func (l *zapAsynqLogger) Debug(args ...interface{}) { l.logger.Sugar().Debug(args...) }
+func (l *zapAsynqLogger) Info(args ...interface{})  { l.logger.Sugar().Info(args...) }
+func (l *zapAsynqLogger) Warn(args ...interface{})  { l.logger.Sugar().Warn(args...) }
+func (l *zapAsynqLogger) Error(args ...interface{}) { l.logger.Sugar().Error(args...) }
+func (l *zapAsynqLogger) Fatal(args ...interface{}) { l.logger.Sugar().Fatal(args...) }
+
 func main() {
 	logger.Init()
 	defer logger.Sync()
@@ -154,6 +164,7 @@ func main() {
 			Queues:                   cfg.Worker.Queues,
 			DelayedTaskCheckInterval: time.Duration(cfg.Worker.DelayedCheckIntervalSec) * time.Second,
 			HealthCheckInterval:      time.Duration(cfg.Worker.HealthCheckIntervalSec) * time.Second,
+			Logger:                   &zapAsynqLogger{logger: logger.Log},
 		},
 	)
 
@@ -162,8 +173,8 @@ func main() {
 	mux.HandleFunc(ingest.TypeTrackProcess, ingestWorker.HandleProcessTask)
 	mux.HandleFunc(ingest.TypeArtistEnrich, ingestWorker.HandleArtistEnrichTask)
 	mux.HandleFunc(ingest.TypeTrackEnrich, ingestWorker.HandleTrackEnrichTask)
-
 	mux.HandleFunc(export.TypeExportPlaylist, exportWorker.HandlePlaylistExportTask)
+	mux.HandleFunc(ingest.TypeReindexCatalog, ingestWorker.HandleReindexCatalogTask)
 
 	logger.Log.Info("Asynq Multiplexer listening for jobs...")
 	if err := srv.Run(mux); err != nil {

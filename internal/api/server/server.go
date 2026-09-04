@@ -141,7 +141,8 @@ func (s *Server) setupRoutes() {
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
 	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis, cdn)
 	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
-	settingsHandler := handlers.NewSettingsHandler(s.db.DB)
+	// ⚡️ FIXED: Injected the asynqClient into the SettingsHandler
+	settingsHandler := handlers.NewSettingsHandler(s.db.DB, s.asynqClient)
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
 	membersHandler := handlers.NewMembersHandler(s.db.DB)
 	billingHandler := handlers.NewBillingHandler(s.db.DB, s.cfg)
@@ -249,6 +250,7 @@ func (s *Server) setupRoutes() {
 			// --- SETTINGS ---
 			protected.GET("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
 			protected.PUT("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.UpdateOrgSettings)
+			protected.POST("/settings/reindex", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.TriggerReindex)
 
 			// --- TEAM MANAGEMENT ---
 			protected.GET("/settings/members", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), membersHandler.GetMembers)

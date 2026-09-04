@@ -1,30 +1,36 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"momo-radio/internal/ingest"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 )
 
 // SettingsHandler handles tenant-specific workspace and broadcast settings
 type SettingsHandler struct {
-	db *gorm.DB
+	db          *gorm.DB
+	asynqClient *asynq.Client
 }
 
 // NewSettingsHandler creates a new instance of the handler
-func NewSettingsHandler(db *gorm.DB) *SettingsHandler {
+func NewSettingsHandler(db *gorm.DB, asynqClient *asynq.Client) *SettingsHandler {
 	return &SettingsHandler{
-		db: db,
+		db:          db,
+		asynqClient: asynqClient,
 	}
 }
 
 // GetOrgSettings retrieves the organization's settings, creating defaults if none exist
 func (h *SettingsHandler) GetOrgSettings(c *gin.Context) {
-	// Assuming getOrgID returns (uuid.UUID, error/bool)
 	orgID, _ := getOrgID(c)
 
 	var settings models.OrganizationSettings
@@ -62,4 +68,38 @@ func (h *SettingsHandler) UpdateOrgSettings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, req)
+}
+
+// TriggerReindex enqueues a background job to rewrite the Meilisearch index
+func (h *SettingsHandler) TriggerReindex(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	// 1. Build the payload
+	payload, err := json.Marshal(ingest.ReindexCatalogPayload{
+		OrganizationID: orgID.String(),
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal payload"})
+		return
+	}
+
+	// 2. Create the task
+	task := asynq.NewTask(ingest.TypeReindexCatalog, payload)
+
+	// 3. Enqueue it using the injected client
+	info, err := h.asynqClient.Enqueue(task)
+	if err != nil {
+		logger.Log.Error("Could not enqueue reindex task", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not start reindex job"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Reindex job started successfully",
+		"task_id": info.ID,
+	})
 }

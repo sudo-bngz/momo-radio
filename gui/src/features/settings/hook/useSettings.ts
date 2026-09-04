@@ -6,14 +6,17 @@ interface SettingsStore {
   settings: OrganizationSettings | null;
   isLoading: boolean;
   isSaving: boolean;
+  isReindexing: boolean;
   fetchSettings: () => Promise<void>;
   updateSettings: (data: Partial<OrganizationSettings>) => Promise<void>;
+  triggerReindex: () => Promise<void>;
 }
 
 export const useSettings = create<SettingsStore>((set) => ({
   settings: null,
   isLoading: true,
   isSaving: false,
+  isReindexing: false,
 
   fetchSettings: async () => {
     set({ isLoading: true });
@@ -39,6 +42,18 @@ export const useSettings = create<SettingsStore>((set) => ({
       throw error;
     } finally {
       set({ isSaving: false });
+    }
+  },
+
+  triggerReindex: async () => {
+    set({ isReindexing: true });
+    try {
+      await api.triggerReindex();
+    } catch (error) {
+      console.error("Failed to trigger reindex", error);
+      throw error;
+    } finally {
+      set({ isReindexing: false });
     }
   }
 }));

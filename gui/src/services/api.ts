@@ -528,4 +528,8 @@ getShares: async (): Promise<ShareItem[]> => {
     const response = await apiClient.get(`/public/shares/${token}`);
     return response.data;
   },
+  triggerReindex: async (): Promise<{ message: string, task_id: string }> => {
+    const response = await apiClient.post('/settings/reindex');
+    return response.data;
+  },
 };

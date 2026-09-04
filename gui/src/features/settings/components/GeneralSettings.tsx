@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Flex, Heading, Text, VStack, Input, Button, Select, createListCollection } from '@chakra-ui/react';
+import { 
+  Box, Flex, Heading, Text, VStack, HStack, Input, Button, Select, createListCollection, Icon 
+} from '@chakra-ui/react';
+import { DatabaseZap } from 'lucide-react';
 import { useSettings } from '../hook/useSettings';
+import { toaster } from '../../../components/ui/toaster';
 
 const timezoneOptions = createListCollection({
   items: [
@@ -12,7 +16,7 @@ const timezoneOptions = createListCollection({
 });
 
 export const GeneralSettings: React.FC = () => {
-  const { settings, updateSettings, isSaving } = useSettings();
+  const { settings, updateSettings, isSaving, triggerReindex, isReindexing } = useSettings();
   
   // Local state for the form so we don't trigger global renders on every keystroke
   const [formData, setFormData] = useState({
@@ -33,9 +37,27 @@ export const GeneralSettings: React.FC = () => {
   const handleSave = async () => {
     try {
       await updateSettings(formData);
-      // Add a success toast here if you have a toast provider setup!
+      toaster.create({ title: "Settings saved successfully", type: "success" });
     } catch (error) {
       console.error("Save failed");
+      toaster.create({ title: "Failed to save settings", type: "error" });
+    }
+  };
+
+  // ⚡️ Added the handler for the reindex button
+  const handleReindexClick = async () => {
+    try {
+      await triggerReindex();
+      toaster.create({ 
+        title: "Reindex Started", 
+        description: "Your catalog is being synchronized in the background.",
+        type: "success" 
+      });
+    } catch (error) {
+      toaster.create({ 
+        title: "Failed to start reindex", 
+        type: "error" 
+      });
     }
   };
 
@@ -88,6 +110,39 @@ export const GeneralSettings: React.FC = () => {
             <Text fontSize="11px" color="gray.500" mt={1}>Used for playlist scheduling and analytics tracking.</Text>
           </Box>
         </VStack>
+      </Box>
+
+      {/* Card 3: Maintenance */}
+      <Box bg="white" p={6} borderRadius="xl" border="1px solid" borderColor="gray.200" shadow="sm" mb={6}>
+        <Heading size="sm" color="gray.800" mb={4}>Maintenance</Heading>
+
+        <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
+          <HStack gap={4} align="flex-start">
+            <Box p={2} bg="blue.50" borderRadius="lg" color="blue.600">
+              <Icon as={DatabaseZap} boxSize={5} />
+            </Box>
+            <VStack align="stretch" gap={0}>
+              <Text fontWeight="600" fontSize="sm" color="gray.900">Reindex Search Catalog</Text>
+              <Text fontSize="xs" color="gray.500" maxW="400px">
+                Manually resynchronize your entire track library with the search engine.
+                Run this if search results are missing tracks or filters behave unexpectedly.
+              </Text>
+            </VStack>
+          </HStack>
+
+          <Button
+            variant="outline"
+            borderColor="blue.200"
+            color="blue.600"
+            _hover={{ bg: "blue.50" }}
+            size="sm"
+            onClick={handleReindexClick}
+            loading={isReindexing}
+            loadingText="Starting..."
+          >
+            Reindex Catalog
+          </Button>
+        </HStack>
       </Box>
 
       {/* Action Footer */}
