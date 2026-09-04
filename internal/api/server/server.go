@@ -146,7 +146,7 @@ func (s *Server) setupRoutes() {
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
 	membersHandler := handlers.NewMembersHandler(s.db.DB)
 	billingHandler := handlers.NewBillingHandler(s.db.DB, s.cfg)
-	searchHandler := handlers.NewSearchHandler(s.meili)
+	searchHandler := handlers.NewSearchHandler(s.meili, cdn)
 	shareHandler := handlers.NewShareHandler(s.db.DB, s.storage, s.cfg, cdn)
 
 	s.router.GET("/health", func(c *gin.Context) {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,14 +12,19 @@ import (
 	"go.uber.org/zap"
 
 	"momo-radio/internal/logger"
+	"momo-radio/internal/utils"
 )
 
 type SearchHandler struct {
 	meili meilisearch.ServiceManager
+	cdn   *utils.CDNBuilder
 }
 
-func NewSearchHandler(meili meilisearch.ServiceManager) *SearchHandler {
-	return &SearchHandler{meili: meili}
+func NewSearchHandler(meili meilisearch.ServiceManager, cdn *utils.CDNBuilder) *SearchHandler {
+	return &SearchHandler{
+		meili: meili,
+		cdn:   cdn,
+	}
 }
 
 // SearchLibrary fetches tracks using Meilisearch's native filter expressions
@@ -36,11 +42,11 @@ func (h *SearchHandler) SearchLibrary(c *gin.Context) {
 	logger.Log.Debug("Incoming search request",
 		zap.String("raw_q", query),
 		zap.String("raw_filter", c.Query("filter")),
-		zap.String("org_id", orgID.String()),
+		zap.String("org_id", fmt.Sprintf("%v", orgID)),
 	)
 
 	// 1. Always enforce tenant isolation
-	baseFilter := fmt.Sprintf("organization_id = \"%s\"", orgID.String())
+	baseFilter := fmt.Sprintf("organization_id = \"%v\"", orgID)
 	finalFilter := baseFilter
 
 	// 2. Intercept advanced syntax directly from the 'q' parameter
@@ -112,9 +118,25 @@ func (h *SearchHandler) SearchLibrary(c *gin.Context) {
 		zap.Int("hits_returned", len(searchRes.Hits)),
 	)
 
+	// ⚡️ BULLETPROOF FIX: Convert custom Meilisearch types into standard Go maps
+	var parsedHits []map[string]interface{}
+	hitsBytes, _ := json.Marshal(searchRes.Hits)
+	json.Unmarshal(hitsBytes, &parsedHits)
+
+	// Now we can safely iterate, assert standard strings, and safely stringify the UUID
+	safeOrgID := fmt.Sprintf("%v", orgID)
+
+	for i := range parsedHits {
+		if cover, ok := parsedHits[i]["cover_url"].(string); ok && cover != "" {
+			if !strings.HasPrefix(cover, "http") {
+				parsedHits[i]["cover_url"] = h.cdn.BuildAssetURL(cover, safeOrgID)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"hits":                 searchRes.Hits,
+		"hits":                 parsedHits, // ⚡️ Send our cleanly parsed hits instead
 		"estimated_total_hits": searchRes.EstimatedTotalHits,
-		"query":                c.Query("q"), // Return original query so UI state doesn't break
+		"query":                c.Query("q"),
 	})
 }

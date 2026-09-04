@@ -49,8 +49,6 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 	if b.cfg.CDN.Enabled && cdnBaseURL != "" {
 		baseURL := strings.TrimRight(cdnBaseURL, "/")
 
-		// ⚡️ THE BUG FIX: Bulletproof the scheme
-		// If the config forgot to include http:// or https://, force it to https://
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 			baseURL = "https://" + baseURL
 		}

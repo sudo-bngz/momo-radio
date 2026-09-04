@@ -23,8 +23,8 @@ func (w *Worker) HandleSweepOrphanedTask(ctx context.Context, t *asynq.Task) err
 
 	result := w.db.DB.Model(&models.Track{}).
 		Where("processing_status IN ? AND updated_at < ?", []string{"pending", "processing"}, threshold).
-		Updates(map[string]interface{}{
-			"processing_status": "failed", // ⚡️ Kept only the actual column
+		Updates(map[string]any{
+			"processing_status": "failed",
 			"updated_at":        time.Now(),
 		})
 
