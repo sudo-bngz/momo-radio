@@ -40,7 +40,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       
       if (data && data.hits) {
         const mappedTracks = data.hits.map((hit: any) => ({
-          id: Number(hit.id),
+          id: typeof hit.id === 'string' ? Number(hit.id.replace('track-', '')) : Number(hit.id),
           organization_id: hit.organization_id || '',
           key: hit.id, 
           title: hit.title,
@@ -65,6 +65,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       toaster.create({ title: "Search failed", type: "error" });
     }
   };
+
   useEffect(() => { 
     const timeoutId = setTimeout(() => {
       if (!globalSearch) {
@@ -234,7 +235,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     if (!window.confirm("Are you sure you want to remove this failed track?")) return;
     
     try {
-      // NOTE: Ensure api.deleteTrack is implemented in your src/services/api.ts
       await api.deleteTrack(trackId);
       setTracks(tracksRef.current.filter(t => t.id !== trackId));
       toaster.create({ title: "Track removed", type: "success" });
@@ -362,7 +362,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                           >
                             {track.title}
                           </Text>
-                          {/* ⚡️ ADDED: Delete button next to Retry */}
                           {track.processing_status === 'failed' && (
                             <HStack gap={1}>
                               <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="red.500" onClick={(e) => handleRetry(e, track.id)} _hover={{ bg: "red.50" }} title="Retry Analysis">
