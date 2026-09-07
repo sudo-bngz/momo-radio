@@ -76,16 +76,13 @@ func (s *Server) Close() {
 }
 
 func (s *Server) setupMiddleware() {
-	// 1. Recover from panics and write a 500 response instead of crashing
 	s.router.Use(gin.Recovery())
 
-	// 2. Custom Zap Logger Middleware
 	s.router.Use(func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
 
-		// Process request
 		c.Next()
 
 		if path == "/health" || path == "/api/v1/broadcast/state" {
@@ -95,7 +92,6 @@ func (s *Server) setupMiddleware() {
 		cost := time.Since(start)
 		status := c.Writer.Status()
 
-		// Log errors differently than successes
 		if len(c.Errors) > 0 {
 			logger.Log.Error("HTTP Error",
 				zap.Int("status", status),
@@ -119,7 +115,6 @@ func (s *Server) setupMiddleware() {
 		)
 	})
 
-	// 3. Existing CORS Configuration
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowAllOrigins = true
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
@@ -133,7 +128,8 @@ func (s *Server) setupRoutes() {
 
 	authHandler := handlers.NewAuthHandler(s.db.DB)
 	statsHandler := handlers.NewStatsHandler(s.db.DB)
-	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis, cdn)
+	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis, cdn, s.meili, s.asynqClient)
+
 	playlistHandler := handlers.NewPlaylistHandler(s.db.DB, s.storage, cdn)
 	schedulerHandler := handlers.NewSchedulerHandler(s.db.DB, s.cfg)
 	artistHandler := handlers.NewArtistHandler(s.db.DB, s.storage, cdn)
@@ -141,7 +137,6 @@ func (s *Server) setupRoutes() {
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
 	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis, cdn)
 	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
-	// ⚡️ FIXED: Injected the asynqClient into the SettingsHandler
 	settingsHandler := handlers.NewSettingsHandler(s.db.DB, s.asynqClient)
 	profileHandler := handlers.NewProfileHandler(s.db.DB)
 	membersHandler := handlers.NewMembersHandler(s.db.DB)
@@ -153,22 +148,13 @@ func (s *Server) setupRoutes() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "momo-radio"})
 	})
 
-	// ==========================================
-	// INTERNAL ROUTES (Machine-to-Machine / RTMP)
-	// ==========================================
 	internal := s.router.Group("/api/internal")
 	{
 		internal.POST("/auth-publish", handlers.AuthStreamPublish(s.db.DB))
 	}
 
-	// ==========================================
-	// API Group
-	// ==========================================
 	v1 := s.router.Group("/api/v1")
 	{
-		// ==========================================
-		// PUBLIC SHARE ROUTES (Unauthenticated)
-		// ==========================================
 		publicShares := v1.Group("/public/shares")
 		{
 			publicShares.GET("/:token", shareHandler.GetPublicShare)
@@ -180,50 +166,43 @@ func (s *Server) setupRoutes() {
 		jwtOnly.Use(middleware.RequireValidJWT(s.cfg.Supabase.JWTPublicKey))
 		{
 			jwtOnly.GET("/auth/me", authHandler.GetMe)
-			// --- PERSONAL PROFILE ---
 			jwtOnly.GET("/profile", profileHandler.GetProfile)
 			jwtOnly.PUT("/profile", profileHandler.UpdateProfile)
 		}
 
-		// --- WEBHOOKS (Bypass auth, they have their own signature verification) ---
 		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
 		v1.POST("/webhooks/stripe", billingHandler.HandleWebhook)
 
 		protected := v1.Group("/")
 		{
-			// --- STATS ---
 			protected.GET("/stats", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), statsHandler.GetStats)
 
-			// --- BILLING ---
 			protected.POST("/billing/checkout", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), billingHandler.CreateCheckout)
 			protected.POST("/billing/portal", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), billingHandler.CreatePortal)
 
-			// --- TRACKS & SEARCH ---
 			protected.GET("/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTracks)
 			protected.GET("/tracks/search", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), searchHandler.SearchLibrary)
 			protected.GET("/tracks/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetTrack)
 			protected.GET("/tracks/:id/stream", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.StreamTrack)
 			protected.GET("/tracks/:id/status-stream", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.TrackStatusStream)
 			protected.PUT("/tracks/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.UpdateTrack)
+			protected.DELETE("/tracks/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.DeleteTrack)
+
 			protected.GET("/tracks/queue", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), trackHandler.GetQueue)
 			protected.POST("/tracks/:id/analysis", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.Analysis)
 
-			// --- NEW UPLOAD / CURATION ---
 			protected.POST("/upload/presign", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.HandlePresign)
 			protected.POST("/upload/confirm-direct", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), trackHandler.UploadTrack)
 
-			// --- SHARED TRACK MANAGEMENT ---
 			protected.POST("/shares", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), shareHandler.CreateShare)
 			protected.GET("/shares", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), shareHandler.GetShares)
 			protected.DELETE("/shares/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), shareHandler.DeleteShare)
 
-			// --- ARTISTS & ALBUMS ---
 			protected.GET("/artists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), artistHandler.GetArtists)
 			protected.GET("/artists/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), artistHandler.GetArtistByID)
 			protected.GET("/albums", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbums)
 			protected.GET("/albums/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbumByID)
 
-			// --- PLAYLISTS ---
 			protected.GET("/playlists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylists)
 			protected.GET("/playlists/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylist)
 			protected.POST("/playlists", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), playlistHandler.CreatePlaylist)
@@ -232,35 +211,27 @@ func (s *Server) setupRoutes() {
 			protected.PUT("/playlists/:id/tracks", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), playlistHandler.UpdatePlaylistTracks)
 			protected.POST("/playlists/:id/export/rekordbox", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), exportHandler.ExportToM3u)
 
-			// --- SCHEDULING ---
 			protected.GET("/schedules", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), schedulerHandler.GetSchedule)
 			protected.POST("/schedules", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.CreateScheduleSlot)
 			protected.DELETE("/schedules/:id", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), schedulerHandler.DeleteScheduleSlot)
 
-			// --- BROADCAST & MOUNT POINTS ---
 			protected.GET("/mounts", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, cdn))
 			protected.GET("/broadcast/state", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), broadcastHandler.GetStreamState)
 			protected.POST("/broadcast/toggle", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor"), broadcastHandler.ToggleStream)
 
-			// --- PUBLIC PAGE ---
 			protected.GET("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), pageHandler.GetSettings)
 			protected.PUT("/public-page", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UpdateSettings)
 			protected.POST("/public-page/upload", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), pageHandler.UploadImage)
 
-			// --- SETTINGS ---
 			protected.GET("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
 			protected.PUT("/settings", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.UpdateOrgSettings)
 			protected.POST("/settings/reindex", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), settingsHandler.TriggerReindex)
 
-			// --- TEAM MANAGEMENT ---
 			protected.GET("/settings/members", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin", "editor", "viewer"), membersHandler.GetMembers)
 			protected.POST("/settings/members/invite", middleware.RequireSupabaseAuth(s.db.DB, s.cfg.Supabase.JWTPublicKey, "owner", "admin"), membersHandler.InviteMember)
 		}
 	}
 
-	// ==========================================
-	// DYNAMIC RUNTIME CONFIG FOR EMBEDDED GUI
-	// ==========================================
 	s.router.GET("/env.js", func(c *gin.Context) {
 		c.Header("Content-Type", "application/javascript")
 
@@ -279,9 +250,6 @@ func (s *Server) setupRoutes() {
 		c.String(http.StatusOK, js)
 	})
 
-	// ==========================================
-	// EMBEDDED REACT UI (SPA Fallback)
-	// ==========================================
 	distFS, err := fs.Sub(gui.DistFS, "dist")
 	if err != nil {
 		logger.Log.Fatal("Failed to load embedded frontend", zap.Error(err))

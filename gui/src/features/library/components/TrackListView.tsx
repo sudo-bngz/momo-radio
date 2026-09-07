@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Box, VStack, Spinner, Table } from '@chakra-ui/react';
+import { Box, VStack, Spinner, Table, Dialog, Button, Text } from '@chakra-ui/react'; // ⚡️ ADDED: Dialog, Button, Text
 import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
 import { useSearchStore } from '../../../store/useSearchStore';
@@ -32,8 +32,10 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
   const [shareTrack, setShareTrack] = useState<any | null>(null);
+  
+  // ⚡️ ADDED: State to manage the track being deleted
+  const [trackToDelete, setTrackToDelete] = useState<any | null>(null);
 
-  // ⚡️ Run our extracted logic hooks silently
   useAdvancedSearch(setTracks, setSearchQuery);
   useTrackProcessing(tracks, setTracks);
 
@@ -48,27 +50,55 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     }
   };
 
-  const handleRetry = async (e: React.MouseEvent, trackId: number) => {
+  const handleRetry = async (e: React.MouseEvent, rawId: number | string) => {
     e.stopPropagation();
+
+    // 1. Clean the ID just in case it came from Meilisearch as "track-123"
+    const targetId = typeof rawId === 'string' ? Number(rawId.replace('track-', '')) : rawId;
+
     try {
-      await api.analysis(trackId);
+      await api.analysis(targetId);
       toaster.create({ title: "Analysis Restarted", type: "info" });
-      setTracks(tracks.map(t => t.id === trackId ? { ...t, processing_status: 'pending', status: 'pending' } : t));
+      
+      // 2. Safely update the local state using string comparison
+      setTracks(tracks.map(t => 
+        String(t.id ?? t.id ?? t.key) === String(rawId) 
+          ? { ...t, processing_status: 'pending', status: 'pending' } 
+          : t
+      ));
     } catch (error) {
       toaster.create({ title: "Failed to restart", type: "error" });
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, trackId: number) => {
+  const handleDeleteClick = (e: React.MouseEvent, track: any) => {
     e.stopPropagation();
-    if (!window.confirm("Are you sure you want to remove this failed track?")) return;
+    setTrackToDelete(track);
+  };
+
+  const confirmDelete = async () => {
+    if (!trackToDelete) return;
+
+    const rawId = trackToDelete.id ?? trackToDelete.ID ?? trackToDelete.track_id ?? trackToDelete.key;
+    const targetId = String(rawId);
+
+    if (!rawId || targetId === 'undefined' || targetId === 'null') {
+      // Silently remove it from the local UI state without hitting the API
+      setTracks(tracks.filter(t => t !== trackToDelete));
+      setTrackToDelete(null);
+      return;
+    }
+
     try {
-      await api.deleteTrack(trackId);
-      setTracks(tracks.filter(t => t.id !== trackId));
-      toaster.create({ title: "Track removed", type: "success" });
+      await api.deleteTrack(targetId);
+      // Cleanly filter it out using the same safe ID resolution
+      setTracks(tracks.filter(t => String(t.id ?? t.id ?? t.key) !== targetId));
+      toaster.create({ title: "Track deleted", type: "success" });
     } catch (error) {
       console.error("Delete failed:", error);
-      toaster.create({ title: "Failed to remove track", type: "error" });
+      toaster.create({ title: "Failed to delete track", type: "error" });
+    } finally {
+      setTrackToDelete(null); 
     }
   };
 
@@ -77,7 +107,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     if (setGlobalSearch) setGlobalSearch(`${type}: ${val}`);
   };
 
-  // Deduplicate tracks for React rendering stability
   const uniqueTracks = useMemo(() => {
     const seen = new Set();
     return tracks.filter(track => {
@@ -129,7 +158,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                   setSelectedTrack={setSelectedTrack}
                   setShareTrack={setShareTrack}
                   handleRetry={handleRetry}
-                  handleDelete={handleDelete}
+                  handleDelete={handleDeleteClick} // ⚡️ Passed the new click handler
                   handleAttributeClick={handleAttributeClick}
                 />
               ))
@@ -143,6 +172,28 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
           </Box>
         )}
       </Box>
+
+      <Dialog.Root open={!!trackToDelete} onOpenChange={(e) => { if (!e.open) setTrackToDelete(null); }}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content>
+            <Dialog.Header>
+              <Dialog.Title>Delete Track</Dialog.Title>
+            </Dialog.Header>
+            <Dialog.Body>
+              <Text color="gray.600">
+                Are you sure you want to delete <Text as="span" fontWeight="bold" color="gray.900">"{trackToDelete?.title}"</Text>? 
+                This will permanently remove the audio files and all associated data from the infrastructure. This action cannot be undone.
+              </Text>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <Button variant="ghost" onClick={() => setTrackToDelete(null)}>Cancel</Button>
+              <Button colorPalette="red" onClick={confirmDelete}>Yes, Delete Track</Button>
+            </Dialog.Footer>
+            <Dialog.CloseTrigger />
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
 
       <TrackDetailDrawer 
         isOpen={!!selectedTrack} onClose={() => setSelectedTrack(null)} track={selectedTrack} 

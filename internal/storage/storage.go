@@ -124,8 +124,23 @@ func (c *Client) DownloadMasterFile(key string) (*FileObject, error) {
 	return c.backend.Get(c.bucketMaster, key)
 }
 
+// Delete is a generic pass-through to the underlying StorageProvider
+func (c *Client) Delete(bucket, key string) error {
+	return c.backend.Delete(bucket, key)
+}
+
 func (c *Client) DeleteMasterFile(key string) error {
 	return c.backend.Delete(c.bucketMaster, key)
+}
+
+// DeleteAssetFile deletes audio, waveform, or metadata files from bucketAssets
+func (c *Client) DeleteAssetFile(key string) error {
+	return c.backend.Delete(c.bucketAssets, key)
+}
+
+// DeleteStreamFile deletes HLS or stream manifests/chunks from bucketStream
+func (c *Client) DeleteStreamFile(key string) error {
+	return c.backend.Delete(c.bucketStream, key)
 }
 
 // --- Ingester Methods ---

@@ -21,17 +21,19 @@ import (
 	"momo-radio/internal/logger"
 	"momo-radio/internal/search"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
+	"momo-radio/internal/worker"
 )
 
 type zapAsynqLogger struct {
 	logger *zap.Logger
 }
 
-func (l *zapAsynqLogger) Debug(args ...interface{}) { l.logger.Sugar().Debug(args...) }
-func (l *zapAsynqLogger) Info(args ...interface{})  { l.logger.Sugar().Info(args...) }
-func (l *zapAsynqLogger) Warn(args ...interface{})  { l.logger.Sugar().Warn(args...) }
-func (l *zapAsynqLogger) Error(args ...interface{}) { l.logger.Sugar().Error(args...) }
-func (l *zapAsynqLogger) Fatal(args ...interface{}) { l.logger.Sugar().Fatal(args...) }
+func (l *zapAsynqLogger) Debug(args ...any) { l.logger.Sugar().Debug(args...) }
+func (l *zapAsynqLogger) Info(args ...any)  { l.logger.Sugar().Info(args...) }
+func (l *zapAsynqLogger) Warn(args ...any)  { l.logger.Sugar().Warn(args...) }
+func (l *zapAsynqLogger) Error(args ...any) { l.logger.Sugar().Error(args...) }
+func (l *zapAsynqLogger) Fatal(args ...any) { l.logger.Sugar().Fatal(args...) }
 
 func main() {
 	logger.Init()
@@ -105,6 +107,9 @@ func main() {
 	// 6. Instantiate the Domain Workers
 	ingestWorker := ingest.New(cfg, store, db, redisClient, asynqClient, meiliClient)
 	exportWorker := export.New(cfg, store, db, redisClient)
+
+	cdn := utils.NewCDNBuilder(cfg, store)
+	trackWorker := worker.NewTrackWorker(db.DB, store, cdn)
 
 	// 7. MODE SELECTION (CLI Maintenance)
 	if *repairMeta || *repairAudio || *repairCountry {
@@ -202,6 +207,8 @@ func main() {
 	mux.HandleFunc(export.TypeExportPlaylist, exportWorker.HandlePlaylistExportTask)
 	mux.HandleFunc(ingest.TypeReindexCatalog, ingestWorker.HandleReindexCatalogTask)
 	mux.HandleFunc(ingest.TypeSweepOrphanedTracks, ingestWorker.HandleSweepOrphanedTask)
+
+	mux.HandleFunc(worker.TypeTrackDelete, trackWorker.HandleDeleteTrackTask)
 
 	logger.Log.Info("Asynq Multiplexer listening for jobs...")
 	if err := srv.Run(mux); err != nil {

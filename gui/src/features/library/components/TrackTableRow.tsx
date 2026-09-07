@@ -3,7 +3,7 @@ import { Box, HStack, Text, Table, Badge, Icon, Button, Spinner } from '@chakra-
 import { Play, Pause, Music, RefreshCw, Share2, Trash2, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-// Formatting Helpers
+// --- Formatting Helpers ---
 const ensureArray = (val: any): string[] => {
   if (!val) return [];
   if (Array.isArray(val)) return val;
@@ -34,6 +34,7 @@ const getBpmStyle = (bpm: number) => {
   return { bg: 'gray.900', color: 'white' }; 
 };
 
+// --- Component Interface ---
 interface Props {
   track: any;
   tracks: any[];
@@ -43,8 +44,8 @@ interface Props {
   togglePlayPause: () => void;
   setSelectedTrack: (track: any) => void;
   setShareTrack: (track: any) => void;
-  handleRetry: (e: React.MouseEvent, id: number) => void;
-  handleDelete: (e: React.MouseEvent, id: number) => void;
+  handleRetry: (e: React.MouseEvent, id: number | string) => void;
+  handleDelete: (e: React.MouseEvent, track: any) => void; 
   handleAttributeClick: (e: React.MouseEvent, type: 'genre' | 'style', val: string) => void;
 }
 
@@ -60,6 +61,7 @@ export const TrackTableRow: React.FC<Props> = ({
   const isFailed = track.processing_status === 'failed' || track.status === 'failed';
   const isPending = !isFailed && (['pending', 'processing'].includes(track.status || '') || ['pending', 'processing'].includes(track.processing_status || ''));
   const isPlayable = !isPending && !isFailed;
+  const safeId = track.id ?? track.ID ?? track.track_id ?? track.key;
 
   const rawAlbum = track.album as any;
   const albumName = typeof rawAlbum === 'object' ? rawAlbum?.title : rawAlbum;
@@ -130,10 +132,10 @@ export const TrackTableRow: React.FC<Props> = ({
           </Text>
           {isFailed && (
             <HStack gap={1}>
-              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="red.600" onClick={(e) => handleRetry(e, track.id)} _hover={{ bg: "red.200" }} title="Retry Analysis">
+              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="red.600" onClick={(e) => handleRetry(e, safeId)} _hover={{ bg: "red.200" }} title="Retry Analysis">
                 <Icon as={RefreshCw} boxSize={3.5} />
               </Button>
-              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="gray.500" onClick={(e) => handleDelete(e, track.id)} _hover={{ bg: "gray.200" }} title="Delete Track">
+              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="gray.500" onClick={(e) => handleDelete(e, track)} _hover={{ bg: "gray.200" }} title="Delete Track">
                 <Icon as={Trash2} boxSize={3.5} />
               </Button>
             </HStack>
@@ -199,6 +201,7 @@ export const TrackTableRow: React.FC<Props> = ({
               onClick={(e) => { 
                 if (!isPending) handleAttributeClick(e, 'genre', cleanTag.trim()); 
               }}
+              title="Genre"
             >
               {cleanTag.trim()}
             </Badge>
@@ -212,6 +215,7 @@ export const TrackTableRow: React.FC<Props> = ({
               onClick={(e) => { 
                 if (!isPending) handleAttributeClick(e, 'style', cleanTag.trim()); 
               }}
+              title="Style"
             >
               {cleanTag.trim()}
             </Badge>
@@ -233,13 +237,23 @@ export const TrackTableRow: React.FC<Props> = ({
 
       <Table.Cell px={2}>
         {!isPending && !isFailed && (
-          <Button
-            size="xs" variant="ghost" borderRadius="md" color="gray.400" opacity={0}
-            _groupHover={{ opacity: 1, bg: "pink.50", color: "pink.600" }} transition="all 0.2s" cursor="pointer"
-            onClick={(e) => { e.stopPropagation(); setShareTrack(track); }} title="Share Track"
-          >
-            <Icon as={Share2} boxSize={4} />
-          </Button>
+          <HStack gap={1} justify="flex-end">
+            <Button
+              size="xs" variant="ghost" borderRadius="md" color="gray.400" opacity={0}
+              _groupHover={{ opacity: 1, bg: "pink.50", color: "pink.600" }} transition="all 0.2s" cursor="pointer"
+              onClick={(e) => { e.stopPropagation(); setShareTrack(track); }} title="Share Track"
+            >
+              <Icon as={Share2} boxSize={4} />
+            </Button>
+            
+            <Button
+              size="xs" variant="ghost" borderRadius="md" color="gray.400" opacity={0}
+              _groupHover={{ opacity: 1, bg: "red.50", color: "red.600" }} transition="all 0.2s" cursor="pointer"
+              onClick={(e) => handleDelete(e, track)} title="Delete Track"
+            >
+              <Icon as={Trash2} boxSize={4} />
+            </Button>
+          </HStack>
         )}
       </Table.Cell>
     </Table.Row>

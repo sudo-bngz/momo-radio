@@ -23,6 +23,7 @@ type Config struct {
 	} `mapstructure:"storage"`
 	CDN struct {
 		Enabled    bool   `mapstructure:"enabled"`
+		APIKey     string `mapstructure:"api_key"`
 		Stream     string `mapstructure:"stream"`
 		Master     string `mapstructure:"master"`
 		PublicPage string `mapstructure:"public_page"`
@@ -78,7 +79,7 @@ type Config struct {
 		DelayedCheckIntervalSec int            `mapstructure:"delayed_check_interval_sec"`
 		HealthCheckIntervalSec  int            `mapstructure:"health_check_interval_sec"`
 		RedisPoolSize           int            `mapstructure:"redis_pool_size"`
-		SweeperInterval         string         `mapstructure:"sweeper_interval"` // ⚡️ ADDED: Configurable sweeper cron schedule
+		SweeperInterval         string         `mapstructure:"sweeper_interval"`
 	} `mapstructure:"worker"`
 	Supabase struct {
 		URL          string `mapstructure:"url"`
@@ -118,6 +119,7 @@ func Load() *Config {
 
 	// Split CDN Bindings
 	viper.BindEnv("cdn.enabled")
+	viper.BindEnv("cdn.api_key")
 	viper.BindEnv("cdn.stream")
 	viper.BindEnv("cdn.master")
 	viper.BindEnv("cdn.public_page")
@@ -183,6 +185,7 @@ func Load() *Config {
 
 	// CDN Defaults
 	viper.SetDefault("cdn.enabled", false)
+	viper.SetDefault("cdn.api_key", "")
 	viper.SetDefault("cdn.stream", "")
 	viper.SetDefault("cdn.master", "")
 	viper.SetDefault("cdn.public_page", "")
@@ -278,6 +281,9 @@ func validateConfig(cfg *Config) {
 	}
 
 	if cfg.CDN.Enabled {
+		if cfg.CDN.APIKey == "" {
+			log.Fatal("Critical: CDN is enabled but CDN API Key is missing (RADIO_CDN_API_KEY)")
+		}
 		if cfg.CDN.Stream == "" {
 			log.Fatal("Critical: CDN is enabled but Stream CDN URL is missing (RADIO_CDN_STREAM)")
 		}

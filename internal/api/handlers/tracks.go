@@ -15,33 +15,49 @@ import (
 	"time"
 
 	"momo-radio/internal/config"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
 	"momo-radio/internal/utils"
+	"momo-radio/internal/worker"
 
 	"github.com/dhowden/tag"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 	"github.com/lib/pq"
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type TrackHandler struct {
-	db      *gorm.DB
-	storage *storage.Client
-	config  *config.Config
-	redis   *redis.Client
-	cdn     *utils.CDNBuilder
+	db          *gorm.DB
+	storage     *storage.Client
+	config      *config.Config
+	redis       *redis.Client
+	cdn         *utils.CDNBuilder
+	meili       meilisearch.ServiceManager
+	asynqClient *asynq.Client
 }
 
-func NewTrackHandler(db *gorm.DB, st *storage.Client, c *config.Config, redisClient *redis.Client, cdn *utils.CDNBuilder) *TrackHandler {
+func NewTrackHandler(
+	db *gorm.DB,
+	st *storage.Client,
+	c *config.Config,
+	redisClient *redis.Client,
+	cdn *utils.CDNBuilder,
+	meili meilisearch.ServiceManager,
+	asynqClient *asynq.Client,
+) *TrackHandler {
 	return &TrackHandler{
-		db:      db,
-		storage: st,
-		config:  c,
-		redis:   redisClient,
-		cdn:     cdn,
+		db:          db,
+		storage:     st,
+		config:      c,
+		redis:       redisClient,
+		cdn:         cdn,
+		meili:       meili,
+		asynqClient: asynqClient,
 	}
 }
 
@@ -565,4 +581,57 @@ func (h *TrackHandler) Analysis(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Analysis restarted successfully"})
+}
+
+// DeleteTrack updates status, drops from Meilisearch, and enqueues worker cleanup
+func (h *TrackHandler) DeleteTrack(c *gin.Context) {
+	orgID, ok := getOrgID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Missing Organization ID"})
+		return
+	}
+
+	trackIDStr := c.Param("id")
+
+	var track models.Track
+	if err := h.db.Where("id = ? AND organization_id = ?", trackIDStr, orgID).First(&track).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Track not found"})
+		return
+	}
+
+	// 1. Mark status as deleting
+	if err := h.db.Model(&track).Update("processing_status", "deleting").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update track status"})
+		return
+	}
+
+	// 2. Remove document from Meilisearch immediately
+	meiliID := fmt.Sprintf("%d", track.ID)
+	if _, err := h.meili.Index("tracks").DeleteDocument(meiliID, nil); err != nil {
+		logger.Log.Warn("Failed to delete track from Meilisearch", zap.Error(err), zap.String("id", meiliID))
+	}
+
+	// 3. Dispatch task to Asynq worker
+	payload := worker.TrackDeletionPayload{
+		TrackID:        track.ID,
+		OrganizationID: orgID,
+		Key:            track.Key,
+		MasterKey:      track.MasterKey,
+		WaveformKey:    track.WaveformKey,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encode task payload"})
+		return
+	}
+
+	task := asynq.NewTask("track:delete", payloadBytes)
+	if _, err := h.asynqClient.Enqueue(task); err != nil {
+		logger.Log.Error("Failed to enqueue track deletion task", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enqueue deletion task"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Track deletion queued successfully"})
 }

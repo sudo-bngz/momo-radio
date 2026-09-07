@@ -1,8 +1,11 @@
 package utils
 
 import (
+	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"momo-radio/internal/config"
 )
@@ -76,4 +79,36 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 	}
 
 	return rawURL
+}
+
+// PurgeCache sends a native HTTP request to BunnyCDN to clear a specific file
+func (c *CDNBuilder) PurgeCache(fullFileURL string) error {
+	// Adjust these field names if your config struct looks slightly different
+	apiKey := c.cfg.CDN.APIKey
+	if apiKey == "" || !c.cfg.CDN.Enabled {
+		return nil // Skip gracefully if CDN is disabled
+	}
+
+	// BunnyCDN requires the exact full URL escaped in the query parameter
+	reqURL := fmt.Sprintf("https://api.bunny.net/purge?url=%s", url.QueryEscape(fullFileURL))
+
+	req, err := http.NewRequest("POST", reqURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("AccessKey", apiKey)
+
+	// Use a short timeout so we don't hang the worker
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("BunnyCDN purge failed with status: %d", resp.StatusCode)
+	}
+
+	return nil
 }
