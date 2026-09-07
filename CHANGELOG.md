@@ -1,3 +1,32 @@
+## [0.8.0] - 2026-09-07
+
+### 🚀 Features
+
+- *(search)* Implement advanced search syntax and interactive filter UI
+- *(gui)* Integrate advanced search filtering and native array rendering for track lists
+- *(settings)* Implement background search catalog reindexing
+- *(worker)* Implement automated sweeper for orphaned track ingestion jobs
+- *(search)* Implement smart query parser with debounce and graceful error handling
+- *(gui)* Add interactive clear button to global search bar
+- *(gui)* Implement contextual search autocomplete dropdown outside of library views
+- *(track)* Implement secure permanent track deletion workflow with Asynq background cleanup
+
+### 🐛 Bug Fixes
+
+- *(tests)* Integrate zap
+- *(log)* Add logger at worker and streamer process
+- *(ingest)* Index acoustic metadata fields as native string arrays in Meilisearch
+- *(api)* Ensure secure CDN url resolution for Meilisearch results and sweep tasks
+- *(gui)* Correctly parse alphanumeric Meilisearch document IDs to numeric track IDs
+- *(search)* Parse multi-clause smart filter expressions safely
+
+### 🚜 Refactor
+
+- *(gui)* Extract TrackListView business logic into modular hooks
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Prepare v0.7.1
 ## [0.7.1] - 2026-09-02
 
 ### 🐛 Bug Fixes
