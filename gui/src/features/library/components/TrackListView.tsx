@@ -1,32 +1,26 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  Box, VStack, HStack, Text, Spinner, Table, Badge, Icon, Button 
-} from '@chakra-ui/react';
-import { Play, Pause, Music, RefreshCw, Share2, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Box, VStack, Spinner, Table } from '@chakra-ui/react';
 import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
-import { TrackDetailDrawer } from './TrackDetailDrawer'; 
-import { ShareDrawer } from '../../shared/components/ShareDrawer'; 
+import { useSearchStore } from '../../../store/useSearchStore';
 import { api } from '../../../services/api';
 import { toaster } from '../../../components/ui/toaster';
-import { useSearchStore } from '../../../store/useSearchStore';
+
+// Modulized Hooks
+import { useAdvancedSearch } from '../hook/useAdvancedSearch';
+import { useTrackProcessing } from '../hook/useTrackProcessing';
+
+// Modulized Components
+import { TrackDetailDrawer } from './TrackDetailDrawer'; 
+import { ShareDrawer } from '../../shared/components/ShareDrawer'; 
+import { TrackTableRow } from './TrackTableRow';
+import { TrackTableEmptyState } from './TrackTableEmptyState';
 
 interface TrackListViewProps {
   sortBy: string;
 }
 
-const ensureArray = (val: any): string[] => {
-  if (!val) return [];
-  if (Array.isArray(val)) return val;
-  if (typeof val === 'string') return val.split(',');
-  return [];
-};
-
 export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
-  const navigate = useNavigate();
-  
-  const globalSearch = useSearchStore((state: any) => state.globalSearch);
   const setGlobalSearch = useSearchStore((state: any) => state.setGlobalSearch || state.setSearch); 
 
   const { 
@@ -34,201 +28,18 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     isFetchingMore, setSearchQuery, setSortBy, loadMore, hasMore
   } = useLibrary();
 
-  const executeAdvancedSearch = async (filterStr: string) => {
-    try {
-      const data = await api.searchTracksByFilter(filterStr);
-      
-      if (data && data.hits) {
-        const mappedTracks = data.hits.map((hit: any) => ({
-          // ⚡️ Strip 'track-' prefix so the ID is a clean number for the Drawer
-          id: typeof hit.id === 'string' ? Number(hit.id.replace('track-', '')) : Number(hit.id),
-          organization_id: hit.organization_id || '',
-          key: hit.id, 
-          title: hit.title,
-          artist: hit.artists_names?.join(', ') || 'Unknown Artist',
-          album: hit.album_title || '',
-          genre: hit.genre || '',
-          style: hit.style || '',
-          duration: hit.duration || 0,
-          cover_url: hit.cover_url || '',
-          bpm: hit.bpm || 0,
-          musical_key: hit.musical_key || '',
-          scale: hit.scale || '',
-          status: 'completed',
-          processing_status: 'completed'
-        }));
-        setTracks(mappedTracks as any);
-      } else {
-        setTracks([]);
-      }
-    } catch (error) {
-      console.error("Filter search failed:", error);
-      setTracks([]); // Quietly empty the list on bad syntax
-    }
-  };
-
-  useEffect(() => { 
-    const timeoutId = setTimeout(() => {
-      if (!globalSearch) {
-        setSearchQuery('');
-        return;
-      }
-
-      // 1. Raw Filter Mode Bypass (User explicitly types "filter: ...")
-      if (globalSearch.toLowerCase().startsWith('filter:')) {
-        const rawFilter = globalSearch.substring(7).trim();
-        if (rawFilter) executeAdvancedSearch(rawFilter);
-        return;
-      }
-
-      // 2. Smart Dictionary Map & Token Parser
-      const filterMap: Record<string, string> = {
-        artist: 'artists_names',
-        album: 'album_title',
-        genre: 'genre',
-        style: 'style',
-        mood: 'mood',
-        scale: 'scale',
-        key: 'musical_key',
-        bpm: 'bpm',
-        duration: 'duration',
-        year: 'year'
-      };
-      const numericFields = ['bpm', 'duration', 'year'];
-      const filterKeys = Object.keys(filterMap).join('|');
-
-      // Check if the query contains ANY of our smart filter keys followed by an operator
-      const hasFilter = new RegExp(`\\b(${filterKeys})\\s*(:|>=|<=|>|<|=|!=)`, 'i').test(globalSearch);
-
-      if (hasFilter) {
-        // Normalize compound operators (user 'and' -> Meilisearch 'AND')
-        const normalizedSearch = globalSearch
-          .replace(/\s+and\s+/gi, ' AND ')
-          .replace(/\s+or\s+/gi, ' OR ');
-
-        // Split the string by AND / OR, keeping the separators in the array
-        const tokens = normalizedSearch.split(/\s+(AND|OR)\s+/);
-        
-        const parsedTokens = tokens.map((token: string) => {
-          if (token === 'AND' || token === 'OR') return token;
-          
-          // Parse the individual clause (e.g., "style: deep house" or "bpm > 120")
-          const clauseMatch = token.match(new RegExp(`^\\s*(${filterKeys})\\s*(:|>=|<=|>|<|=|!=)\\s*(.+)$`, 'i'));
-          
-          if (clauseMatch) {
-             const field = clauseMatch[1].toLowerCase();
-             const operator = clauseMatch[2] === ':' ? '=' : clauseMatch[2];
-             
-             // Strip existing quotes so we don't double-quote if the user manually typed them
-             let val = clauseMatch[3].trim().replace(/^["'](.*)["']$/, '$1');
-
-             const meiliField = filterMap[field];
-             const formattedVal = numericFields.includes(meiliField) ? val : `"${val.replace(/"/g, '\\"')}"`;
-             
-             return `${meiliField} ${operator} ${formattedVal}`;
-          }
-          
-          return token; // Fallback for unmatched parts
-        });
-
-        // Stitch it all back together!
-        const meiliFilter = parsedTokens.join(' ');
-        executeAdvancedSearch(meiliFilter);
-        return;
-      }
-
-      // 3. Normal Text Search Fallback
-      setSearchQuery(globalSearch); 
-    }, 300); // 300ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [globalSearch, setSearchQuery, setTracks]);
-  
-  useEffect(() => { setSortBy(sortBy as any); }, [sortBy, setSortBy]);
-
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayer();
   
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
   const [shareTrack, setShareTrack] = useState<any | null>(null);
 
-  const tracksRef = useRef(tracks);
-  useEffect(() => {
-    tracksRef.current = tracks;
-  }, [tracks]);
+  // ⚡️ Run our extracted logic hooks silently
+  useAdvancedSearch(setTracks, setSearchQuery);
+  useTrackProcessing(tracks, setTracks);
 
-  useEffect(() => {
-    const handleNewUpload = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const { track_id } = customEvent.detail;
-      
-      if (tracksRef.current.some(t => t.id === track_id)) return;
-
-      const newTrack = {
-        id: track_id,
-        title: "Analyzing Audio...",
-        artist: "Processing...",
-        album: "-",
-        processing_status: "pending",
-        status: "pending",
-        duration: 0,
-      } as any;
-
-      setTracks([newTrack, ...tracksRef.current]);
-    };
-
-    window.addEventListener('track_uploaded', handleNewUpload);
-    return () => window.removeEventListener('track_uploaded', handleNewUpload);
-  }, [setTracks]);
-
-  const pendingIdsStr = useMemo(() => {
-    return tracks
-      .filter(t => ['pending', 'processing'].includes(t.processing_status || '') || ['pending', 'processing'].includes(t.status || ''))
-      .map(t => t.id)
-      .sort()
-      .join(',');
-  }, [tracks]);
-
-  useEffect(() => {
-    if (!pendingIdsStr) return;
-
-    const pendingIds = pendingIdsStr.split(',').map(Number);
-
-    const interval = setInterval(() => {
-      pendingIds.forEach(async (id) => {
-        try {
-          const updated = await api.getTrack(id) as any; 
-          
-          if (updated.processing_status === 'completed') {
-            const res = await api.getTracks({ search: updated.title });
-            const formattedTrack = res.data?.find((t: any) => t.id === updated.id);
-
-            if (formattedTrack) {
-              setTracks(tracksRef.current.map(track => track.id === updated.id ? formattedTrack : track));
-            } else {
-              setTracks(tracksRef.current.map(track => track.id === updated.id ? { ...track, title: updated.title, processing_status: 'completed', status: 'completed' } : track));
-            }
-
-            toaster.create({ title: `Analysis complete: ${updated.title}`, type: "success" });
-            
-          } else if (updated.processing_status === 'failed') {
-            setTracks(tracksRef.current.map(track => track.id === updated.id ? { ...track, processing_status: 'failed', status: 'failed' } : track));
-            toaster.create({ title: `Analysis failed for track.`, type: "error" });
-          }
-        } catch (err) {
-          console.error("Polling error:", err);
-        }
-      });
-    }, 3000); 
-
-    return () => clearInterval(interval);
-  }, [pendingIdsStr, setTracks]);
-
-  const formatDuration = (s: number) => {
-    if (!s) return '-';
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
+  useEffect(() => { 
+    setSortBy(sortBy as any); 
+  }, [sortBy, setSortBy]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
@@ -242,7 +53,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     try {
       await api.analysis(trackId);
       toaster.create({ title: "Analysis Restarted", type: "info" });
-      setTracks(tracksRef.current.map(t => t.id === trackId ? { ...t, processing_status: 'pending', status: 'pending' } : t));
+      setTracks(tracks.map(t => t.id === trackId ? { ...t, processing_status: 'pending', status: 'pending' } : t));
     } catch (error) {
       toaster.create({ title: "Failed to restart", type: "error" });
     }
@@ -251,10 +62,9 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   const handleDelete = async (e: React.MouseEvent, trackId: number) => {
     e.stopPropagation();
     if (!window.confirm("Are you sure you want to remove this failed track?")) return;
-    
     try {
       await api.deleteTrack(trackId);
-      setTracks(tracksRef.current.filter(t => t.id !== trackId));
+      setTracks(tracks.filter(t => t.id !== trackId));
       toaster.create({ title: "Track removed", type: "success" });
     } catch (error) {
       console.error("Delete failed:", error);
@@ -267,7 +77,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     if (setGlobalSearch) setGlobalSearch(`${type}: ${val}`);
   };
 
-  // ⚡️ Deduplicate the tracks array so React never receives duplicate keys
+  // Deduplicate tracks for React rendering stability
   const uniqueTracks = useMemo(() => {
     const seen = new Set();
     return tracks.filter(track => {
@@ -285,245 +95,58 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
           '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-gray-200)', borderRadius: '4px' },
         }}
       >
-        {isLoading && uniqueTracks.length === 0 ? (
-          <VStack justify="center" h="100%"><Spinner size="xl" color="blue.500" /></VStack>
-        ) : (
-          <>
-            <Table.Root css={{
-              "& th": { borderBottom: "1px solid var(--chakra-colors-gray-200)", py: 4, fontWeight: "500", color: "var(--chakra-colors-gray-600)" },
-              "& td": { py: 3, borderBottom: "1px solid var(--chakra-colors-gray-50)", color: "var(--chakra-colors-gray-800)", transition: "background 0.2s" }
-            }}>
-              <Table.Header position="sticky" top={0} bg="white" zIndex={1}>
-                <Table.Row>
-                  <Table.ColumnHeader w="50px"></Table.ColumnHeader>
-                  <Table.ColumnHeader w="64px">Artwork</Table.ColumnHeader>
-                  <Table.ColumnHeader>Track ({globalTotal})</Table.ColumnHeader>
-                  <Table.ColumnHeader>Artist</Table.ColumnHeader>
-                  <Table.ColumnHeader>Album</Table.ColumnHeader>
-                  <Table.ColumnHeader>Genre & Style</Table.ColumnHeader>
-                  <Table.ColumnHeader>BPM</Table.ColumnHeader>
-                  <Table.ColumnHeader textAlign="right">Time</Table.ColumnHeader>
-                  <Table.ColumnHeader w="50px"></Table.ColumnHeader>
-                </Table.Row>
-            </Table.Header>
-             <Table.Body>
-                {!isLoading && uniqueTracks.length === 0 && (
-                  <Table.Row>
-                    <Table.Cell colSpan={9} textAlign="center" py={12} color="gray.500">
-                      <VStack gap={2}>
-                        <Icon as={Music} boxSize={8} color="gray.300" />
-                        <Text fontWeight="500" color="gray.900">No tracks found</Text>
-                        <Text fontSize="sm">Try adjusting your search query.</Text>
-                      </VStack>
-                    </Table.Cell>
-                  </Table.Row>
-                )}
-
-                {uniqueTracks.map((track) => {
-                  const isThisTrackPlaying = currentTrack?.id === track.id;
-                  const isThisTrackActiveAndPlaying = isThisTrackPlaying && isPlaying;
-                  const hasAudioData = track.duration && track.duration > 0;
-                  const hasPendingFlag = ['pending', 'processing'].includes(track.status || '') || ['pending', 'processing'].includes(track.processing_status || '');
-                  const isPending = !hasAudioData || (hasPendingFlag && !hasAudioData);
-
-                  const rawAlbum = track.album as any;
-                  const albumName = typeof rawAlbum === 'object' ? rawAlbum?.title : rawAlbum;
-                  const albumId = (track as any).album_id || (typeof rawAlbum === 'object' ? rawAlbum?.id : null);
-
-                  return (
-                    <Table.Row 
-                      key={track.id} 
-                      className="group" 
-                      bg={isPending ? "gray.50" : (isThisTrackPlaying ? "blue.50" : "transparent")}
-                      opacity={isPending ? 0.6 : 1} 
-                      cursor={isPending ? "not-allowed" : "default"}
-                      _hover={isPending ? {} : { bg: "gray.50" }}
-                      onDoubleClick={() => { if (!isPending) playTrack(track, tracks); }}
-                    >
-                      <Table.Cell px={0}>
-                        {isPending ? (
-                           <Box w="36px" h="36px" display="flex" alignItems="center" justifyContent="center">
-                             <Spinner size="sm" color="blue.500" borderWidth="2px" />
-                           </Box>
-                        ) : (
-                          <Box 
-                            w="36px" h="36px" bg={isThisTrackPlaying ? "blue.500" : "gray.100"} 
-                            borderRadius="md" display="flex" alignItems="center" justifyContent="center" 
-                            color={isThisTrackPlaying ? "white" : "gray.400"} 
-                            cursor="pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!isPending) isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks);
-                            }}
-                          >
-                            {isThisTrackActiveAndPlaying ? <Icon as={Pause} boxSize={5} fill="currentColor" /> : <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />}
-                          </Box>
-                        )}
-                      </Table.Cell>
-
-                      <Table.Cell px={2}>
-                        <Box w="36px" h="36px" borderRadius="md" overflow="hidden" bg="gray.50" border="1px solid" borderColor="gray.200" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                          {track.cover_url ? (
-                            <img src={track.cover_url} alt={track.title} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <Icon as={Music} color="gray.300" boxSize={4} />
-                          )}
-                        </Box>
-                      </Table.Cell>
-
-                      <Table.Cell 
-                        fontWeight={isThisTrackPlaying ? "bold" : "500"} 
-                        color={isPending ? "blue.500" : (isThisTrackPlaying ? "blue.600" : "gray.900")} 
-                        fontStyle={isPending ? "italic" : "normal"}
-                      >
-                        <HStack gap={2}>
-                          <Text
-                            cursor={isPending ? "not-allowed" : "pointer"}
-                            transition="color 0.2s"
-                            _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }}
-                            onClick={(e) => {
-                              if (!isPending) {
-                                e.stopPropagation();
-                                setSelectedTrack(track); 
-                              }
-                            }}
-                          >
-                            {track.title}
-                          </Text>
-                          {track.processing_status === 'failed' && (
-                            <HStack gap={1}>
-                              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="red.500" onClick={(e) => handleRetry(e, track.id)} _hover={{ bg: "red.50" }} title="Retry Analysis">
-                                <Icon as={RefreshCw} boxSize={3.5} />
-                              </Button>
-                              <Button size="xs" variant="ghost" borderRadius="full" h="24px" w="24px" p={0} color="gray.500" onClick={(e) => handleDelete(e, track.id)} _hover={{ bg: "gray.100" }} title="Delete Track">
-                                <Icon as={Trash2} boxSize={3.5} />
-                              </Button>
-                            </HStack>
-                          )}
-                        </HStack>
-                      </Table.Cell>
-                      
-                      <Table.Cell>
-                        <HStack gap={1} flexWrap="wrap">
-                          {track.artist ? (
-                            ensureArray(track.artist).map((artistName: string, index: number, arr: string[]) => {
-                              const cleanArtist = artistName.trim();
-                              return (
-                                <React.Fragment key={index}>
-                                  <Text 
-                                    as="span" color={isThisTrackPlaying ? "blue.500" : "gray.600"} 
-                                    cursor="pointer"
-                                    _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }} 
-                                    onClick={(e) => { 
-                                      if(!isPending) { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(cleanArtist)}`); } 
-                                    }}
-                                  >
-                                    {cleanArtist}
-                                  </Text>
-                                  {index < arr.length - 1 && <Text as="span" color="gray.500">, </Text>}
-                                </React.Fragment>
-                              );
-                            })
-                          ) : (
-                            <Text color="gray.500">-</Text>
-                          )}
-                        </HStack>
-                      </Table.Cell>
-
-                      <Table.Cell>
-                        {albumName && albumId ? (
-                          <Text
-                            color="gray.600"
-                            cursor={isPending ? "not-allowed" : "pointer"}
-                            transition="color 0.2s"
-                            _hover={isPending ? {} : { textDecoration: "underline", color: "blue.600" }}
-                            onClick={(e) => {
-                              if (!isPending) {
-                                e.stopPropagation();
-                                navigate(`/library/albums/${albumId}`); 
-                              }
-                            }}
-                          >
-                            {albumName}
-                          </Text>
-                        ) : (
-                          <Text color="gray.500">{albumName || '-'}</Text>
-                        )}
-                      </Table.Cell>
-                      
-                      <Table.Cell>
-                        <HStack gap={1} flexWrap="wrap">
-                          {ensureArray(track.genre).map((cleanTag, index) => (
-                            <Badge 
-                              key={`g-${index}`} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} 
-                              cursor={isPending ? "not-allowed" : "pointer"}
-                              _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
-                              onClick={(e) => { 
-                                if (!isPending) handleAttributeClick(e, 'genre', cleanTag.trim()); 
-                              }}
-                              title="Genre"
-                            >
-                              {cleanTag.trim()}
-                            </Badge>
-                          ))}
-                          
-                          {ensureArray(track.style).map((cleanTag, index) => (
-                            <Badge 
-                              key={`s-${index}`} size="sm" colorPalette={getColorForGenre(cleanTag)} variant="outline" borderRadius="md" px={2} 
-                              cursor={isPending ? "not-allowed" : "pointer"}
-                              _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }}
-                              onClick={(e) => { 
-                                if (!isPending) handleAttributeClick(e, 'style', cleanTag.trim()); 
-                              }}
-                              title="Style"
-                            >
-                              {cleanTag.trim()}
-                            </Badge>
-                          ))}
-                          
-                          {ensureArray(track.genre).length === 0 && ensureArray(track.style).length === 0 && (
-                            <Badge size="sm" bg="gray.100" color="gray.400" variant="subtle" borderRadius="md" px={2}>-</Badge>
-                          )}
-                        </HStack>
-                      </Table.Cell>
-                      
-                      <Table.Cell>
-                        <Badge size="sm" bg={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).bg} color={getBpmStyle(track.bpm ? Math.round(track.bpm) : 0).color} border="none" borderRadius="md" px={2.5} py={0.5} fontWeight="700">
-                          {track.bpm ? Math.round(track.bpm) : '-'}
-                        </Badge>
-                      </Table.Cell>
-
-                      <Table.Cell textAlign="right" color="gray.500">{formatDuration(track.duration)}</Table.Cell>
-
-                      <Table.Cell px={2}>
-                        {!isPending && (
-                          <Button
-                            size="xs" variant="ghost" borderRadius="md" color="gray.400" opacity={0}
-                            _groupHover={{ opacity: 1, bg: "pink.50", color: "pink.600" }} transition="all 0.2s" cursor="pointer"
-                            onClick={(e) => { e.stopPropagation(); setShareTrack(track); }} title="Share Track"
-                          >
-                            <Icon as={Share2} boxSize={4} />
-                          </Button>
-                        )}
-                      </Table.Cell>
-                    </Table.Row>
-                  );
-                })}
-              </Table.Body>
-            </Table.Root>
-
-            {isFetchingMore && (
-              <Box py={6} display="flex" justifyContent="center">
-                <Spinner size="md" color="blue.500" />
-              </Box>
+        <Table.Root css={{
+          "& th": { borderBottom: "1px solid var(--chakra-colors-gray-200)", py: 4, fontWeight: "500", color: "var(--chakra-colors-gray-600)" },
+          "& td": { py: 3, borderBottom: "1px solid var(--chakra-colors-gray-50)", color: "var(--chakra-colors-gray-800)", transition: "background 0.2s" }
+        }}>
+          <Table.Header position="sticky" top={0} bg="white" zIndex={1}>
+            <Table.Row>
+              <Table.ColumnHeader w="50px"></Table.ColumnHeader>
+              <Table.ColumnHeader w="64px">Artwork</Table.ColumnHeader>
+              <Table.ColumnHeader>Track ({globalTotal})</Table.ColumnHeader>
+              <Table.ColumnHeader>Artist</Table.ColumnHeader>
+              <Table.ColumnHeader>Album</Table.ColumnHeader>
+              <Table.ColumnHeader>Genre & Style</Table.ColumnHeader>
+              <Table.ColumnHeader>BPM</Table.ColumnHeader>
+              <Table.ColumnHeader textAlign="right">Time</Table.ColumnHeader>
+              <Table.ColumnHeader w="50px"></Table.ColumnHeader>
+            </Table.Row>
+          </Table.Header>
+          
+          <Table.Body>
+            {isLoading || uniqueTracks.length === 0 ? (
+              <TrackTableEmptyState isLoading={isLoading} colSpan={9} />
+            ) : (
+              uniqueTracks.map((track) => (
+                <TrackTableRow 
+                  key={track.id}
+                  track={track}
+                  tracks={tracks}
+                  currentTrack={currentTrack}
+                  isPlaying={isPlaying}
+                  playTrack={playTrack}
+                  togglePlayPause={togglePlayPause}
+                  setSelectedTrack={setSelectedTrack}
+                  setShareTrack={setShareTrack}
+                  handleRetry={handleRetry}
+                  handleDelete={handleDelete}
+                  handleAttributeClick={handleAttributeClick}
+                />
+              ))
             )}
-          </>
+          </Table.Body>
+        </Table.Root>
+
+        {isFetchingMore && (
+          <Box py={6} display="flex" justifyContent="center">
+            <Spinner size="md" color="blue.500" />
+          </Box>
         )}
       </Box>
 
       <TrackDetailDrawer 
         isOpen={!!selectedTrack} onClose={() => setSelectedTrack(null)} track={selectedTrack} 
-        onTrackUpdated={(data) => setTracks(tracksRef.current.map(t => t.id === data.id ? {...t, ...data} : t))}
+        onTrackUpdated={(data) => setTracks(tracks.map(t => t.id === data.id ? {...t, ...data} : t))}
       />
 
       <ShareDrawer 
@@ -533,20 +156,4 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       />
     </VStack>
   );
-};
-
-const getColorForGenre = (genre: string) => {
-  const colors = ['red', 'orange', 'green', 'teal', 'blue', 'cyan', 'purple', 'pink'];
-  let hash = 0;
-  for (let i = 0; i < genre.length; i++) hash = genre.charCodeAt(i) + ((hash << 5) - hash);
-  return colors[Math.abs(hash) % colors.length];
-};
-
-const getBpmStyle = (bpm: number) => {
-  if (!bpm) return { bg: 'gray.100', color: 'gray.400' }; 
-  if (bpm < 105) return { bg: 'gray.100', color: 'gray.500' }; 
-  if (bpm < 120) return { bg: 'gray.200', color: 'gray.700' }; 
-  if (bpm <= 128) return { bg: 'gray.300', color: 'gray.900' }; 
-  if (bpm <= 140) return { bg: 'gray.600', color: 'white' }; 
-  return { bg: 'gray.900', color: 'white' }; 
 };
