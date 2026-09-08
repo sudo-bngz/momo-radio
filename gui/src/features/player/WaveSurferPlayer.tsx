@@ -3,29 +3,33 @@ import WaveSurfer from 'wavesurfer.js';
 import { Box } from '@chakra-ui/react';
 
 interface WaveSurferPlayerProps {
-  trackId: number;
-  audioRef: React.RefObject<HTMLAudioElement | null>;
+  trackId: number | string; // ⚡️ Updated to accept string for live track IDs
+  audioRef?: React.RefObject<HTMLAudioElement | null> | null; // ⚡️ Made optional for live broadcasts
   isPlaying: boolean;
   waveformUrl?: string; 
   waveformKey?: string;
   orgId: string; 
+  liveProgress?: number; // ⚡️ New prop to manually drive the playhead
 }
 
 export const WaveSurferPlayer = ({ 
   audioRef, 
   waveformUrl, 
   waveformKey,
-  orgId 
+  orgId,
+  liveProgress
 }: WaveSurferPlayerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurfer = useRef<WaveSurfer | null>(null);
   const targetWaveformUrl = waveformUrl || waveformKey;
 
-  useEffect(() => {
-    // 1. Guard check to ensure the DOM and Audio element exist
-    if (!containerRef.current || !audioRef.current) return;
+  const isLiveMode = liveProgress !== undefined;
 
-    // 2. React Cleanup Flag to prevent state updates on unmounted components
+  useEffect(() => {
+    // 1. Guard check (We only strictly need the container now, audioRef is optional!)
+    if (!containerRef.current) return;
+
+    // 2. React Cleanup Flag
     let isMounted = true;
 
     // 3. Create Canvas Gradients for the "Rekordbox" aesthetic
@@ -38,39 +42,38 @@ export const WaveSurferPlayer = ({
     if (ctx) {
       // The "unplayed" wave (Darker, sleek)
       const waveGradient = ctx.createLinearGradient(0, 0, 0, 40); 
-      waveGradient.addColorStop(0, '#4A5568'); // Top color (gray.600)
-      waveGradient.addColorStop(1, '#A0AEC0'); // Bottom color (gray.400)
+      waveGradient.addColorStop(0, '#4A5568'); 
+      waveGradient.addColorStop(1, '#A0AEC0'); 
       waveColor = waveGradient;
 
-      // The "played" wave (Bright, glowing blue Rekordbox style)
+      // The "played" wave (Bright, glowing blue)
       const progGradient = ctx.createLinearGradient(0, 0, 0, 40);
-      progGradient.addColorStop(0, '#63B3ED'); // Top color (blue.300)
-      progGradient.addColorStop(0.5, '#3182CE'); // Mid color (blue.500)
-      progGradient.addColorStop(1, '#2B6CB0'); // Bottom color (blue.600)
+      progGradient.addColorStop(0, '#63B3ED'); 
+      progGradient.addColorStop(0.5, '#3182CE'); 
+      progGradient.addColorStop(1, '#2B6CB0'); 
       progressColor = progGradient;
     }
 
     // 4. Initialize Wavesurfer
     wavesurfer.current = WaveSurfer.create({
       container: containerRef.current,
-      media: audioRef.current, 
+      media: audioRef?.current || undefined, // ⚡️ If null, runs in purely visual mode
       waveColor: waveColor,    
       progressColor: progressColor,
-      cursorColor: '#E2E8F0', // Thin white cursor
+      cursorColor: '#E2E8F0',
       cursorWidth: 1,
       height: 40,
-      normalize: true,         
+      normalize: true, 
+      interact: !isLiveMode, // 🚨 Prevent clicking to seek during a live broadcast!
     });
 
     // 5. Fetch and Load the Pre-calculated JSON Peaks
     const loadWaveform = async () => {
-      const audioUrl = audioRef.current?.src;
-      if (!audioUrl) return;
+      // Safely grab the URL if it exists, otherwise use an empty string for visual-only mode
+      const audioUrl = audioRef?.current?.src || '';
 
-      // 2. Check for the full URL using our resolved target
       if (targetWaveformUrl) {
         try {
-          // 3. Fetch directly from the provided URL
           const response = await fetch(targetWaveformUrl, {
             headers: {
               'X-Organization-Id': orgId
@@ -85,7 +88,7 @@ export const WaveSurferPlayer = ({
 
           if (!isMounted) return;
 
-          // CONVERT BBC 8-bit INT to WAVESURFER FLOATS (-1.0 to 1.0)
+          // Convert BBC 8-bit INT to WAVESURFER FLOATS (-1.0 to 1.0)
           const maxPeak = bbcData.data.reduce(
             (max: number, val: number) => Math.max(max, Math.abs(val)), 
             0
@@ -94,7 +97,9 @@ export const WaveSurferPlayer = ({
           const normalizedPeaks = bbcData.data.map((val: number) => val / maxPeak);
 
           try {
-            await wavesurfer.current?.load(audioUrl, [normalizedPeaks]);
+            // ⚡️ If in live mode (no audioUrl), we provide a dummy duration (e.g., 100s) 
+            // so wavesurfer calculates the internal timeline, allowing us to seek visually.
+            await wavesurfer.current?.load(audioUrl, [normalizedPeaks], audioUrl ? undefined : 100);
           } catch (e: any) {
             if (e.name !== 'AbortError') console.error("Wavesurfer load error:", e);
           }
@@ -103,15 +108,17 @@ export const WaveSurferPlayer = ({
           if (!isMounted) return;
           console.error("Failed to load pre-calculated waveform:", error);
           
-          // Fallback native calculation
-          try {
-            await wavesurfer.current?.load(audioUrl);
-          } catch (e: any) {
-            if (e.name !== 'AbortError') console.error("Wavesurfer fallback error:", e);
+          // Fallback native calculation (Only works if we have an actual audio file)
+          if (audioUrl) {
+            try {
+              await wavesurfer.current?.load(audioUrl);
+            } catch (e: any) {
+              if (e.name !== 'AbortError') console.error("Wavesurfer fallback error:", e);
+            }
           }
         }
-      } else {
-        // No waveform URL? Let wavesurfer calculate it natively
+      } else if (audioUrl) {
+        // No waveform URL? Let wavesurfer calculate it natively from the library MP3
         if (!isMounted) return;
         try {
           await wavesurfer.current?.load(audioUrl);
@@ -130,7 +137,20 @@ export const WaveSurferPlayer = ({
         wavesurfer.current.destroy();
       }
     };
-  }, [audioRef, targetWaveformUrl, orgId]);
+  }, [audioRef, targetWaveformUrl, orgId, isLiveMode]);
+
+  // --------------------------------------------------------
+  // ⚡️ 7. EXTERNALLY DRIVE THE VISUAL PLAYHEAD FOR LIVE STREAMS
+  // --------------------------------------------------------
+  useEffect(() => {
+    if (wavesurfer.current && liveProgress !== undefined) {
+      // Convert 0-100 percentage to a 0.0-1.0 float required by Wavesurfer
+      const floatProgress = liveProgress / 100;
+      
+      // seekTo safely moves the cursor without interacting with any audio elements
+      wavesurfer.current.seekTo(floatProgress); 
+    }
+  }, [liveProgress]);
 
   return (
     <Box 

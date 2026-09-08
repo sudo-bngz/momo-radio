@@ -127,7 +127,7 @@ func (s *Server) setupRoutes() {
 	cdn := utils.NewCDNBuilder(s.cfg, s.storage)
 
 	authHandler := handlers.NewAuthHandler(s.db.DB)
-	statsHandler := handlers.NewStatsHandler(s.db.DB)
+	statsHandler := handlers.NewStatsHandler(s.db.DB, cdn)
 	trackHandler := handlers.NewTrackHandler(s.db.DB, s.storage, s.cfg, s.redis, cdn, s.meili, s.asynqClient)
 
 	playlistHandler := handlers.NewPlaylistHandler(s.db.DB, s.storage, cdn)
@@ -135,7 +135,7 @@ func (s *Server) setupRoutes() {
 	artistHandler := handlers.NewArtistHandler(s.db.DB, s.storage, cdn)
 	albumHandler := handlers.NewAlbumHandler(s.db.DB, s.storage, cdn)
 	exportHandler := handlers.NewExportHandler(s.asynqClient)
-	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis, cdn)
+	broadcastHandler := handlers.NewBroadcastHandler(s.db.DB, s.redis, cdn, s.cfg)
 	pageHandler := handlers.NewPublicPageHandler(s.db.DB, s.storage, s.cfg)
 	settingsHandler := handlers.NewSettingsHandler(s.db.DB, s.asynqClient)
 	profileHandler := handlers.NewProfileHandler(s.db.DB)

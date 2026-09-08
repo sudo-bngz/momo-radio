@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"momo-radio/internal/config"
 	"momo-radio/internal/models"
 	"momo-radio/internal/utils"
 
@@ -18,14 +19,16 @@ type BroadcastHandler struct {
 	db  *gorm.DB
 	rdb *redis.Client
 	cdn *utils.CDNBuilder
+	cfg *config.Config
 }
 
-// NewBroadcastHandler initializes the broadcast controller with DB and Redis
-func NewBroadcastHandler(db *gorm.DB, rdb *redis.Client, cdn *utils.CDNBuilder) *BroadcastHandler {
+// NewBroadcastHandler initializes the broadcast controller with DB, Redis, CDN, and Config
+func NewBroadcastHandler(db *gorm.DB, rdb *redis.Client, cdn *utils.CDNBuilder, cfg *config.Config) *BroadcastHandler {
 	return &BroadcastHandler{
 		db:  db,
 		rdb: rdb,
 		cdn: cdn,
+		cfg: cfg,
 	}
 }
 
@@ -79,7 +82,6 @@ func GetMountPoints(db *gorm.DB, cdn *utils.CDNBuilder) gin.HandlerFunc {
 
 		for i := range org.MountPoints {
 			streamKey := fmt.Sprintf("%s/%s/stream.m3u8", orgIDStr, org.MountPoints[i].Slug)
-			// ⚡️ Only use what the handler knows
 			org.MountPoints[i].HlsUrl = cdn.BuildLiveURL(streamKey, orgIDStr)
 		}
 
@@ -137,7 +139,6 @@ func CreateMountPoint(db *gorm.DB, cdn *utils.CDNBuilder) gin.HandlerFunc {
 			}
 
 			streamKey := fmt.Sprintf("%s/%s/stream.m3u8", parsedOrgID.String(), mount.Slug)
-			// ⚡️ Only use what the handler knows
 			mount.HlsUrl = cdn.BuildLiveURL(streamKey, parsedOrgID.String())
 
 			c.JSON(http.StatusCreated, mount)
@@ -199,10 +200,23 @@ func (h *BroadcastHandler) GetStreamState(c *gin.Context) {
 	var state models.StreamState
 	err := h.db.Select("broadcast_mode").Where("organization_id = ?", orgID).First(&state).Error
 
+	// Load the timezone from the global config (fallback to UTC if invalid)
+	loc, locErr := time.LoadLocation(h.cfg.Server.Timezone)
+	if locErr != nil {
+		loc = time.UTC
+	}
+	serverTime := time.Now().In(loc).Format(time.RFC3339)
+
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"state": "offline"})
+		c.JSON(http.StatusOK, gin.H{
+			"state":       "offline",
+			"server_time": serverTime,
+		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"state": state.BroadcastMode})
+	c.JSON(http.StatusOK, gin.H{
+		"state":       state.BroadcastMode,
+		"server_time": serverTime,
+	})
 }

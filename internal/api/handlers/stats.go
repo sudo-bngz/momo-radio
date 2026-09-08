@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"momo-radio/internal/models"
+	"momo-radio/internal/utils" // ⚡️ ADDED: Import utils for CDNBuilder
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -13,15 +14,18 @@ import (
 )
 
 type StatsHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	cdn *utils.CDNBuilder // ⚡️ ADDED: CDN injection
 }
 
-func NewStatsHandler(db *gorm.DB) *StatsHandler {
-	return &StatsHandler{db: db}
+func NewStatsHandler(db *gorm.DB, cdn *utils.CDNBuilder) *StatsHandler {
+	return &StatsHandler{
+		db:  db,
+		cdn: cdn,
+	}
 }
 
 func (h *StatsHandler) GetStats(c *gin.Context) {
-	// 1. Extract the Organization ID securely from the Gin Context
 	orgIDRaw, exists := c.Get("organizationID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Organization context missing."})
@@ -38,12 +42,10 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 	var totalPlaylists int64
 	var storageUsed int64
 
-	// 2. Apply the Tenant Scope to ALL basic aggregates
 	h.db.Model(&models.Track{}).Where("organization_id = ?", orgID).Count(&totalTracks)
 	h.db.Model(&models.Playlist{}).Where("organization_id = ?", orgID).Count(&totalPlaylists)
 	h.db.Model(&models.Track{}).Where("organization_id = ?", orgID).Select("COALESCE(SUM(file_size), 0)").Scan(&storageUsed)
 
-	// 3. Determine Active Schedule (The "Show")
 	now := time.Now()
 	currentTimeStr := now.Format("15:04")
 	currentWeekday := now.Weekday().String()[0:3]
@@ -59,13 +61,11 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 		}
 	}
 
-	// 4. Determine Currently Playing Track
 	var streamState models.StreamState
 	var currentTrack models.Track
+	var startsAt time.Time
 
-	// Filter stream state by Tenant
 	if err := h.db.Where("organization_id = ?", orgID).Order("updated_at DESC").First(&streamState).Error; err == nil {
-		// ⚡️ FIXED: Using Find() into a slice prevents the "record not found" log spam for deleted tracks
 		var foundTracks []models.Track
 		h.db.Preload("Artists").Preload("Album").
 			Where("organization_id = ? AND id = ?", orgID, streamState.TrackID).
@@ -74,10 +74,23 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 
 		if len(foundTracks) > 0 {
 			currentTrack = foundTracks[0]
+
+			var playedAt time.Time
+			h.db.Table("play_histories").
+				Select("played_at").
+				Where("track_id = ?", currentTrack.ID).
+				Order("played_at DESC").
+				Limit(1).
+				Scan(&playedAt)
+
+			if !playedAt.IsZero() {
+				startsAt = playedAt
+			} else {
+				startsAt = streamState.UpdatedAt
+			}
 		}
 	}
 
-	// ⚡️ Format the multiple artists into a single string for the Dashboard UI
 	var artistNames []string
 	for _, a := range currentTrack.Artists {
 		artistNames = append(artistNames, a.Name)
@@ -87,17 +100,43 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 		artistStr = strings.Join(artistNames, ", ")
 	}
 
-	// 5. Fetch Recent Tracks (History)
+	durationMs := int64(currentTrack.Duration * 1000)
+
+	var endsAt time.Time
+	var elapsedMs int64
+
+	if !startsAt.IsZero() {
+		endsAt = startsAt.Add(time.Duration(currentTrack.Duration) * time.Second)
+		elapsedMs = time.Since(startsAt).Milliseconds()
+	}
+
+	if elapsedMs < 0 {
+		elapsedMs = 0
+	}
+	if durationMs > 0 && elapsedMs > durationMs {
+		elapsedMs = durationMs
+	}
+
+	var waveformURL string
+	if currentTrack.WaveformKey != "" {
+		// Note: Adjust "BuildAssetURL" to whatever method you named it in utils.CDNBuilder
+		waveformURL = h.cdn.BuildAssetURL(currentTrack.WaveformKey, orgID.String())
+	}
+
+	var coverURL string
+	if currentTrack.Album.CoverKey != "" {
+		coverURL = h.cdn.BuildAssetURL(currentTrack.Album.CoverKey, orgID.String())
+	}
+
 	var recentTracks []models.Track
 	h.db.Model(&models.Track{}).
 		Preload("Artists").
 		Joins("JOIN play_histories ON play_histories.track_id = tracks.id").
-		Where("tracks.organization_id = ?", orgID). // Filter history by Tenant
+		Where("tracks.organization_id = ?", orgID).
 		Order("play_histories.played_at DESC").
 		Limit(5).
 		Find(&recentTracks)
 
-	// 6. Build Response
 	c.JSON(http.StatusOK, gin.H{
 		"stats": gin.H{
 			"total_tracks":       totalTracks,
@@ -106,17 +145,21 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 			"uptime":             "99.9%",
 		},
 		"now_playing": gin.H{
+			"track_id":      currentTrack.ID,
+			"cover_url":     coverURL,
+			"waveform_url":  waveformURL,
 			"title":         currentTrack.Title,
 			"artist":        artistStr,
 			"playlist_name": activeShowName,
-			"starts_at":     streamState.UpdatedAt,
-			"ends_at":       streamState.UpdatedAt.Add(time.Duration(currentTrack.Duration) * time.Second),
+			"starts_at":     startsAt,
+			"ends_at":       endsAt,
+			"elapsed_ms":    elapsedMs,
+			"duration_ms":   durationMs,
 		},
 		"recent_tracks": recentTracks,
 	})
 }
 
-// Internal helper for time matching (Standard vs Midnight Crossover)
 func isTimeMatch(start, end, current string) bool {
 	if start == "" || end == "" {
 		return false

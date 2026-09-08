@@ -1,92 +1,34 @@
-import { useEffect, useState } from 'react';
-import { Box, Flex, HStack, Text, Badge } from '@chakra-ui/react';
+import { useEffect } from 'react';
+import { Box, Flex, HStack, Text, Badge, Image } from '@chakra-ui/react';
 import { usePlayer } from '../../context/PlayerContext';
 import { useAuthStore } from '../../store/useAuthStore';
-import { api } from '../../services/api';
 
 import { TrackInfo } from './components/TrackInfo';
 import { PlaybackControls } from './components/PlaybackControls';
 import { VolumeControl } from './components/VolumeControl';
 import { WaveSurferPlayer } from './WaveSurferPlayer';
 
-interface NowPlayingMetadata {
-  artist: string;
-  title: string;
-  playlist_name?: string;
-  starts_at?: string;
-  ends_at?: string;
-}
-
 export const GlobalPlayer = () => {
   const { 
-    currentTrack, isPlaying, isPlayerVisible, setPlayerVisible, audioRef 
+    currentTrack, isPlaying, isPlayerVisible, setPlayerVisible, audioRef, 
+    progress, liveMeta, liveElapsed, liveDuration 
   } = usePlayer();
 
   const activeOrgId = useAuthStore((state) => state.activeOrganizationId);
 
-  // Live metadata state
-  const [nowPlaying, setNowPlaying] = useState<NowPlayingMetadata | null>(null);
-  const [liveProgress, setLiveProgress] = useState(0);
-  const [liveCurrentTime, setLiveCurrentTime] = useState("0:00");
-  const [liveDuration, setLiveDuration] = useState("0:00");
-
-  const isLiveStream = String(currentTrack?.id).startsWith('live-');
+  const trackId = String(currentTrack?.id || '');
+  const trackUrl = String((currentTrack as any)?.url || (currentTrack as any)?.stream_url || '');
+  const isLiveStream = trackId.startsWith('live') || trackId === 'radio' || trackUrl.includes('.m3u8');
 
   useEffect(() => { 
     if (isPlaying) setPlayerVisible(true); 
   }, [isPlaying, setPlayerVisible]);
 
-  // 1. POLL STATS WHEN STREAMING LIVE
-  useEffect(() => {
-    if (!isLiveStream || !isPlaying) {
-      setNowPlaying(null);
-      return;
-    }
-
-    const fetchStats = async () => {
-      try {
-        const stats = await api.getDashboardStats();
-        if (stats?.now_playing) {
-          setNowPlaying(stats.now_playing);
-        }
-      } catch (err) {
-        console.warn("Failed to fetch live broadcast stats:", err);
-      }
-    };
-
-    fetchStats();
-    const interval = setInterval(fetchStats, 5000); // Poll every 5s
-
-    return () => clearInterval(interval);
-  }, [isLiveStream, isPlaying, activeOrgId]);
-
-  // 2. COMPUTE LIVE TRACK TIMING (starts_at -> ends_at)
-  useEffect(() => {
-    if (!isLiveStream || !nowPlaying?.starts_at || !nowPlaying?.ends_at) return;
-
-    const start = new Date(nowPlaying.starts_at).getTime();
-    const end = new Date(nowPlaying.ends_at).getTime();
-    const totalDurationSec = Math.max(0, (end - start) / 1000);
-
-    const updateTimer = () => {
-      const now = Date.now();
-      const elapsedSec = Math.max(0, (now - start) / 1000);
-      const pct = Math.min(100, Math.max(0, (elapsedSec / totalDurationSec) * 100));
-
-      setLiveProgress(pct);
-      setLiveCurrentTime(formatTime(elapsedSec));
-      setLiveDuration(formatTime(totalDurationSec));
-    };
-
-    updateTimer();
-    const ticker = setInterval(updateTimer, 1000);
-
-    return () => clearInterval(ticker);
-  }, [isLiveStream, nowPlaying]);
-
   const isOffScreen = !isPlayerVisible || !currentTrack;
-  const currentTime = audioRef.current?.currentTime || 0;
-  const duration = audioRef.current?.duration || 0;
+  
+  // Use Context timing for Live, standard audioRef for Library
+  const currentTimeDisplay = isLiveStream ? liveElapsed : (audioRef.current?.currentTime || 0);
+  const durationDisplay = isLiveStream ? liveDuration : (audioRef.current?.duration || 0);
 
   const formatTime = (time: number) => {
     if (!time || isNaN(time)) return "0:00";
@@ -116,21 +58,35 @@ export const GlobalPlayer = () => {
         transition="transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
       >
         <Flex h="full" align="center" gap={6}>
-          {/* Left: Track Info (With Live Override) */}
+         {/* Left: Track Info (With Live Override) */}
           <Box minW="220px" maxW="300px">
-            {isLiveStream && nowPlaying ? (
+            {isLiveStream && liveMeta ? (
               <HStack gap={3}>
+                
+                {/* ⚡️ LIVE COVER ART: Removed the problematic 'fallback' prop */}
+                {liveMeta.cover_url ? (
+                  <Image 
+                    src={liveMeta.cover_url} 
+                    boxSize="48px" 
+                    borderRadius="md" 
+                    objectFit="cover" 
+                    flexShrink={0}
+                  />
+                ) : (
+                  <Box boxSize="48px" bg="gray.100" borderRadius="md" flexShrink={0} />
+                )}
+
                 <Box>
                   <HStack gap={2} mb={0.5}>
                     <Badge color="red.600" bg="red.50" fontSize="10px" px={1.5} borderRadius="sm">
                       LIVE
                     </Badge>
                     <Text fontSize="xs" fontWeight="bold" color="gray.800" lineClamp={1}>
-                      {nowPlaying.title}
+                      {liveMeta.title}
                     </Text>
                   </HStack>
                   <Text fontSize="xs" color="gray.500" lineClamp={1}>
-                    {nowPlaying.artist} {nowPlaying.playlist_name ? `• ${nowPlaying.playlist_name}` : ''}
+                    {liveMeta.artist} {liveMeta.playlist_name ? `• ${liveMeta.playlist_name}` : ''}
                   </Text>
                 </Box>
               </HStack>
@@ -144,26 +100,39 @@ export const GlobalPlayer = () => {
             <PlaybackControls />
           </HStack>
 
-          {/* Center: Waveform (Library) OR Live Progress Bar */}
+          {/* Center: Waveform (Library) OR Live Progress */}
           <HStack flex="1" gap={4} ml={4} minW="0">
             <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px" textAlign="right">
-              {isLiveStream ? liveCurrentTime : formatTime(currentTime)}
+              {formatTime(currentTimeDisplay)}
             </Text>
             
             <Box flex="1" h="40px" display="flex" alignItems="center">
               {isLiveStream ? (
-                // Live Stream Track Progress Bar
-                <Box w="100%" h="6px" bg="gray.200" borderRadius="full" overflow="hidden" position="relative">
-                  <Box 
-                    h="100%" 
-                    bg="red.500" 
-                    w={`${liveProgress}%`} 
-                    transition="width 1s linear" 
-                    borderRadius="full"
+                // ⚡️ FIXED: Check for waveform_url instead of waveform_key
+                liveMeta?.waveform_url ? (
+                  <WaveSurferPlayer 
+                    key={`live-${liveMeta.track_id}`}
+                    audioRef={null} 
+                    trackId={liveMeta.track_id}
+                    isPlaying={isPlaying}
+                    waveformUrl={liveMeta.waveform_url} 
+                    orgId={activeOrgId || ''}
+                    liveProgress={progress} 
                   />
-                </Box>
+                ) : (
+                  // Fallback solid bar if the track has no waveform
+                  <Box w="100%" h="6px" bg="gray.200" borderRadius="full" overflow="hidden" position="relative">
+                    <Box 
+                      h="100%" 
+                      bg="red.500" 
+                      w={`${progress}%`} 
+                      transition={progress === 0 ? "none" : "width 1s linear"} 
+                      borderRadius="full" 
+                    />
+                  </Box>
+                )
               ) : (
-                // Static Waveform for Library Tracks
+                // ⚡️ STANDARD LIBRARY WAVEFORM
                 currentTrack && audioRef.current && (
                   <WaveSurferPlayer 
                     key={currentTrack.id}
@@ -171,14 +140,14 @@ export const GlobalPlayer = () => {
                     trackId={currentTrack.id}
                     isPlaying={isPlaying}
                     waveformKey={currentTrack.waveform_key} 
-                    orgId={currentTrack.organization_id} 
+                    orgId={currentTrack.organization_id || activeOrgId || ''} 
                   />
                 )
               )}
             </Box>
             
             <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px">
-              {isLiveStream ? liveDuration : formatTime(duration)}
+              {formatTime(durationDisplay)}
             </Text>
           </HStack>
 

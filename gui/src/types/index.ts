@@ -112,15 +112,20 @@ export interface DashboardData {
   };
   now_playing: NowPlayingInfo | null;
   recent_tracks: Track[];
+  server_time?: string;
 }
 
 export interface NowPlayingInfo {
-  title: string;
   artist: string;
-  playlist_name: string;
-  timeRemaining?: string;
-  starts_at: string;
+  title: string;
+  playlist_name?: string;
+  starts_at?: string;
   ends_at?: string;
+  elapsed_ms?: number; 
+  duration_ms?: number;
+  track_id?: string | number;
+  waveform_key?: string;
+  cover_url?: string;
 }
 
 export interface User {
