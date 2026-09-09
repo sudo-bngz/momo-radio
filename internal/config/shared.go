@@ -29,6 +29,11 @@ type Config struct {
 		PublicPage string `mapstructure:"public_page"`
 		Assets     string `mapstructure:"assets"`
 	} `mapstructure:"cdn"`
+	MediaMTX struct {
+		Host     string `mapstructure:"host"`
+		RTMPPort string `mapstructure:"rtmp_port"`
+		HLSURL   string `mapstructure:"hls_url"`
+	} `mapstructure:"mediamtx"`
 	Server struct {
 		TempDir         string `mapstructure:"temp_dir"`
 		PollingInterval int    `mapstructure:"polling_interval_seconds"`
@@ -54,6 +59,7 @@ type Config struct {
 		DryRun        bool   `mapstructure:"dry_run"`
 		Provider      string `mapstructure:"provider"`
 	} `mapstructure:"radio"`
+
 	Database struct {
 		Host     string `mapstructure:"host"`
 		Port     string `mapstructure:"port"`
@@ -125,6 +131,11 @@ func Load() *Config {
 	viper.BindEnv("cdn.public_page")
 	viper.BindEnv("cdn.assets")
 
+	// MediaMTX Bindings (supports RADIO_MEDIAMTX_* and direct MEDIAMTX_*)
+	viper.BindEnv("mediamtx.host", "RADIO_MEDIAMTX_HOST", "MEDIAMTX_HOST")
+	viper.BindEnv("mediamtx.rtmp_port", "RADIO_MEDIAMTX_RTMP_PORT", "MEDIAMTX_RTMP_PORT")
+	viper.BindEnv("mediamtx.hls_url", "RADIO_MEDIAMTX_HLS_URL", "MEDIAMTX_HLS_URL")
+
 	// Server Bindings
 	viper.BindEnv("server.temp_dir")
 	viper.BindEnv("server.polling_interval_seconds")
@@ -190,6 +201,11 @@ func Load() *Config {
 	viper.SetDefault("cdn.master", "")
 	viper.SetDefault("cdn.public_page", "")
 	viper.SetDefault("cdn.assets", "")
+
+	// MediaMTX Defaults
+	viper.SetDefault("mediamtx.host", "mediamtx")
+	viper.SetDefault("mediamtx.rtmp_port", "1935")
+	viper.SetDefault("mediamtx.hls_url", "http://localhost:8888")
 
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", "6379")

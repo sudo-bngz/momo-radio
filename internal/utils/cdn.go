@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"momo-radio/internal/config"
+
+	"github.com/google/uuid"
 )
 
 // DirectURLProvider perfectly matches your storage.Client signature
@@ -28,19 +30,40 @@ func NewCDNBuilder(cfg *config.Config, store DirectURLProvider) *CDNBuilder {
 	}
 }
 
-// BuildLiveURL extracts the Stream bucket and region from config for the direct URL
-func (b *CDNBuilder) BuildLiveURL(key, orgID string) string {
-	directURL := b.store.GetDirectPublicURL(b.cfg.Storage.BucketStream, key)
-	return b.build(b.cfg.CDN.Stream, directURL, key, orgID)
+// GetHLSStreamURL replaces the old bucket-based Live URL logic.
+// It returns the direct MediaMTX URL or routes through the BunnyCDN Stream zone if enabled.
+func (b *CDNBuilder) GetHLSStreamURL(orgID uuid.UUID, mountSlug string) string {
+	if mountSlug == "" {
+		mountSlug = "radio"
+	}
+
+	baseURL := b.cfg.MediaMTX.HLSURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8888"
+	}
+
+	// Route through BunnyCDN pull zone if enabled
+	if b.cfg.CDN.Enabled && b.cfg.CDN.Stream != "" {
+		baseURL = b.cfg.CDN.Stream
+	}
+
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	// Ensure protocol prefix is present
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+
+	return fmt.Sprintf("%s/%s/%s/index.m3u8", baseURL, orgID.String(), mountSlug)
 }
 
-// BuildAssetURL extracts the Prod bucket and region from config for the direct URL
+// BuildAssetURL extracts the Prod bucket and region from config for the direct URL (used for cover art, audio tracks, etc.)
 func (b *CDNBuilder) BuildAssetURL(key, orgID string) string {
 	directURL := b.store.GetDirectPublicURL(b.cfg.Storage.BucketAssets, key)
-	return b.build(b.cfg.CDN.Assets, directURL, key, orgID) // Note: Make sure cfg.CDN.AssetsURL matches your config struct field name
+	return b.build(b.cfg.CDN.Assets, directURL, key, orgID)
 }
 
-// Internal private logic
+// Internal private logic for static assets
 func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) string {
 	if key == "" {
 		return ""
@@ -83,7 +106,6 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 
 // PurgeCache sends a native HTTP request to BunnyCDN to clear a specific file
 func (c *CDNBuilder) PurgeCache(fullFileURL string) error {
-	// Adjust these field names if your config struct looks slightly different
 	apiKey := c.cfg.CDN.APIKey
 	if apiKey == "" || !c.cfg.CDN.Enabled {
 		return nil // Skip gracefully if CDN is disabled

@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"momo-radio/internal/config"
@@ -78,11 +79,8 @@ func GetMountPoints(db *gorm.DB, cdn *utils.CDNBuilder) gin.HandlerFunc {
 			return
 		}
 
-		orgIDStr := fmt.Sprintf("%v", orgID)
-
 		for i := range org.MountPoints {
-			streamKey := fmt.Sprintf("%s/%s/stream.m3u8", orgIDStr, org.MountPoints[i].Slug)
-			org.MountPoints[i].HlsUrl = cdn.BuildLiveURL(streamKey, orgIDStr)
+			org.MountPoints[i].HlsUrl = cdn.GetHLSStreamURL(org.ID, org.MountPoints[i].Slug)
 		}
 
 		c.JSON(http.StatusOK, gin.H{"mount_points": org.MountPoints})
@@ -138,8 +136,7 @@ func CreateMountPoint(db *gorm.DB, cdn *utils.CDNBuilder) gin.HandlerFunc {
 				return err
 			}
 
-			streamKey := fmt.Sprintf("%s/%s/stream.m3u8", parsedOrgID.String(), mount.Slug)
-			mount.HlsUrl = cdn.BuildLiveURL(streamKey, parsedOrgID.String())
+			mount.HlsUrl = cdn.GetHLSStreamURL(parsedOrgID, mount.Slug)
 
 			c.JSON(http.StatusCreated, mount)
 			return nil
@@ -151,26 +148,42 @@ func CreateMountPoint(db *gorm.DB, cdn *utils.CDNBuilder) gin.HandlerFunc {
 	}
 }
 
-// AuthStreamPublish handles RTMP ingest authentication webhooks
+// MediaMTXAuthRequest matches the exact JSON payload MediaMTX sends on publish
+type MediaMTXAuthRequest struct {
+	Action   string `json:"action"`
+	Path     string `json:"path"`     // e.g., "org-uuid-123/radio"
+	Password string `json:"password"` // The Stream Key
+}
+
+// AuthStreamPublish handles RTMP ingest authentication webhooks from MediaMTX
 func AuthStreamPublish(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req struct {
-			Name string `form:"name" json:"name" binding:"required"`
-		}
-
-		if err := c.ShouldBind(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "missing stream key parameter"})
+		var req MediaMTXAuthRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json payload from mediamtx"})
 			return
 		}
 
+		// We only care about authorizing publishers (DJs and AutoDJ).
+		// Return 200 OK to allow readers if not excluded via MediaMTX config.
+		if req.Action != "publish" {
+			c.Status(http.StatusOK)
+			return
+		}
+
+		// Extract tenant from path (e.g. "org-uuid/radio" -> "org-uuid")
+		parts := strings.Split(req.Path, "/")
+		if len(parts) < 1 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid stream path structure"})
+			return
+		}
+		tenantID := parts[0]
+
 		var org models.Organization
-		err := db.Where("stream_key = ?", req.Name).First(&org).Error
+		// req.Password contains the stream key sent by OBS/FFmpeg
+		err := db.Where("id = ? AND stream_key = ?", tenantID, req.Password).First(&org).Error
 		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid stream key"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "database verification error"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid stream key or tenant not found"})
 			return
 		}
 
@@ -186,6 +199,7 @@ func AuthStreamPublish(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// MediaMTX expects a 200 OK status to authorize the stream and begin processing HLS chunks.
 		c.JSON(http.StatusOK, gin.H{
 			"message":         "authenticated",
 			"organization_id": org.ID,

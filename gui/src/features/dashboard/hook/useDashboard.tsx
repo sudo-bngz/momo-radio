@@ -2,56 +2,92 @@ import { useState, useEffect } from 'react';
 import { api } from '../../../services/api';
 import type { DashboardData, NowPlayingInfo } from '../../../types';
 
-export const useDashboard = () => {
+export const useDashboard = (orgId?: string) => {
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
+  
+  // Real-time track state
+  const [nowPlaying, setNowPlaying] = useState<NowPlayingInfo | null>(null);
+  // Fast 1-second clock for the waveform progress
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
 
-  const fetchDashboardData = async () => {
-    try {
-      const result = await api.getDashboardStats();
-      setData(result);
-    } catch (error) {
-      console.error("Failed to fetch dashboard data", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // 1. Fetch dashboard metrics (storage, tracks, uptime) - Polled every 60s
   useEffect(() => {
-    fetchDashboardData();
+    let mounted = true;
 
-    // Refresh every 30 seconds to keep the "Now Playing" and Stats fresh
-    const interval = setInterval(fetchDashboardData, 30000);
-    return () => clearInterval(interval);
+    const fetchStats = async () => {
+      try {
+        const result = await api.getDashboardStats();
+        if (mounted) setData(result);
+      } catch (error) {
+        console.error("Failed to fetch dashboard stats", error);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 60000); 
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
-  /**
-   * Helper to format bytes from the DB into human-readable GB
-   */
+  useEffect(() => {
+    if (!orgId) return;
+
+    // Get the properly formatted URL from your centralized API service
+    const sseUrl = api.getNowPlayingStreamUrl(orgId);
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const parsed: NowPlayingInfo = JSON.parse(event.data);
+        setNowPlaying(parsed);
+      } catch (err) {
+        console.error("Failed to parse SSE payload", err);
+      }
+    };
+
+    return () => eventSource.close();
+  }, [orgId]);
+
+  // 3. Local clock to drive the waveform elapsed time
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const formatStorage = (bytes: number): string => {
-    if (!bytes || bytes === 0) return "0 GB";
-    const gb = bytes / (1024 * 1024 * 1024);
-    return `${gb.toFixed(1)} GB`;
+    if (!bytes) return "0 GB";
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
 
-  /**
-   * Helper to calculate time remaining for the current track
-   */
-const getTimeRemaining = (nowPlaying: NowPlayingInfo | null): string => {
-    if (!nowPlaying || !nowPlaying.ends_at) return "--:--";
+  // Calculate live progression for the player
+  const calculateLiveState = () => {
+    if (!nowPlaying?.starts_at) {
+      return { elapsed_ms: 0, timeRemaining: "--:--" };
+    }
+
+    const start = new Date(nowPlaying.starts_at).getTime();
+    const end = nowPlaying.ends_at ? new Date(nowPlaying.ends_at).getTime() : start;
     
-    const end = new Date(nowPlaying.ends_at).getTime();
-    const now = new Date().getTime();
-    const diffMs = end - now;
+    const elapsedMs = Math.max(0, currentTimeMs - start);
+    const remainingMs = Math.max(0, end - currentTimeMs);
 
-    if (diffMs <= 0) return "0:00";
-
-    const totalSeconds = Math.floor(diffMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    const totalSec = Math.floor(remainingMs / 1000);
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    
+    return {
+      elapsed_ms: elapsedMs,
+      timeRemaining: `${mins}:${secs.toString().padStart(2, '0')}`
+    };
   };
+
+  const liveState = calculateLiveState();
 
   return {
     isLoading,
@@ -59,19 +95,28 @@ const getTimeRemaining = (nowPlaying: NowPlayingInfo | null): string => {
       totalTracks: data?.stats.total_tracks ?? 0,
       totalPlaylists: data?.stats.total_playlists ?? 0,
       uptime: data?.stats.uptime ?? "100%",
-      storageUsed: formatStorage(data?.stats.storage_used_bytes ?? 0)
+      storageUsed: formatStorage(data?.stats.storage_used_bytes ?? 0),
     },
     recentTracks: data?.recent_tracks ?? [],
-    nowPlaying: data?.now_playing ? {
-      ...data.now_playing,
-      timeRemaining: getTimeRemaining(data.now_playing)
-    } : {
-      title: "Silence",
-      artist: "Station Offline",
-      playlist_name: "No Schedule",
-      timeRemaining: "--:--",
-      starts_at: "",
-      ends_at: ""
-    }
+    
+    nowPlaying: (nowPlaying
+      ? {
+          ...nowPlaying,
+          elapsed_ms: liveState.elapsed_ms,
+          timeRemaining: liveState.timeRemaining,
+        }
+      : {
+          title: "Silence",
+          artist: "Station Offline",
+          playlist_name: "No Schedule",
+          elapsed_ms: 0,
+          duration_ms: 0,
+          starts_at: undefined,
+          ends_at: undefined,
+          track_id: undefined,
+          waveform_key: undefined,
+          cover_url: undefined,
+          timeRemaining: "--:--",
+        }) as NowPlayingInfo & { timeRemaining: string },
   };
 };

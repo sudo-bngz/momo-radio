@@ -85,6 +85,7 @@ func (s *Server) setupMiddleware() {
 
 		c.Next()
 
+		// Do not log health checks or fast-polling broadcast state
 		if path == "/health" || path == "/api/v1/broadcast/state" {
 			return
 		}
@@ -155,11 +156,18 @@ func (s *Server) setupRoutes() {
 
 	v1 := s.router.Group("/api/v1")
 	{
-		publicShares := v1.Group("/public/shares")
+		publicGroup := v1.Group("/public")
 		{
-			publicShares.GET("/:token", shareHandler.GetPublicShare)
-			publicShares.GET("/:token/stream", shareHandler.StreamPublicShare)
-			publicShares.GET("/:token/download", shareHandler.DownloadPublicShare)
+			// Server-Sent Events (SSE) endpoint for live track data
+			publicGroup.GET("/:org_id/now-playing", handlers.StreamNowPlaying(s.redis))
+
+			// Public Share links
+			publicShares := publicGroup.Group("/shares")
+			{
+				publicShares.GET("/:token", shareHandler.GetPublicShare)
+				publicShares.GET("/:token/stream", shareHandler.StreamPublicShare)
+				publicShares.GET("/:token/download", shareHandler.DownloadPublicShare)
+			}
 		}
 
 		jwtOnly := v1.Group("/")
@@ -235,17 +243,23 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/env.js", func(c *gin.Context) {
 		c.Header("Content-Type", "application/javascript")
 
-		cdnUrl := ""
+		streamBase := s.cfg.MediaMTX.HLSURL
+		if s.cfg.CDN.Enabled && s.cfg.CDN.Stream != "" {
+			streamBase = s.cfg.CDN.Stream
+		}
+
+		cdnAssets := ""
 		if s.cfg.CDN.Enabled {
-			cdnUrl = s.cfg.CDN.Assets
+			cdnAssets = s.cfg.CDN.Assets
 		}
 
 		js := fmt.Sprintf(`window.__RUNTIME_CONFIG__ = {
-            SUPABASE_URL: "%s",
-            SUPABASE_ANON_KEY: "%s",
-            API_URL: "%s",
-            CDN_URL: "%s"
-        };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey, s.cfg.Server.PublicAPIURL, cdnUrl)
+        SUPABASE_URL: "%s",
+        SUPABASE_ANON_KEY: "%s",
+        API_URL: "%s",
+        CDN_URL: "%s",
+        STREAM_BASE_URL: "%s"
+    };`, s.cfg.Supabase.URL, s.cfg.Supabase.AnonKey, s.cfg.Server.PublicAPIURL, cdnAssets, strings.TrimRight(streamBase, "/"))
 
 		c.String(http.StatusOK, js)
 	})

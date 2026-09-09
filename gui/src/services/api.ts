@@ -272,8 +272,6 @@ export const api = {
     const safeTag = tag.replace(/"/g, '\\"');
 
     // List all the filterable attributes we configured in the Go backend
-    // Note: We exclude 'bpm' here because it's a numeric field, and Meilisearch 
-    // will throw an error if we try to compare a string tag to a number.
     const attributes = [
       'genre',
       'style',
@@ -395,7 +393,6 @@ export const api = {
     return response.data;
   },
   
-
   // 4. SCHEDULER
   getSchedule: async (start: string, end: string): Promise<ScheduleSlot[]> => {
     const response = await apiClient.get<ScheduleSlot[]>('/schedules', {
@@ -420,6 +417,12 @@ export const api = {
   getDashboardStats: async (): Promise<DashboardData> => {
     const response = await apiClient.get<DashboardData>('/stats');
     return response.data;
+  },
+
+  // NEW: SSE Stream URL Generator for Now Playing
+  getNowPlayingStreamUrl: (orgId: string): string => {
+    // API_BASE_URL is dynamically resolved above (e.g. "http://localhost:8080/api/v1")
+    return `${API_BASE_URL.replace(/\/$/, '')}/public/${orgId}/now-playing`;
   },
 
   // --- ORGANIZATIONS ---
@@ -457,21 +460,26 @@ export const api = {
     const response = await apiClient.get('/broadcast/state');
     return response.data;
   },
+  
   updateMountPoint: async (id: string, data: Partial<MountPoint>): Promise<MountPoint> => {
     const response = await apiClient.put(`/mounts/${id}`, data);
     return response.data;
   },
+  
   deleteMountPoint: async (id: string): Promise<void> => {
     await apiClient.delete(`/mounts/${id}`);
   },
+  
   getPublicPageSettings: async (): Promise<PublicPageConfig> => {
     const response = await apiClient.get('/public-page');
     return response.data;
   },
+  
   updatePublicPageSettings: async (data: Partial<PublicPageConfig>): Promise<void> => {
     await apiClient.put('/public-page', data);
   },
-uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ url: string; key: string }> => {
+  
+  uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ url: string; key: string }> => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('type', type);
@@ -485,6 +493,7 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
 
     return response.data;
   },
+  
   getSettings: async (): Promise<OrganizationSettings> => {
     const response = await apiClient.get('/settings');
     return response.data;
@@ -494,6 +503,7 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
     const response = await apiClient.put('/settings', data);
     return response.data;
   },
+  
   getProfile: async (): Promise<UserProfile> => {
     const response = await apiClient.get('/profile');
     return response.data;
@@ -503,6 +513,7 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
     const response = await apiClient.put('/profile', data);
     return response.data;
   },
+  
   createCheckoutSession: async (): Promise<{ url: string }> => {
     const response = await apiClient.post<{ url: string }>('/billing/checkout');
     return response.data;
@@ -512,7 +523,8 @@ uploadPublicImage: async (file: File, type: 'logo' | 'background'): Promise<{ ur
     const response = await apiClient.post<{ url: string }>('/billing/portal');
     return response.data;
   },
-getShares: async (): Promise<ShareItem[]> => {
+  
+  getShares: async (): Promise<ShareItem[]> => {
     const response = await apiClient.get<{ data: ShareItem[] }>(`/shares`);
     return response.data.data || [];
   },
@@ -530,6 +542,7 @@ getShares: async (): Promise<ShareItem[]> => {
     const response = await apiClient.get(`/public/shares/${token}`);
     return response.data;
   },
+  
   triggerReindex: async (): Promise<{ message: string, task_id: string }> => {
     const response = await apiClient.post('/settings/reindex');
     return response.data;
