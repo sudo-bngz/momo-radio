@@ -1,3 +1,9 @@
+## [0.9.0] - 2026-09-11
+
+### 🚀 Features
+
+- *(player)* Implement sub-second live stream synchronization and predictive UI ticker
+- *(radio)* Migrate to MediaMTX RTMP streaming
 ## [0.8.0] - 2026-09-07
 
 ### 🚀 Features
@@ -27,6 +33,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - *(release)* Prepare v0.7.1
+- *(release)* Prepare v0.8.0
 ## [0.7.1] - 2026-09-02
 
 ### 🐛 Bug Fixes
