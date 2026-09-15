@@ -126,12 +126,7 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
-	jwksURL := s.cfg.Supabase.JWTPublicKey
-	if !strings.Contains(jwksURL, "apikey=") {
-		jwksURL = fmt.Sprintf("%s?apikey=%s", jwksURL, s.cfg.Supabase.AnonKey)
-	}
-
-	// 2. Initialize the JWKS fetcher with the authenticated URL
+	// Initialize the JWKS fetcher directly from the public URL
 	jwks, err := keyfunc.NewDefault([]string{s.cfg.Supabase.JWTPublicKey})
 	if err != nil {
 		logger.Log.Fatal("Failed to create JWK Set from URL", zap.Error(err))
