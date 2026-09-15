@@ -1,9 +1,22 @@
+## [0.9.1] - 2026-09-15
+
+### 🚀 Features
+
+- *(auth)* Migrate to dynamic JWKS fetching and structured logging for token validation
+
+### 🐛 Bug Fixes
+
+- *(auth)* Remove automatic apikey injection from JWKS URL
 ## [0.9.0] - 2026-09-11
 
 ### 🚀 Features
 
 - *(player)* Implement sub-second live stream synchronization and predictive UI ticker
 - *(radio)* Migrate to MediaMTX RTMP streaming
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Prepare v0.9.0
 ## [0.8.0] - 2026-09-07
 
 ### 🚀 Features
