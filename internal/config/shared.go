@@ -91,14 +91,15 @@ type Config struct {
 		URL          string `mapstructure:"url"`
 		AnonKey      string `mapstructure:"anon_key"`
 		JWTPublicKey string `mapstructure:"jwt_public_key"`
+		JWTSecret    string `mapstructure:"jwt_secret"`
 	} `mapstructure:"supabase"`
 	Stripe struct {
-		SecretKey     string
-		WebhookSecret string
-		ProPriceID    string
-		SuccessURL    string
-		CancelURL     string
-	}
+		SecretKey     string `mapstructure:"secret_key"`
+		WebhookSecret string `mapstructure:"webhook_secret"`
+		ProPriceID    string `mapstructure:"pro_price_id"`
+		SuccessURL    string `mapstructure:"success_url"`
+		CancelURL     string `mapstructure:"cancel_url"`
+	} `mapstructure:"stripe"`
 	Meilisearch struct {
 		Host      string `mapstructure:"host"`
 		MasterKey string `mapstructure:"master_key"`
@@ -131,7 +132,7 @@ func Load() *Config {
 	viper.BindEnv("cdn.public_page")
 	viper.BindEnv("cdn.assets")
 
-	// MediaMTX Bindings (supports RADIO_MEDIAMTX_* and direct MEDIAMTX_*)
+	// MediaMTX Bindings
 	viper.BindEnv("mediamtx.host", "RADIO_MEDIAMTX_HOST", "MEDIAMTX_HOST")
 	viper.BindEnv("mediamtx.rtmp_port", "RADIO_MEDIAMTX_RTMP_PORT", "MEDIAMTX_RTMP_PORT")
 	viper.BindEnv("mediamtx.hls_url", "RADIO_MEDIAMTX_HLS_URL", "MEDIAMTX_HLS_URL")
@@ -180,9 +181,16 @@ func Load() *Config {
 	viper.BindEnv("worker.concurrency")
 	viper.BindEnv("worker.sweeper_interval")
 
-	viper.BindEnv("supabase.url", "SUPABASE_URL")
-	viper.BindEnv("supabase.anon_key", "SUPABASE_ANON_KEY")
-	viper.BindEnv("supabase.jwt_public_key", "SUPABASE_JWT_PUBLIC_KEY")
+	viper.BindEnv("supabase.url", "RADIO_SUPABASE_URL", "SUPABASE_URL")
+	viper.BindEnv("supabase.anon_key", "RADIO_SUPABASE_ANON_KEY", "SUPABASE_ANON_KEY")
+	viper.BindEnv("supabase.jwt_public_key", "RADIO_SUPABASE_JWT_PUBLIC_KEY", "SUPABASE_JWT_PUBLIC_KEY")
+	viper.BindEnv("supabase.jwt_secret", "RADIO_SUPABASE_JWT_SECRET", "SUPABASE_JWT_SECRET")
+
+	viper.BindEnv("stripe.secret_key")
+	viper.BindEnv("stripe.webhook_secret")
+	viper.BindEnv("stripe.pro_price_id")
+	viper.BindEnv("stripe.success_url")
+	viper.BindEnv("stripe.cancel_url")
 
 	viper.BindEnv("meilisearch.host", "RADIO_MEILISEARCH_HOST")
 	viper.BindEnv("meilisearch.master_key", "RADIO_MEILISEARCH_MASTER_KEY")
@@ -194,7 +202,6 @@ func Load() *Config {
 	viper.SetDefault("server.timezone", "UTC")
 	viper.SetDefault("server.public_api_url", "")
 
-	// CDN Defaults
 	viper.SetDefault("cdn.enabled", false)
 	viper.SetDefault("cdn.api_key", "")
 	viper.SetDefault("cdn.stream", "")
@@ -202,7 +209,6 @@ func Load() *Config {
 	viper.SetDefault("cdn.public_page", "")
 	viper.SetDefault("cdn.assets", "")
 
-	// MediaMTX Defaults
 	viper.SetDefault("mediamtx.host", "mediamtx")
 	viper.SetDefault("mediamtx.rtmp_port", "1935")
 	viper.SetDefault("mediamtx.hls_url", "http://localhost:8888")
@@ -213,7 +219,6 @@ func Load() *Config {
 	viper.SetDefault("redis.db", 0)
 	viper.SetDefault("redis.tls", false)
 
-	// Radio Defaults
 	viper.SetDefault("radio.public_domain", "momo.radio")
 	viper.SetDefault("radio.bitrate", "128k")
 	viper.SetDefault("radio.sample_rate", "44100")
@@ -287,13 +292,13 @@ func validateConfig(cfg *Config) {
 	}
 
 	if cfg.Supabase.URL == "" {
-		log.Fatal("Critical: Supabase URL is missing (SUPABASE_URL)")
+		log.Fatal("Critical: Supabase URL is missing (RADIO_SUPABASE_URL)")
 	}
 	if cfg.Supabase.AnonKey == "" {
-		log.Fatal("Critical: Supabase Anon Key is missing (SUPABASE_ANON_KEY)")
+		log.Fatal("Critical: Supabase Anon Key is missing (RADIO_SUPABASE_ANON_KEY)")
 	}
 	if cfg.Supabase.JWTPublicKey == "" {
-		log.Fatal("Critical: Supabase JWT Public Key is missing (SUPABASE_JWT_PUBLIC_KEY)")
+		log.Fatal("Critical: Supabase JWT Public Key (JWKS URL) is missing (RADIO_SUPABASE_JWT_PUBLIC_KEY)")
 	}
 
 	if cfg.CDN.Enabled {

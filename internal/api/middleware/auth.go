@@ -1,135 +1,47 @@
 package middleware
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"math/big"
 	"net/http"
 	"slices"
 	"strings"
 
 	"momo-radio/internal/models"
 
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // ==========================================
-// 1. JWKS STRUCTS & PARSING HELPER
+// 1. JWT-ONLY MIDDLEWARE (For JIT Provisioning)
 // ==========================================
 
-// JWKS maps the Supabase JSON Web Key Set configuration
-type JWKS struct {
-	Keys []JWK `json:"keys"`
-}
-
-type JWK struct {
-	Alg string `json:"alg"`
-	Crv string `json:"crv"`
-	Kid string `json:"kid"`
-	Kty string `json:"kty"`
-	X   string `json:"x"`
-	Y   string `json:"y"`
-}
-
-// parseJWKToECPublicKey converts your Supabase JSON into a Go Elliptic Curve Key
-func parseJWKToECPublicKey(jwksJSON string) (*ecdsa.PublicKey, error) {
-	var jwks JWKS
-	if err := json.Unmarshal([]byte(jwksJSON), &jwks); err != nil {
-		return nil, fmt.Errorf("failed to parse JWKS JSON: %v", err)
-	}
-
-	if len(jwks.Keys) == 0 {
-		return nil, fmt.Errorf("no keys found in JWKS")
-	}
-
-	key := jwks.Keys[0]
-
-	// Ensure it is an Elliptic Curve P-256 key
-	if key.Kty != "EC" || key.Crv != "P-256" {
-		return nil, fmt.Errorf("unsupported key type or curve: kty=%s, crv=%s", key.Kty, key.Crv)
-	}
-
-	// JWKs use Raw URL Encoding (no padding)
-	xBytes, err := base64.RawURLEncoding.DecodeString(key.X)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode X coordinate: %v", err)
-	}
-
-	yBytes, err := base64.RawURLEncoding.DecodeString(key.Y)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode Y coordinate: %v", err)
-	}
-
-	// Rebuild the public key for the golang-jwt parser
-	pubKey := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(xBytes),
-		Y:     new(big.Int).SetBytes(yBytes),
-	}
-
-	return pubKey, nil
-}
-
-// ==========================================
-// 2. JWT-ONLY MIDDLEWARE (For JIT Provisioning)
-// ==========================================
-
-// RequireValidJWT checks if the Supabase token is cryptographically valid.
-// It DOES NOT check the database, allowing new users to hit the JIT provisioning route.
-func RequireValidJWT(secretOrPublicKey string) gin.HandlerFunc {
+// RequireValidJWT checks if the Supabase token is cryptographically valid using the cached JWKS.
+func RequireValidJWT(logger *zap.Logger, jwks keyfunc.Keyfunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			fmt.Println("❌ AUTH ERROR: Missing Authorization header")
+			logger.Error("AUTH ERROR: Missing Authorization header")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
 			return
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// DYNAMIC PARSER: Handles ES256 (JSON), RS256, and HS256
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// If the token is ES256 (Your Supabase Config)
-			if _, ok := token.Method.(*jwt.SigningMethodECDSA); ok {
-				// Try parsing it as the JWKS JSON string
-				pubKey, err := parseJWKToECPublicKey(secretOrPublicKey)
-				if err == nil {
-					return pubKey, nil
-				}
-
-				// Fallback: Standard PEM format
-				cleanKey := strings.ReplaceAll(secretOrPublicKey, "\\n", "\n")
-				return jwt.ParseECPublicKeyFromPEM([]byte(cleanKey))
-			}
-
-			// Fallback for RSA (RS256)
-			if _, ok := token.Method.(*jwt.SigningMethodRSA); ok {
-				cleanKey := strings.ReplaceAll(secretOrPublicKey, "\\n", "\n")
-				return jwt.ParseRSAPublicKeyFromPEM([]byte(cleanKey))
-			}
-
-			// Fallback for Standard HMAC (HS256)
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); ok {
-				return []byte(secretOrPublicKey), nil
-			}
-
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		})
+		// Pass jwks.Keyfunc directly into the parser!
+		token, err := jwt.Parse(tokenString, jwks.Keyfunc)
 
 		if err != nil {
-			fmt.Printf("❌ AUTH ERROR: JWT Parse Failed: %v\n", err)
+			logger.Error("AUTH ERROR: JWT Parse Failed", zap.Error(err))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token", "details": err.Error()})
 			return
 		}
 
 		if !token.Valid {
-			fmt.Println("❌ AUTH ERROR: Token is expired or invalid")
+			logger.Error("AUTH ERROR: Token is expired or invalid")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Token invalid"})
 			return
 		}
@@ -147,15 +59,14 @@ func RequireValidJWT(secretOrPublicKey string) gin.HandlerFunc {
 }
 
 // ==========================================
-// 3. FULL PROTECTION MIDDLEWARE (JWT + RBAC Roles)
+// 2. FULL PROTECTION MIDDLEWARE (JWT + RBAC Roles)
 // ==========================================
 
 // RequireSupabaseAuth ensures the user has a valid Supabase JWT and checks their DB RBAC roles.
-func RequireSupabaseAuth(db *gorm.DB, jwkJSON string, allowedRoles ...string) gin.HandlerFunc {
+func RequireSupabaseAuth(logger *zap.Logger, db *gorm.DB, jwks keyfunc.Keyfunc, allowedRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokenString string
 
-		// 1. Extract Token (Header fallback to Query Param)
 		authHeader := c.GetHeader("Authorization")
 		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
 			tokenString = strings.TrimPrefix(authHeader, "Bearer ")
@@ -169,27 +80,15 @@ func RequireSupabaseAuth(db *gorm.DB, jwkJSON string, allowedRoles ...string) gi
 			return
 		}
 
-		// 2. Parse the Public Key using our unified helper function
-		pubKey, err := parseJWKToECPublicKey(jwkJSON)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Server misconfigured: %v", err)})
-			return
-		}
-
-		// 3. Parse and Validate the Supabase JWT
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return pubKey, nil
-		})
+		// Pass jwks.Keyfunc directly into the parser!
+		token, err := jwt.Parse(tokenString, jwks.Keyfunc)
 
 		if err != nil || !token.Valid {
+			logger.Warn("AUTH ERROR: Invalid token during RBAC auth", zap.Error(err))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			return
 		}
 
-		// 4. Extract User UUID from Token
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
@@ -208,7 +107,6 @@ func RequireSupabaseAuth(db *gorm.DB, jwkJSON string, allowedRoles ...string) gi
 			return
 		}
 
-		// 5. Extract Organization Context
 		orgIDStr := c.GetHeader("X-Organization-Id")
 		if orgIDStr == "" {
 			orgIDStr = c.Query("org_id")
@@ -225,24 +123,22 @@ func RequireSupabaseAuth(db *gorm.DB, jwkJSON string, allowedRoles ...string) gi
 			return
 		}
 
-		// 6. Query the Database for RBAC Role
 		var orgUser models.OrganizationUser
 		if err := db.Where("organization_id = ? AND user_id = ?", orgID, userID).First(&orgUser).Error; err != nil {
+			logger.Warn("AUTH ERROR: Access denied to organization", zap.String("userID", userID.String()), zap.String("orgID", orgID.String()))
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "You do not have access to this organization"})
 			return
 		}
 
-		// 7. Validate specific RBAC Level
 		if len(allowedRoles) > 0 {
 			hasPermission := slices.Contains(allowedRoles, orgUser.Role)
-
 			if !hasPermission {
+				logger.Warn("AUTH ERROR: Insufficient RBAC permissions", zap.String("userID", userID.String()), zap.String("role", orgUser.Role))
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Insufficient permissions"})
 				return
 			}
 		}
 
-		// 8. Inject Safe Context
 		c.Set("userID", userID)
 		c.Set("organizationID", orgID)
 		c.Set("userRole", orgUser.Role)
