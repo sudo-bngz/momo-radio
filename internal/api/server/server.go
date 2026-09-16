@@ -86,7 +86,6 @@ func (s *Server) setupMiddleware() {
 
 		c.Next()
 
-		// Do not log health checks or fast-polling broadcast state
 		if path == "/health" || path == "/api/v1/broadcast/state" {
 			return
 		}
@@ -126,7 +125,6 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
-	// Initialize the JWKS fetcher directly from the public URL
 	jwks, err := keyfunc.NewDefault([]string{s.cfg.Supabase.JWTPublicKey})
 	if err != nil {
 		logger.Log.Fatal("Failed to create JWK Set from URL", zap.Error(err))
@@ -165,10 +163,8 @@ func (s *Server) setupRoutes() {
 	{
 		publicGroup := v1.Group("/public")
 		{
-			// Server-Sent Events (SSE) endpoint for live track data
 			publicGroup.GET("/:org_id/now-playing", handlers.StreamNowPlaying(s.redis))
 
-			// Public Share links
 			publicShares := publicGroup.Group("/shares")
 			{
 				publicShares.GET("/:token", shareHandler.GetPublicShare)
@@ -178,7 +174,7 @@ func (s *Server) setupRoutes() {
 		}
 
 		jwtOnly := v1.Group("/")
-		jwtOnly.Use(middleware.RequireValidJWT(logger.Log, jwks))
+		jwtOnly.Use(middleware.RequireValidJWT(logger.Log, jwks, s.cfg.Supabase.JWTSecret))
 		{
 			jwtOnly.GET("/auth/me", authHandler.GetMe)
 			jwtOnly.GET("/profile", profileHandler.GetProfile)
@@ -190,60 +186,60 @@ func (s *Server) setupRoutes() {
 
 		protected := v1.Group("/")
 		{
-			protected.GET("/stats", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), statsHandler.GetStats)
+			protected.GET("/stats", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), statsHandler.GetStats)
 
-			protected.POST("/billing/checkout", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), billingHandler.CreateCheckout)
-			protected.POST("/billing/portal", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), billingHandler.CreatePortal)
+			protected.POST("/billing/checkout", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), billingHandler.CreateCheckout)
+			protected.POST("/billing/portal", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), billingHandler.CreatePortal)
 
-			protected.GET("/tracks", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), trackHandler.GetTracks)
-			protected.GET("/tracks/search", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), searchHandler.SearchLibrary)
-			protected.GET("/tracks/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), trackHandler.GetTrack)
-			protected.GET("/tracks/:id/stream", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), trackHandler.StreamTrack)
-			protected.GET("/tracks/:id/status-stream", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), trackHandler.TrackStatusStream)
-			protected.PUT("/tracks/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), trackHandler.UpdateTrack)
-			protected.DELETE("/tracks/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), trackHandler.DeleteTrack)
+			protected.GET("/tracks", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), trackHandler.GetTracks)
+			protected.GET("/tracks/search", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), searchHandler.SearchLibrary)
+			protected.GET("/tracks/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), trackHandler.GetTrack)
+			protected.GET("/tracks/:id/stream", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), trackHandler.StreamTrack)
+			protected.GET("/tracks/:id/status-stream", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), trackHandler.TrackStatusStream)
+			protected.PUT("/tracks/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), trackHandler.UpdateTrack)
+			protected.DELETE("/tracks/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), trackHandler.DeleteTrack)
 
-			protected.GET("/tracks/queue", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), trackHandler.GetQueue)
-			protected.POST("/tracks/:id/analysis", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), trackHandler.Analysis)
+			protected.GET("/tracks/queue", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), trackHandler.GetQueue)
+			protected.POST("/tracks/:id/analysis", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), trackHandler.Analysis)
 
-			protected.POST("/upload/presign", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), trackHandler.HandlePresign)
-			protected.POST("/upload/confirm-direct", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), trackHandler.UploadTrack)
+			protected.POST("/upload/presign", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), trackHandler.HandlePresign)
+			protected.POST("/upload/confirm-direct", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), trackHandler.UploadTrack)
 
-			protected.POST("/shares", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), shareHandler.CreateShare)
-			protected.GET("/shares", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), shareHandler.GetShares)
-			protected.DELETE("/shares/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), shareHandler.DeleteShare)
+			protected.POST("/shares", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), shareHandler.CreateShare)
+			protected.GET("/shares", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), shareHandler.GetShares)
+			protected.DELETE("/shares/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), shareHandler.DeleteShare)
 
-			protected.GET("/artists", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), artistHandler.GetArtists)
-			protected.GET("/artists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), artistHandler.GetArtistByID)
-			protected.GET("/albums", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbums)
-			protected.GET("/albums/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbumByID)
+			protected.GET("/artists", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), artistHandler.GetArtists)
+			protected.GET("/artists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), artistHandler.GetArtistByID)
+			protected.GET("/albums", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbums)
+			protected.GET("/albums/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), albumHandler.GetAlbumByID)
 
-			protected.GET("/playlists", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylists)
-			protected.GET("/playlists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylist)
-			protected.POST("/playlists", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), playlistHandler.CreatePlaylist)
-			protected.DELETE("/playlists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), playlistHandler.DeletePlaylist)
-			protected.PUT("/playlists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), playlistHandler.UpdatePlaylist)
-			protected.PUT("/playlists/:id/tracks", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), playlistHandler.UpdatePlaylistTracks)
-			protected.POST("/playlists/:id/export/rekordbox", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), exportHandler.ExportToM3u)
+			protected.GET("/playlists", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylists)
+			protected.GET("/playlists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), playlistHandler.GetPlaylist)
+			protected.POST("/playlists", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), playlistHandler.CreatePlaylist)
+			protected.DELETE("/playlists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), playlistHandler.DeletePlaylist)
+			protected.PUT("/playlists/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), playlistHandler.UpdatePlaylist)
+			protected.PUT("/playlists/:id/tracks", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), playlistHandler.UpdatePlaylistTracks)
+			protected.POST("/playlists/:id/export/rekordbox", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), exportHandler.ExportToM3u)
 
-			protected.GET("/schedules", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), schedulerHandler.GetSchedule)
-			protected.POST("/schedules", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), schedulerHandler.CreateScheduleSlot)
-			protected.DELETE("/schedules/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), schedulerHandler.DeleteScheduleSlot)
+			protected.GET("/schedules", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), schedulerHandler.GetSchedule)
+			protected.POST("/schedules", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), schedulerHandler.CreateScheduleSlot)
+			protected.DELETE("/schedules/:id", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), schedulerHandler.DeleteScheduleSlot)
 
-			protected.GET("/mounts", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, cdn))
-			protected.GET("/broadcast/state", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), broadcastHandler.GetStreamState)
-			protected.POST("/broadcast/toggle", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor"), broadcastHandler.ToggleStream)
+			protected.GET("/mounts", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, cdn))
+			protected.GET("/broadcast/state", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), broadcastHandler.GetStreamState)
+			protected.POST("/broadcast/toggle", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), broadcastHandler.ToggleStream)
 
-			protected.GET("/public-page", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), pageHandler.GetSettings)
-			protected.PUT("/public-page", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), pageHandler.UpdateSettings)
-			protected.POST("/public-page/upload", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), pageHandler.UploadImage)
+			protected.GET("/public-page", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), pageHandler.GetSettings)
+			protected.PUT("/public-page", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), pageHandler.UpdateSettings)
+			protected.POST("/public-page/upload", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), pageHandler.UploadImage)
 
-			protected.GET("/settings", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
-			protected.PUT("/settings", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), settingsHandler.UpdateOrgSettings)
-			protected.POST("/settings/reindex", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), settingsHandler.TriggerReindex)
+			protected.GET("/settings", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), settingsHandler.GetOrgSettings)
+			protected.PUT("/settings", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), settingsHandler.UpdateOrgSettings)
+			protected.POST("/settings/reindex", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), settingsHandler.TriggerReindex)
 
-			protected.GET("/settings/members", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin", "editor", "viewer"), membersHandler.GetMembers)
-			protected.POST("/settings/members/invite", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, "owner", "admin"), membersHandler.InviteMember)
+			protected.GET("/settings/members", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), membersHandler.GetMembers)
+			protected.POST("/settings/members/invite", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin"), membersHandler.InviteMember)
 		}
 	}
 

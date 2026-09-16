@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -15,34 +16,43 @@ import (
 	"gorm.io/gorm"
 )
 
+// SmartKeyfunc wraps the JWKS fetcher to handle Supabase's mix of HS256 (Anon) and ES256/RS256 (User) tokens
+func SmartKeyfunc(jwks keyfunc.Keyfunc, jwtSecret string) jwt.Keyfunc {
+	return func(token *jwt.Token) (interface{}, error) {
+		// If the token is signed with HS256 (like the Supabase Anon Key or Service Role)
+		if _, isHMAC := token.Method.(*jwt.SigningMethodHMAC); isHMAC {
+			return []byte(jwtSecret), nil
+		}
+
+		// Otherwise, it's a User JWT (ES256 or RS256). Delegate to the JWKS fetched from the URL.
+		if jwks != nil {
+			return jwks.Keyfunc(token)
+		}
+
+		return nil, fmt.Errorf("no valid key found for token algorithm")
+	}
+}
+
 // ==========================================
 // 1. JWT-ONLY MIDDLEWARE (For JIT Provisioning)
 // ==========================================
 
-// RequireValidJWT checks if the Supabase token is cryptographically valid using the cached JWKS.
-func RequireValidJWT(logger *zap.Logger, jwks keyfunc.Keyfunc) gin.HandlerFunc {
+func RequireValidJWT(logger *zap.Logger, jwks keyfunc.Keyfunc, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			logger.Error("AUTH ERROR: Missing Authorization header")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
 			return
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// Pass jwks.Keyfunc directly into the parser!
-		token, err := jwt.Parse(tokenString, jwks.Keyfunc)
+		// Use our SmartKeyfunc to prevent the PEM crash
+		token, err := jwt.Parse(tokenString, SmartKeyfunc(jwks, jwtSecret))
 
-		if err != nil {
+		if err != nil || !token.Valid {
 			logger.Error("AUTH ERROR: JWT Parse Failed", zap.Error(err))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token", "details": err.Error()})
-			return
-		}
-
-		if !token.Valid {
-			logger.Error("AUTH ERROR: Token is expired or invalid")
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Token invalid"})
 			return
 		}
 
@@ -62,8 +72,7 @@ func RequireValidJWT(logger *zap.Logger, jwks keyfunc.Keyfunc) gin.HandlerFunc {
 // 2. FULL PROTECTION MIDDLEWARE (JWT + RBAC Roles)
 // ==========================================
 
-// RequireSupabaseAuth ensures the user has a valid Supabase JWT and checks their DB RBAC roles.
-func RequireSupabaseAuth(logger *zap.Logger, db *gorm.DB, jwks keyfunc.Keyfunc, allowedRoles ...string) gin.HandlerFunc {
+func RequireSupabaseAuth(logger *zap.Logger, db *gorm.DB, jwks keyfunc.Keyfunc, jwtSecret string, allowedRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokenString string
 
@@ -80,8 +89,8 @@ func RequireSupabaseAuth(logger *zap.Logger, db *gorm.DB, jwks keyfunc.Keyfunc, 
 			return
 		}
 
-		// Pass jwks.Keyfunc directly into the parser!
-		token, err := jwt.Parse(tokenString, jwks.Keyfunc)
+		// Use our SmartKeyfunc here as well
+		token, err := jwt.Parse(tokenString, SmartKeyfunc(jwks, jwtSecret))
 
 		if err != nil || !token.Valid {
 			logger.Warn("AUTH ERROR: Invalid token during RBAC auth", zap.Error(err))
