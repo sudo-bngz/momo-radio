@@ -6,13 +6,11 @@ import { Plus, Radio } from 'lucide-react';
 import { useNavigate, useMatch, useLocation } from 'react-router-dom'; 
 
 import { MountPoints } from './MountPoints'; 
-import { PublicPageView } from './PublicPageView';
 
-type BroadcastTab = 'streams' | 'public_page';
+type BroadcastTab = 'streams';
 
 const TABS: { id: BroadcastTab; label: string }[] = [
   { id: 'streams', label: 'Streams' },
-  { id: 'public_page', label: 'Public Page' },
 ];
 
 export const BroadcastView: React.FC = () => {
@@ -122,7 +120,6 @@ export const BroadcastView: React.FC = () => {
         ) : (
           <>
             {activeTab === 'streams' && <MountPoints />}
-            {activeTab === 'public_page' && <PublicPageView />}
           </>
         )}
       </Box>

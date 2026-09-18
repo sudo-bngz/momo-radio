@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Box, Flex, Heading, Text, Table, Badge, Button, Icon, HStack, Spinner, Center 
 } from '@chakra-ui/react';
-import { Copy, Check, Plus, Settings, Trash2, Play, Square } from 'lucide-react';
+import { Copy, Check, Settings, Trash2, Play, Square } from 'lucide-react';
 
 import { api } from '../../../services/api'; 
 import type { MountPoint } from '../../../services/api'; 
@@ -165,9 +165,6 @@ export const MountPoints: React.FC = () => {
           <Heading size="sm" fontWeight="bold" color="gray.800" mb={1}>Audio Streams</Heading>
           <Text fontSize="xs" color="gray.500">Manage your transmission endpoints and control the live broadcast engine.</Text>
         </Box>
-        <Button size="sm" bg="gray.900" color="white" _hover={{ bg: "black" }}>
-          <Icon as={Plus} mr={1} boxSize={3.5} /> Add Stream
-        </Button>
       </Flex>
 
       <Box overflowX="auto" border="1px solid" borderColor="gray.50" borderRadius="xl">
@@ -178,7 +175,7 @@ export const MountPoints: React.FC = () => {
               <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Quality</Table.ColumnHeader>
               <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Status</Table.ColumnHeader>
               <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Direct URL</Table.ColumnHeader>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs" textAlign="right">Controls & Actions</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs" textAlign="right"></Table.ColumnHeader>
             </Table.Row>
           </Table.Header>
 

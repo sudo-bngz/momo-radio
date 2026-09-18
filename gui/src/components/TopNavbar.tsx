@@ -60,8 +60,6 @@ export const TopNav: React.FC = () => {
   return (
     <Box w="100%" px={8} py={4} zIndex={50} bg="white">
       <Flex justify="space-between" align="center" gap={4}>
-        
-        {/* ⚡️ REPLACED OLD LIBRARY SEARCH WITH ADVANCED SEARCH BAR */}
         <Box w="100%" maxW="600px" ml={2}>
           <SearchBar />
         </Box>

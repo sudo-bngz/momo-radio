@@ -1,13 +1,12 @@
 import { Flex, Box } from "@chakra-ui/react";
 import { Outlet } from "react-router-dom";
-import Sidebar from "../components/hydra/Sidebar";
+import Sidebar from "../components/Sidebar";
 import { TopNav } from "../components/TopNavbar";
 import { GlobalPlayer } from "../features/player/GlobalPlayer";
 
 export const DashboardLayout = () => {
   return (
     <Flex h="100vh" w="100vw" direction="column" bg="white" overflow="hidden" gap={0}>
-      {/* 2. WORKSPACE (Sidebar + Content) */}
       <Flex flex="1" w="100%" overflow="hidden">
         <Sidebar /> 
         

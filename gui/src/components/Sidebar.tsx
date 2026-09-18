@@ -4,17 +4,18 @@ import { NavLink } from 'react-router-dom';
 import { 
   Activity, Library, Radio,
   Settings, PanelLeftClose, PanelLeftOpen,
-  Share2 // ⚡️ IMPORTED: Share icon
+  Share2, Globe
 } from 'lucide-react';
 
 const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Activity, path: '/dashboard' },
-    { id: 'library', label: 'Music Library', icon: Library, path: '/library' },
-    { id: 'shared', label: 'Shared', icon: Share2, path: '/shared', color: 'pink.400' }, // ⚡️ ADDED: Shared route
-    { id: 'broadcast', label: 'Broadcast', icon: Radio, path: '/broadcast' }
+const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: Activity, path: '/dashboard', color: 'blue.400' },
+    { id: 'library', label: 'Music Library', icon: Library, path: '/library', color: 'purple.400' },
+    { id: 'shared', label: 'Shared', icon: Share2, path: '/shared', color: 'pink.400' },
+    { id: 'broadcast', label: 'Broadcast', icon: Radio, path: '/broadcast', color: 'red.400' },
+    { id: 'public-page', label: 'Public Page', icon: Globe, path: '/public-page', color: 'teal.400' } 
   ];
 
   return (

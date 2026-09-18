@@ -18,7 +18,7 @@ export const ApiDownScreen: React.FC = () => {
         <VStack gap={2}>
           <Heading size="lg" color="gray.900" letterSpacing="tight">Connection Lost</Heading>
           <Text color="gray.500" fontSize="sm" lineHeight="1.6">
-            We are unable to reach the Momo.Radio servers. The service might be undergoing routine maintenance, or your network is offline.
+            We are unable to reach the station. The service might be undergoing routine maintenance, or your network is offline.
           </Text>
         </VStack>
 

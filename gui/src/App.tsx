@@ -30,6 +30,7 @@ import { ApiDownScreen } from './layouts/ApiDownScreen';
 import { BroadcastView } from './features/broadcast/components/BroadcastView';
 import { SharedListView } from './features/shared/components/ShareListView';
 import { PublicShareView } from './features/shared/components/PublicShareView';
+import { PublicPageView } from './features/public-page';
 
 export const App = () => {
 
@@ -82,6 +83,8 @@ export const App = () => {
                 <Route path="/schedule" element={<ScheduleFeature />} />
                 
                 <Route path="/broadcast" element={<BroadcastView />} />
+
+                <Route path="/public-page" element={<PublicPageView />} />
 
                 <Route path="/shared" element={<SharedListView />} />
               </Route>
