@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"momo-radio/internal/logger"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 )
@@ -20,6 +21,7 @@ func (w *Worker) HandleArtistEnrichTask(ctx context.Context, t *asynq.Task) erro
 	var payload localArtistEnrichPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		// If we can't parse the payload, retrying won't fix it. Skip retry.
+		logger.Log.Error("Failed to parse artist enrich payload", zap.Error(err))
 		return fmt.Errorf("parse artist enrich payload: %w: %v", asynq.SkipRetry, err)
 	}
 
@@ -27,15 +29,19 @@ func (w *Worker) HandleArtistEnrichTask(ctx context.Context, t *asynq.Task) erro
 	var artist models.Artist
 	if err := w.db.DB.WithContext(ctx).First(&artist, payload.ArtistID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Printf("Artist %d not found in DB, skipping enrichment", payload.ArtistID)
+			logger.Log.Info("Artist not found in DB, skipping enrichment", zap.Any("artist_id", payload.ArtistID))
 			return nil
 		}
+		logger.Log.Error("Failed to fetch artist", zap.Any("artist_id", payload.ArtistID), zap.Error(err))
 		return fmt.Errorf("fetch artist %d: %w", payload.ArtistID, err)
 	}
 
 	// 2. Idempotency — already enriched?
 	if artist.DiscogsID != "" {
-		log.Printf("Artist %s already enriched (discogs_id=%s), skipping", artist.Name, artist.DiscogsID)
+		logger.Log.Info("Artist already enriched, skipping",
+			zap.String("artist", artist.Name),
+			zap.String("discogs_id", artist.DiscogsID),
+		)
 		return nil
 	}
 
@@ -45,7 +51,11 @@ func (w *Worker) HandleArtistEnrichTask(ctx context.Context, t *asynq.Task) erro
 		cleanSearchName = parsedArtists[0]
 	}
 
-	log.Printf("Background enriching Artist: '%s' (Search query: '%s')...", artist.Name, cleanSearchName)
+	logger.Log.Info("Background enriching Artist",
+		zap.String("artist", artist.Name),
+		zap.String("search_query", cleanSearchName),
+	)
+
 	apiToken := w.cfg.Services.DiscogsToken
 
 	// 3. Fetch from Discogs using the clean name
@@ -56,17 +66,22 @@ func (w *Worker) HandleArtistEnrichTask(ctx context.Context, t *asynq.Task) erro
 		// ASYNQ RETRY LOGIC
 		// If it's a rate limit, return a standard error so Asynq will retry later with backoff.
 		if strings.Contains(errStr, "RATE_LIMIT_EXCEEDED") || strings.Contains(errStr, "429") {
-			log.Printf("Discogs rate limit hit for artist %s. Asynq will retry later.", artist.Name)
+			logger.Log.Warn("Discogs rate limit hit. Asynq will retry later.", zap.String("artist", artist.Name))
 			return fmt.Errorf("rate limited: %w", err)
 		}
 
 		// If the artist genuinely doesn't exist on Discogs, kill the job permanently.
 		if strings.Contains(errStr, "no artist found") || strings.Contains(errStr, "404") {
-			log.Printf("Artist '%s' not found on Discogs. Aborting future retries.", artist.Name)
+			logger.Log.Warn("Artist not found on Discogs. Aborting future retries.", zap.String("artist", artist.Name))
 			return fmt.Errorf("not found: %w", asynq.SkipRetry)
 		}
 
 		// For other random network errors, allow a retry
+		logger.Log.Error("Discogs fetch failed for artist",
+			zap.String("artist", artist.Name),
+			zap.Any("artist_id", artist.ID),
+			zap.Error(err),
+		)
 		return fmt.Errorf("discogs fetch failed for artist %d (%s): %w", artist.ID, artist.Name, err)
 	}
 
@@ -75,7 +90,10 @@ func (w *Worker) HandleArtistEnrichTask(ctx context.Context, t *asynq.Task) erro
 	if discogsData.ImageURL != "" && artist.AvatarURL == "" {
 		key, err := w.downloadArtistAvatar(&artist, discogsData.ImageURL, apiToken)
 		if err != nil {
-			log.Printf("Warning: avatar download failed for artist %s: %v", artist.Name, err)
+			logger.Log.Warn("Avatar download failed",
+				zap.String("artist", artist.Name),
+				zap.Error(err),
+			)
 		} else {
 			avatarKey = key
 		}
@@ -93,10 +111,14 @@ func (w *Worker) HandleArtistEnrichTask(ctx context.Context, t *asynq.Task) erro
 		}
 		return tx.Model(&artist).Updates(updates).Error
 	}); err != nil {
+		logger.Log.Error("Failed to save enriched artist to database",
+			zap.Any("artist_id", artist.ID),
+			zap.Error(err),
+		)
 		return fmt.Errorf("save enriched artist %d: %w", artist.ID, err)
 	}
 
-	log.Printf("Successfully enriched artist: %s", artist.Name)
+	logger.Log.Info("Successfully enriched artist", zap.String("artist", artist.Name))
 	return nil
 }
 
@@ -116,6 +138,11 @@ func (w *Worker) downloadArtistAvatar(artist *models.Artist, imageURL, apiToken 
 	if err := w.storage.UploadAssetFile(avatarKey, bytes.NewReader(imgBytes), "image/jpeg", "public, max-age=31536000"); err != nil {
 		return "", fmt.Errorf("bucket upload: %w", err)
 	}
+
+	logger.Log.Debug("Uploaded artist avatar to storage",
+		zap.String("artist", artist.Name),
+		zap.String("avatar_key", avatarKey),
+	)
 
 	return avatarKey, nil
 }

@@ -2,10 +2,12 @@ package ingest
 
 import (
 	"encoding/json"
-	"log"
-	"momo-radio/internal/models"
 
 	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
+	"momo-radio/internal/models"
 )
 
 // -----------------------------------------------------------------------------
@@ -40,7 +42,10 @@ func (s *EnrichStep) Execute(ctx *ProcessingContext) error {
 	if err := ctx.Worker.db.DB.Model(ctx.Track).Association("Artists").Find(&dbArtists); err == nil {
 		ctx.Track.Artists = dbArtists
 	} else {
-		log.Printf("Warning: Could not fetch artists for enrichment queue: %v", err)
+		logger.Log.Warn("Could not fetch artists for enrichment queue",
+			zap.Any("track_id", ctx.Track.ID),
+			zap.Error(err),
+		)
 	}
 
 	// 1. Queue ARTIST Enrichment
@@ -52,9 +57,15 @@ func (s *EnrichStep) Execute(ctx *ProcessingContext) error {
 
 			task := asynq.NewTask(TypeArtistEnrich, payloadBytes)
 			if _, err := ctx.Worker.asynqClient.Enqueue(task); err != nil {
-				log.Printf("Warning: failed to enqueue artist enrichment for %s: %v", artist.Name, err)
+				logger.Log.Warn("Failed to enqueue artist enrichment",
+					zap.String("artist", artist.Name),
+					zap.Error(err),
+				)
 			} else {
-				log.Printf("Enqueued background enrichment task for artist: %s (ID: %d)", artist.Name, artist.ID)
+				logger.Log.Info("Enqueued background enrichment task for artist",
+					zap.String("artist", artist.Name),
+					zap.Any("artist_id", artist.ID),
+				)
 			}
 		}
 	}
@@ -79,9 +90,14 @@ func (s *EnrichStep) Execute(ctx *ProcessingContext) error {
 	trackTask := asynq.NewTask("track:enrich", trackBytes)
 
 	if _, err := ctx.Worker.asynqClient.Enqueue(trackTask); err != nil {
-		log.Printf("Warning: failed to enqueue track enrichment: %v", err)
+		logger.Log.Warn("Failed to enqueue track enrichment",
+			zap.Any("track_id", ctx.Track.ID),
+			zap.Error(err),
+		)
 	} else {
-		log.Printf("Enqueued background enrichment task for track ID: %d", ctx.Track.ID)
+		logger.Log.Info("Enqueued background enrichment task for track",
+			zap.Any("track_id", ctx.Track.ID),
+		)
 	}
 
 	return nil

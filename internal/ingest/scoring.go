@@ -4,6 +4,10 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
 )
 
 var (
@@ -54,6 +58,10 @@ func NormalizeArtist(s string) []string {
 func CalculateConfidence(hasMBID bool, localArtist, localTitle, apiTitle string, apiArtists []string) int {
 	// 1. Acoustic Fingerprint is the ultimate truth
 	if hasMBID {
+		logger.Log.Debug("Confidence score: 100 (AcoustID Match)",
+			zap.String("local_title", localTitle),
+			zap.String("api_title", apiTitle),
+		)
 		return 100
 	}
 
@@ -67,6 +75,10 @@ func CalculateConfidence(hasMBID bool, localArtist, localTitle, apiTitle string,
 		strings.Contains(normApiTitle, normLocalTitle)
 
 	if !titleMatch {
+		logger.Log.Debug("Confidence score: 10 (Title Mismatch)",
+			zap.String("local_title", normLocalTitle),
+			zap.String("api_title", normApiTitle),
+		)
 		return 10 // Complete mismatch
 	}
 
@@ -95,13 +107,25 @@ func CalculateConfidence(hasMBID bool, localArtist, localTitle, apiTitle string,
 	}
 
 	if exactArtistMatch {
+		logger.Log.Debug("Confidence score: 95 (Title & Exact Artist Match)",
+			zap.Strings("local_artists", normLocalArtists),
+			zap.Strings("api_artists", normApiArtists),
+		)
 		return 95 // Title matches and exact artist name matches perfectly
 	}
 
 	if partialArtistMatch {
+		logger.Log.Debug("Confidence score: 80 (Title & Partial Artist Match)",
+			zap.Strings("local_artists", normLocalArtists),
+			zap.Strings("api_artists", normApiArtists),
+		)
 		return 80 // Title matches, and artist is a partial match (e.g. "Regal" vs "Regal (ES)")
 	}
 
+	logger.Log.Debug("Confidence score: 10 (Title Match, but Artist Mismatch)",
+		zap.Strings("local_artists", normLocalArtists),
+		zap.Strings("api_artists", normApiArtists),
+	)
 	return 10 // Title matches, but the artist is a completely different band (e.g., Procol Harum)
 }
 

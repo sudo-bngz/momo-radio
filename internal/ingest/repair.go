@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
 
 	"momo-radio/internal/audio"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 )
 
@@ -21,41 +22,44 @@ func (w *Worker) RepairMetadata() {
 
 	// Preload Artists so we can pass the local name to the payload
 	if err := w.db.DB.Preload("Artists").Find(&tracks).Error; err != nil {
-		log.Fatalf("Failed to fetch tracks for repair: %v", err)
+		logger.Log.Fatal("Failed to fetch tracks for repair", zap.Error(err))
 	}
 
-	log.Printf("Starting Metadata Repair for %d tracks...", len(tracks))
+	logger.Log.Info("Starting Metadata Repair", zap.Int("track_count", len(tracks)))
 
 	for _, track := range tracks {
-		log.Printf("Repairing Track ID %d...", track.ID)
+		logger.Log.Info("Repairing Track", zap.Any("track_id", track.ID))
 
 		// 1. We need the physical file for fpcalc.
-		tempPath := filepath.Join(w.cfg.Server.TempDir, fmt.Sprintf("repair_%d.raw", track.ID))
+		tempPath := filepath.Join(w.cfg.Server.TempDir, fmt.Sprintf("repair_%v.raw", track.ID))
 
 		fileStream, err := w.storage.DownloadFile(track.Key)
 		if err != nil {
-			log.Printf("Failed to download master file for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to download master file", zap.Any("track_id", track.ID), zap.Error(err))
 			continue
 		}
+
 		outFile, err := os.Create(tempPath)
 		if err != nil {
-			log.Printf("Failed to create temp file for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to create temp file", zap.Any("track_id", track.ID), zap.Error(err))
+			fileStream.Body.Close()
 			continue
 		}
 
 		_, err = io.Copy(outFile, fileStream.Body)
 		if err != nil {
-			log.Printf("Failed to copy file data to disk for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to copy file data to disk", zap.Any("track_id", track.ID), zap.Error(err))
 		}
 
 		outFile.Close()
 		fileStream.Body.Close()
+
 		// 2. Generate the Acoustic Fingerprint
 		mbid, err := audio.GetMusicBrainzID(tempPath, w.cfg.Services.AcoustIDKey)
 		if err != nil {
-			log.Printf("Could not fingerprint track %d (Skipping): %v", track.ID, err)
+			logger.Log.Warn("Could not fingerprint track (Skipping)", zap.Any("track_id", track.ID), zap.Error(err))
 		} else {
-			log.Printf("Fingerprint SUCCESS for track %d: [%s]", track.ID, mbid)
+			logger.Log.Info("Fingerprint SUCCESS", zap.Any("track_id", track.ID), zap.String("mbid", mbid))
 		}
 
 		// Clean up the temp file immediately so we don't blow up the server disk
@@ -79,9 +83,9 @@ func (w *Worker) RepairMetadata() {
 		task := asynq.NewTask("track:enrich", payloadBytes)
 
 		if _, err := w.asynqClient.Enqueue(task); err != nil {
-			log.Printf("Failed to enqueue repair task for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to enqueue repair task", zap.Any("track_id", track.ID), zap.Error(err))
 		}
 	}
 
-	log.Println("Metadata repair jobs successfully enqueued. Check your Asynq dashboard!")
+	logger.Log.Info("Metadata repair jobs successfully enqueued. Check your Asynq dashboard!")
 }

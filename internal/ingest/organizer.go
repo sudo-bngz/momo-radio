@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/utils"
 )
@@ -23,6 +26,12 @@ func BuildPath(meta metadata.Track, originalKey string) string {
 
 	// Fallback to filename if metadata is completely missing
 	if len(meta.Artists) == 0 || meta.Title == "" {
+		logger.Log.Warn("Missing core metadata, falling back to original filename",
+			zap.String("originalKey", originalKey),
+			zap.Int("artistCount", len(meta.Artists)),
+			zap.String("title", meta.Title),
+		)
+
 		base := filepath.Base(originalKey)
 		ext := filepath.Ext(base)
 		title = utils.Sanitize(strings.TrimSuffix(base, ext), "Unknown")
@@ -30,6 +39,12 @@ func BuildPath(meta metadata.Track, originalKey string) string {
 	}
 
 	filename := fmt.Sprintf("%s-%s.mp3", artist, title)
+	finalPath := fmt.Sprintf("music/%s/%s/%s/%s/%s", genre, label, artist, album, filename)
 
-	return fmt.Sprintf("music/%s/%s/%s/%s/%s", genre, label, artist, album, filename)
+	logger.Log.Debug("Built storage path for track",
+		zap.String("originalKey", originalKey),
+		zap.String("finalPath", finalPath),
+	)
+
+	return finalPath
 }

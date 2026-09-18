@@ -3,11 +3,13 @@ package ingest
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
+	"go.uber.org/zap"
+
 	"momo-radio/internal/audio"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 )
 
@@ -18,30 +20,32 @@ func (w *Worker) RepairAudio() {
 
 	// Find tracks that are missing core acoustic data
 	if err := w.db.DB.Where("bpm = 0 OR duration = 0 OR musical_key = ''").Find(&tracks).Error; err != nil {
-		log.Fatalf("Failed to fetch tracks for audio repair: %v", err)
+		logger.Log.Fatal("Failed to fetch tracks for audio repair", zap.Error(err))
 	}
 
 	if len(tracks) == 0 {
-		log.Println("All tracks have acoustic data. Nothing to repair!")
+		logger.Log.Info("All tracks have acoustic data. Nothing to repair!")
 		return
 	}
 
-	log.Printf("Starting Audio Repair (Essentia) for %d tracks...", len(tracks))
+	logger.Log.Info("Starting Audio Repair (Essentia)", zap.Int("track_count", len(tracks)))
 
 	for _, track := range tracks {
-		log.Printf("Repairing Audio for Track ID %d...", track.ID)
+		logger.Log.Info("Repairing Audio for Track", zap.Any("track_id", track.ID))
 
 		// 1. Download the file
-		tempPath := filepath.Join(w.cfg.Server.TempDir, fmt.Sprintf("audio_repair_%d.raw", track.ID))
+		// Using %v in case track.ID is a UUID string rather than an integer
+		tempPath := filepath.Join(w.cfg.Server.TempDir, fmt.Sprintf("audio_repair_%v.raw", track.ID))
 		fileStream, err := w.storage.DownloadFile(track.Key)
 		if err != nil {
-			log.Printf("Failed to download master file for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to download master file", zap.Any("track_id", track.ID), zap.Error(err))
 			continue
 		}
 
 		outFile, err := os.Create(tempPath)
 		if err != nil {
-			log.Printf("Failed to create temp file for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to create temp file", zap.Any("track_id", track.ID), zap.Error(err))
+			fileStream.Body.Close() // Close stream to prevent memory leak
 			continue
 		}
 
@@ -50,7 +54,7 @@ func (w *Worker) RepairAudio() {
 		fileStream.Body.Close()
 
 		if err != nil {
-			log.Printf("Failed to write temp file for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to write temp file", zap.Any("track_id", track.ID), zap.Error(err))
 			os.Remove(tempPath)
 			continue
 		}
@@ -63,7 +67,7 @@ func (w *Worker) RepairAudio() {
 		os.Remove(tempPath) // Clean up immediately
 
 		if err != nil {
-			log.Printf("Essentia analysis failed for track %d: %v", track.ID, err)
+			logger.Log.Error("Essentia analysis failed", zap.Any("track_id", track.ID), zap.Error(err))
 			continue
 		}
 
@@ -78,11 +82,15 @@ func (w *Worker) RepairAudio() {
 		}).Error
 
 		if err != nil {
-			log.Printf("Failed to save audio data for track %d: %v", track.ID, err)
+			logger.Log.Error("Failed to save audio data", zap.Any("track_id", track.ID), zap.Error(err))
 		} else {
-			log.Printf("Successfully repaired audio data for track %d (BPM: %.1f, Key: %s)", track.ID, analysis.BPM, analysis.MusicalKey)
+			logger.Log.Info("Successfully repaired audio data",
+				zap.Any("track_id", track.ID),
+				zap.Float64("bpm", analysis.BPM),
+				zap.String("musical_key", analysis.MusicalKey),
+			)
 		}
 	}
 
-	log.Println("Audio repair complete.")
+	logger.Log.Info("Audio repair complete.")
 }

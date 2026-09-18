@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"github.com/lib/pq"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"momo-radio/internal/logger"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 )
@@ -18,10 +20,13 @@ import (
 type DatabaseSaveStep struct{}
 
 func (s *DatabaseSaveStep) Name() string { return "saving" }
+
 func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	db := ctx.Worker.db.DB
 	track := ctx.Track
 	meta := ctx.Meta
+
+	logger.Log.Debug("Starting database save step", zap.Any("track_id", track.ID))
 
 	// Ensure we have at least an "Unknown Artist" to avoid empty arrays
 	if len(meta.Artists) == 0 {
@@ -65,6 +70,11 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 		trackArtists = append(trackArtists, artist)
 	}
 	db.Model(track).Association("Artists").Append(trackArtists)
+
+	logger.Log.Debug("Associated artists with track",
+		zap.Int("artist_count", len(trackArtists)),
+		zap.Any("track_id", track.ID),
+	)
 
 	// 3. Setup Album using the newly resolved Artists
 	var albumID *uint
@@ -119,8 +129,27 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 					coverKey := fmt.Sprintf("covers/%s/album_%d.jpg", ctx.Track.OrganizationID, album.ID)
 					if errUpload := ctx.Worker.storage.UploadAssetFile(coverKey, bytes.NewReader(processedImg), "image/jpeg", "public, max-age=31536000"); errUpload == nil {
 						db.Model(&album).Update("CoverKey", coverKey)
+						logger.Log.Debug("Uploaded and linked album cover",
+							zap.String("cover_key", coverKey),
+							zap.Any("album_id", album.ID),
+						)
+					} else {
+						logger.Log.Warn("Failed to upload album cover",
+							zap.Error(errUpload),
+							zap.Any("album_id", album.ID),
+						)
 					}
+				} else {
+					logger.Log.Warn("Failed to process album cover image",
+						zap.Error(errProc),
+						zap.Any("album_id", album.ID),
+					)
 				}
+			} else if errImg != nil {
+				logger.Log.Warn("Failed to download album cover image",
+					zap.Error(errImg),
+					zap.String("cover_url", meta.CoverURL),
+				)
 			}
 		}
 	}
@@ -149,12 +178,25 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 
 	// Save the Many-to-Many associations explicitly
 	if err := db.Save(track).Error; err != nil {
+		logger.Log.Error("Failed to save final track state to database",
+			zap.Any("track_id", track.ID),
+			zap.Error(err),
+		)
 		return err
 	}
+
 	// Force GORM to fetch the related Album and Artists from the DB into memory
 	if err := db.Preload("Album").Preload("Artists").First(ctx.Track, ctx.Track.ID).Error; err != nil {
+		logger.Log.Error("Failed to reload track associations",
+			zap.Any("track_id", track.ID),
+			zap.Error(err),
+		)
 		return fmt.Errorf("failed to reload track associations: %w", err)
 	}
+
+	logger.Log.Info("Successfully saved track and associations to database",
+		zap.Any("track_id", track.ID),
+	)
 
 	return nil
 }

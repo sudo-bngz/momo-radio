@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/hibiken/asynq"
+	"go.uber.org/zap"
 
+	"momo-radio/internal/logger"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 )
@@ -17,12 +18,17 @@ import (
 func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error {
 	var payload localTrackEnrichPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		logger.Log.Error("Failed to parse track enrich payload", zap.Error(err))
 		return fmt.Errorf("failed to parse track enrich payload: %v", err)
 	}
 
 	// 1. Fetch Track with related Artists and Album
 	var track models.Track
 	if err := w.db.DB.Preload("Artists").Preload("Album").First(&track, payload.TrackID).Error; err != nil {
+		logger.Log.Error("Track not found for enrichment",
+			zap.Any("track_id", payload.TrackID),
+			zap.Error(err),
+		)
 		return fmt.Errorf("track not found: %w", err)
 	}
 
@@ -34,7 +40,7 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 	hasAlbumDetails := track.AlbumID != nil && track.Album.Publisher != "" && track.Album.Year != ""
 
 	if hasValidGenre && hasStyle && hasCoverArt && hasAlbumDetails {
-		log.Printf("Track %d already fully enriched. Skipping.", track.ID)
+		logger.Log.Info("Track already fully enriched. Skipping.", zap.Any("track_id", track.ID))
 		return nil
 	}
 
@@ -57,7 +63,7 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 	// -------------------------------------------------------------------------
 	var mbData *metadata.MusicBrainzRelease
 	if payload.MusicBrainzID != "" {
-		log.Printf("Querying MusicBrainz for exact MBID: %s...", payload.MusicBrainzID)
+		logger.Log.Info("Querying MusicBrainz for exact MBID", zap.String("mbid", payload.MusicBrainzID))
 		mbResult, err := metadata.FetchFromMusicBrainz(payload.MusicBrainzID, email)
 		if err == nil && mbResult.ArtistName != "" {
 			mbData = mbResult
@@ -68,9 +74,12 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 			if mbResult.ReleaseName != "" {
 				cleanSearchTitle = mbResult.ReleaseName // Search by Album/Release, not Track
 			}
-			log.Printf("Acoustic Match Found! Upgrading search to: '%s - %s'", cleanSearchArtist, cleanSearchTitle)
+			logger.Log.Info("Acoustic Match Found! Upgrading search strings",
+				zap.String("search_artist", cleanSearchArtist),
+				zap.String("search_title", cleanSearchTitle),
+			)
 		} else {
-			log.Printf("MusicBrainz fallback failed/empty: %v", err)
+			logger.Log.Warn("MusicBrainz fallback failed or empty", zap.Error(err))
 		}
 	}
 
@@ -79,7 +88,11 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 	// -------------------------------------------------------------------------
 	var finalGenre, finalStyle, finalYear, finalPublisher, finalCountry, finalCoverURL string
 
-	log.Printf("Querying Discogs for Release Data: '%s' - '%s'...", cleanSearchArtist, cleanSearchTitle)
+	logger.Log.Info("Querying Discogs for Release Data",
+		zap.String("search_artist", cleanSearchArtist),
+		zap.String("search_title", cleanSearchTitle),
+	)
+
 	discogsData, err := metadata.EnrichViaDiscogs(cleanSearchArtist, cleanSearchTitle, apiToken, email)
 	discogsValid := false
 
@@ -98,19 +111,22 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 			finalPublisher = discogsData.Publisher
 			finalCountry = discogsData.Country
 			finalCoverURL = discogsData.CoverURL
-			log.Printf("Discogs Match! (Score: %d%%)", score)
+			logger.Log.Info("Discogs Match!", zap.Int("confidence_score", score))
 		} else {
-			log.Printf("Discogs rejected by Confidence Score (%d%%)", score)
+			logger.Log.Info("Discogs rejected by Confidence Score", zap.Int("confidence_score", score))
 		}
 	} else {
-		log.Printf("Discogs enrich failed: %v", err)
+		logger.Log.Warn("Discogs enrich failed", zap.Error(err))
 	}
 
 	// -------------------------------------------------------------------------
 	// TIER 3: iTunes (Mainstream Fallback)
 	// -------------------------------------------------------------------------
 	if !discogsValid {
-		log.Printf("Falling back to iTunes for '%s - %s'...", cleanSearchArtist, cleanSearchTitle)
+		logger.Log.Info("Falling back to iTunes",
+			zap.String("search_artist", cleanSearchArtist),
+			zap.String("search_title", cleanSearchTitle),
+		)
 		itunesData, err := metadata.EnrichViaITunes(cleanSearchArtist, cleanSearchTitle)
 
 		if err == nil {
@@ -120,12 +136,12 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 				finalGenre = itunesData.Genre // iTunes doesn't do "Styles", just Genres
 				finalYear = itunesData.Year
 				finalCoverURL = itunesData.CoverURL
-				log.Printf("iTunes Match! (Score: %d%%)", score)
+				logger.Log.Info("iTunes Match!", zap.Int("confidence_score", score))
 			} else {
-				log.Printf("iTunes rejected by Confidence Score (%d%%)", score)
+				logger.Log.Info("iTunes rejected by Confidence Score", zap.Int("confidence_score", score))
 			}
 		} else {
-			log.Printf("iTunes enrich failed: %v", err)
+			logger.Log.Warn("iTunes enrich failed", zap.Error(err))
 		}
 	}
 
@@ -172,8 +188,18 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 					coverKey := fmt.Sprintf("covers/%s/album_%d.jpg", track.OrganizationID, album.ID)
 					if errUpload := w.storage.UploadAssetFile(coverKey, bytes.NewReader(processedImg), "image/jpeg", "public, max-age=31536000"); errUpload == nil {
 						albumUpdates["cover_key"] = coverKey
+						logger.Log.Debug("Uploaded enriched cover art to CDN", zap.String("cover_key", coverKey))
+					} else {
+						logger.Log.Warn("Failed to upload enriched cover art", zap.Error(errUpload))
 					}
+				} else {
+					logger.Log.Warn("Failed to process enriched cover image", zap.Error(errProc))
 				}
+			} else {
+				logger.Log.Warn("Failed to download enriched cover image",
+					zap.String("cover_url", finalCoverURL),
+					zap.Error(errImg),
+				)
 			}
 		}
 
@@ -182,6 +208,6 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 		}
 	}
 
-	log.Printf("Successfully completed Cascading Enrichment for track %d", track.ID)
+	logger.Log.Info("Successfully completed Cascading Enrichment", zap.Any("track_id", track.ID))
 	return nil
 }

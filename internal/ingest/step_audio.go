@@ -2,10 +2,12 @@ package ingest
 
 import (
 	"fmt"
-	"log"
 	"path/filepath"
 
+	"go.uber.org/zap"
+
 	"momo-radio/internal/audio"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/utils"
 )
@@ -56,7 +58,10 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		meta.MLGenres = analysis.MLGenres
 		meta.MLCharacteristics = analysis.MLCharacteristics
 	} else {
-		log.Printf("Warning: Deep analysis failed for %s: %v", ctx.RawPath, err)
+		logger.Log.Warn("Deep analysis failed",
+			zap.String("raw_path", ctx.RawPath),
+			zap.Error(err),
+		)
 	}
 
 	// 3. Deterministic Acoustic Fingerprinting (Chromaprint / AcoustID)
@@ -64,9 +69,15 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 
 	mbid, err := audio.GetMusicBrainzID(ctx.RawPath, ctx.Worker.cfg.Services.AcoustIDKey)
 	if err != nil {
-		log.Printf("Acoustic fingerprinting skipped/failed for track %d: %v", ctx.Payload.TrackID, err)
+		logger.Log.Warn("Acoustic fingerprinting skipped/failed",
+			zap.Any("track_id", ctx.Payload.TrackID),
+			zap.Error(err),
+		)
 	} else {
-		log.Printf("Successfully fingerprinted Track %d: MusicBrainz ID [%s]", ctx.Payload.TrackID, mbid)
+		logger.Log.Info("Successfully fingerprinted track",
+			zap.Any("track_id", ctx.Payload.TrackID),
+			zap.String("mbid", mbid),
+		)
 		ctx.MusicBrainzID = mbid // Save it securely to the context pipeline
 	}
 

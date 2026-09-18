@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"path/filepath"
 	"sort"
 
@@ -12,9 +11,11 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	"momo-radio/internal/config"
 	database "momo-radio/internal/db"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 	"momo-radio/internal/storage"
 )
@@ -116,11 +117,15 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 
 	var payload TrackProcessPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-		log.Printf("Task Failed: Failed to parse payload: %v", err)
+		logger.Log.Error("Failed to parse process payload", zap.Error(err))
 		return fmt.Errorf("failed to parse payload: %v", err)
 	}
 
-	log.Printf("Starting Job for Track ID %d: %s", payload.TrackID, payload.FileKey)
+	logger.Log.Info("Starting Ingest Job",
+		zap.Any("track_id", payload.TrackID),
+		zap.String("file_key", payload.FileKey),
+		zap.Bool("is_retry", payload.IsRetry),
+	)
 
 	pCtx := &ProcessingContext{
 		Worker:  w,
@@ -146,7 +151,17 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 		progress := (indexOf(steps, step) * 100) / len(steps)
 		w.updateStatus(ctx, payload.TrackIDStr(), step.Name(), progress)
 
+		logger.Log.Debug("Executing pipeline step",
+			zap.Any("track_id", payload.TrackID),
+			zap.String("step", step.Name()),
+		)
+
 		if err := step.Execute(pCtx); err != nil {
+			logger.Log.Error("Pipeline step failed",
+				zap.Any("track_id", payload.TrackID),
+				zap.String("step", step.Name()),
+				zap.Error(err),
+			)
 			w.failTask(ctx, payload, err)
 			return err
 		}
@@ -155,11 +170,13 @@ func (w *Worker) HandleProcessTask(ctx context.Context, t *asynq.Task) error {
 	if !payload.IsRetry {
 		w.storage.DeleteIngestFile(payload.FileKey)
 		w.cleanupFolders([]string{payload.FileKey})
+		logger.Log.Debug("Cleaned up temporary ingest files", zap.Any("track_id", payload.TrackID))
 	}
 
 	w.updateStatus(ctx, payload.TrackIDStr(), "completed", 100)
 	jobs.WithLabelValues("success").Inc()
-	log.Printf("Job Completed: Track ID %d", payload.TrackID)
+
+	logger.Log.Info("Job Completed Successfully", zap.Any("track_id", payload.TrackID))
 
 	return nil
 }
@@ -179,7 +196,10 @@ func (w *Worker) updateStatus(ctx context.Context, trackIDStr, status string, pr
 func (w *Worker) failTask(ctx context.Context, payload TrackProcessPayload, err error) {
 	w.updateStatus(ctx, payload.TrackIDStr(), "failed", 0)
 	jobs.WithLabelValues("failure").Inc()
-	log.Printf("Task Failed (Track %d): %v", payload.TrackID, err)
+	logger.Log.Error("Task Failed",
+		zap.Any("track_id", payload.TrackID),
+		zap.Error(err),
+	)
 }
 
 func (w *Worker) cleanupFolders(allKeys []string) {

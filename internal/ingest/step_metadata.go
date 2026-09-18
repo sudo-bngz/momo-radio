@@ -3,13 +3,14 @@ package ingest
 import (
 	"bytes"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
-	"momo-radio/internal/models"
-
 	"github.com/dhowden/tag"
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
+	"momo-radio/internal/models"
 )
 
 type MetadataStep struct{}
@@ -20,7 +21,10 @@ func (s *MetadataStep) Execute(ctx *ProcessingContext) error {
 	// 1. Open the downloaded file
 	f, err := os.Open(ctx.RawPath)
 	if err != nil {
-		slog.Error("Failed to open local file for metadata extraction", "error", err)
+		logger.Log.Error("Failed to open local file for metadata extraction",
+			zap.String("raw_path", ctx.RawPath),
+			zap.Error(err),
+		)
 		return nil // Don't crash the pipeline, just skip ID3 extraction
 	}
 	defer f.Close()
@@ -28,14 +32,20 @@ func (s *MetadataStep) Execute(ctx *ProcessingContext) error {
 	// 2. Read ID3 / FLAC tags
 	m, err := tag.ReadFrom(f)
 	if err != nil {
-		slog.Warn("No metadata tags found in file", "error", err)
+		logger.Log.Warn("No metadata tags found in file",
+			zap.String("raw_path", ctx.RawPath),
+			zap.Error(err),
+		)
 		return nil
 	}
 
 	// 3. Fetch the track directly from the Database!
 	var track models.Track
 	if err := ctx.Worker.db.DB.First(&track, ctx.Payload.TrackID).Error; err != nil {
-		slog.Error("Failed to find track in DB", "error", err)
+		logger.Log.Error("Failed to find track in DB",
+			zap.Any("track_id", ctx.Payload.TrackID),
+			zap.Error(err),
+		)
 		return nil
 	}
 
@@ -77,7 +87,10 @@ func (s *MetadataStep) Execute(ctx *ProcessingContext) error {
 			if uploadErr == nil {
 				ctx.Worker.db.DB.Model(&album).Update("cover_key", coverKey)
 			} else {
-				slog.Error("Failed to upload cover art to CDN", "error", uploadErr)
+				logger.Log.Error("Failed to upload cover art to CDN",
+					zap.String("cover_key", coverKey),
+					zap.Error(uploadErr),
+				)
 			}
 		}
 		albumIDPtr = &album.ID
@@ -98,6 +111,9 @@ func (s *MetadataStep) Execute(ctx *ProcessingContext) error {
 	// Link the Artist to the Track
 	ctx.Worker.db.DB.Model(&track).Association("Artists").Replace([]models.Artist{artist})
 
-	slog.Info("Successfully extracted metadata and saved to DB", "title", title)
+	logger.Log.Info("Successfully extracted metadata and saved to DB",
+		zap.Any("track_id", track.ID),
+		zap.String("title", title),
+	)
 	return nil
 }

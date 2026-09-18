@@ -1,9 +1,11 @@
 package ingest
 
 import (
-	"log"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
 	"momo-radio/internal/metadata"
 	"momo-radio/internal/models"
 )
@@ -22,15 +24,18 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 	}
 
 	if err := query.Find(&artists).Error; err != nil {
-		log.Fatalf("Failed to fetch artists: %v", err)
+		logger.Log.Fatal("Failed to fetch artists", zap.Error(err))
 	}
 
 	if len(artists) == 0 {
-		log.Println("No artists found needing country repair.")
+		logger.Log.Info("No artists found needing country repair.")
 		return
 	}
 
-	log.Printf("Starting Country Repair for %d artists using %s...", len(artists), provider)
+	logger.Log.Info("Starting Country Repair",
+		zap.Int("artist_count", len(artists)),
+		zap.String("provider", provider),
+	)
 
 	for _, artist := range artists {
 		var newCountry string
@@ -45,22 +50,34 @@ func (w *Worker) RepairCountry(dryRun bool, targetArtists []string, provider str
 		}
 
 		if err != nil || newCountry == "" {
-			log.Printf("Could not find country for %s: %v", artist.Name, err)
+			logger.Log.Warn("Could not find country for artist",
+				zap.String("artist", artist.Name),
+				zap.Error(err),
+			)
 			continue
 		}
 
 		if dryRun {
-			log.Printf("[DRY RUN] Would update %s -> Country: %s", artist.Name, newCountry)
+			logger.Log.Info("[DRY RUN] Would update artist country",
+				zap.String("artist", artist.Name),
+				zap.String("new_country", newCountry),
+			)
 			continue
 		}
 
 		// Update Database
 		if err := w.db.DB.Model(&artist).Update("artist_country", newCountry).Error; err != nil {
-			log.Printf("Failed to update database for %s: %v", artist.Name, err)
+			logger.Log.Error("Failed to update database for artist",
+				zap.String("artist", artist.Name),
+				zap.Error(err),
+			)
 		} else {
-			log.Printf("Successfully updated %s -> Country: %s", artist.Name, newCountry)
+			logger.Log.Info("Successfully updated artist country",
+				zap.String("artist", artist.Name),
+				zap.String("new_country", newCountry),
+			)
 		}
 	}
 
-	log.Println("Country repair complete.")
+	logger.Log.Info("Country repair complete.")
 }
