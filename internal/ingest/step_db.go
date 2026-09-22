@@ -40,7 +40,6 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	var trackArtists []models.Artist
 
 	for _, rawName := range meta.Artists {
-		// Use the central engine from scoring.go to respect KnownDuos and 'x' splits
 		parsedNames := NormalizeArtist(rawName)
 
 		for _, cleanName := range parsedNames {
@@ -49,7 +48,6 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 				continue
 			}
 
-			// 3. Save the pristine artist name to the database
 			var artist models.Artist
 			db.Where("name = ? AND organization_id = ?", cleanName, track.OrganizationID).
 				FirstOrCreate(&artist, models.Artist{Name: cleanName, OrganizationID: track.OrganizationID})
@@ -62,7 +60,6 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 		}
 	}
 
-	// Fallback if the file had literally no usable artist tags
 	if len(trackArtists) == 0 {
 		var artist models.Artist
 		db.Where("name = ? AND organization_id = ?", "Unknown Artist", track.OrganizationID).
@@ -94,7 +91,6 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 			}
 			db.Create(&album)
 		} else {
-			// Update missing album fields non-destructively
 			updates := map[string]interface{}{}
 			if album.Year == "" && meta.Year != "" {
 				updates["year"] = meta.Year
@@ -111,7 +107,6 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 		}
 
 		db.Model(&album).Association("Artists").Append(trackArtists)
-
 		albumID = &album.ID
 
 		// 4. Handle Cover Art
@@ -129,38 +124,24 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 					coverKey := fmt.Sprintf("covers/%s/album_%d.jpg", ctx.Track.OrganizationID, album.ID)
 					if errUpload := ctx.Worker.storage.UploadAssetFile(coverKey, bytes.NewReader(processedImg), "image/jpeg", "public, max-age=31536000"); errUpload == nil {
 						db.Model(&album).Update("CoverKey", coverKey)
-						logger.Log.Debug("Uploaded and linked album cover",
-							zap.String("cover_key", coverKey),
-							zap.Any("album_id", album.ID),
-						)
+						logger.Log.Debug("Uploaded and linked album cover", zap.String("cover_key", coverKey), zap.Any("album_id", album.ID))
 					} else {
-						logger.Log.Warn("Failed to upload album cover",
-							zap.Error(errUpload),
-							zap.Any("album_id", album.ID),
-						)
+						logger.Log.Warn("Failed to upload album cover", zap.Error(errUpload), zap.Any("album_id", album.ID))
 					}
 				} else {
-					logger.Log.Warn("Failed to process album cover image",
-						zap.Error(errProc),
-						zap.Any("album_id", album.ID),
-					)
+					logger.Log.Warn("Failed to process album cover image", zap.Error(errProc), zap.Any("album_id", album.ID))
 				}
 			} else if errImg != nil {
-				logger.Log.Warn("Failed to download album cover image",
-					zap.Error(errImg),
-					zap.String("cover_url", meta.CoverURL),
-				)
+				logger.Log.Warn("Failed to download album cover image", zap.Error(errImg), zap.String("cover_url", meta.CoverURL))
 			}
 		}
 	}
 
-	// 5. Finalize Track Updates
-	db.Model(track).Updates(map[string]any{
+	// 5. Finalize Track Updates Safely (⚡️ THE FIX IS HERE)
+	updates := map[string]any{
 		"key":                 ctx.DestKey,
 		"title":               meta.Title,
 		"album_id":            albumID,
-		"genre":               NormalizeTags(meta.Genre),
-		"style":               NormalizeTags(meta.Style),
 		"format":              "mp3",
 		"bpm":                 meta.BPM,
 		"duration":            meta.Duration,
@@ -174,29 +155,31 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 		"ml_characteristics":  pq.StringArray(meta.MLCharacteristics),
 		"processing_status":   "completed",
 		"processing_progress": 100,
-	})
+	}
 
-	// Save the Many-to-Many associations explicitly
-	if err := db.Save(track).Error; err != nil {
-		logger.Log.Error("Failed to save final track state to database",
-			zap.Any("track_id", track.ID),
-			zap.Error(err),
-		)
+	// Only apply these if they actually exist, otherwise leave the DB row alone!
+	if cleanGenre := NormalizeTags(meta.Genre); cleanGenre != "" {
+		updates["genre"] = cleanGenre
+	}
+	if cleanStyle := NormalizeTags(meta.Style); cleanStyle != "" {
+		updates["style"] = cleanStyle
+	}
+	if meta.Mood != "" { // Assuming meta.Mood exists on your metadata struct
+		updates["mood"] = meta.Mood
+	}
+
+	// Execute the partial update
+	if err := db.Model(track).Updates(updates).Error; err != nil {
+		logger.Log.Error("Failed to save final track state to database", zap.Any("track_id", track.ID), zap.Error(err))
 		return err
 	}
 
-	// Force GORM to fetch the related Album and Artists from the DB into memory
+	// Force GORM to fetch the completely up-to-date row back into memory
 	if err := db.Preload("Album").Preload("Artists").First(ctx.Track, ctx.Track.ID).Error; err != nil {
-		logger.Log.Error("Failed to reload track associations",
-			zap.Any("track_id", track.ID),
-			zap.Error(err),
-		)
+		logger.Log.Error("Failed to reload track associations", zap.Any("track_id", track.ID), zap.Error(err))
 		return fmt.Errorf("failed to reload track associations: %w", err)
 	}
 
-	logger.Log.Info("Successfully saved track and associations to database",
-		zap.Any("track_id", track.ID),
-	)
-
+	logger.Log.Info("Successfully saved track and associations to database", zap.Any("track_id", track.ID))
 	return nil
 }

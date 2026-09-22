@@ -16,6 +16,7 @@ type Track struct {
 	Danceability      float64  `json:"danceability"`
 	Loudness          float64  `json:"loudness"`
 	Energy            float64  `json:"energy"`
+	Mood              string   `json:"mood"`
 	MLMoods           []string `json:"ml_moods"`
 	MLGenres          []string `json:"ml_genres"`
 	MLCharacteristics []string `json:"ml_characteristics"`

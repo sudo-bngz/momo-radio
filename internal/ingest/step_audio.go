@@ -3,6 +3,7 @@ package ingest
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -13,7 +14,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// ANALYSIS STEP (Acoustic, Local Metadata, and Fingerprinting ONLY)
+// ANALYSIS STEP
 // -----------------------------------------------------------------------------
 type AnalysisStep struct{}
 
@@ -57,6 +58,19 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		meta.MLMoods = analysis.MLMoods
 		meta.MLGenres = analysis.MLGenres
 		meta.MLCharacteristics = analysis.MLCharacteristics
+
+		// ⚡️ ML FALLBACK LOGIC:
+		// If ID3 tags had no genre or mood, inject the top prediction from the ML models
+		if strings.TrimSpace(meta.Genre) == "" && len(analysis.MLGenres) > 0 {
+			meta.Genre = analysis.MLGenres[0]
+			logger.Log.Debug("Applied ML Genre fallback", zap.String("genre", meta.Genre))
+		}
+
+		// Map the top ML mood to the primary mood string if it was blank
+		if strings.TrimSpace(meta.Mood) == "" && len(analysis.MLMoods) > 0 {
+			meta.Mood = analysis.MLMoods[0]
+			logger.Log.Debug("Applied ML Mood fallback", zap.String("mood", meta.Mood))
+		}
 	} else {
 		logger.Log.Warn("Deep analysis failed",
 			zap.String("raw_path", ctx.RawPath),
