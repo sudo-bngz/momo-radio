@@ -5,17 +5,17 @@ import (
 	"strings"
 	"time"
 
-	"momo-radio/internal/models"
-	"momo-radio/internal/utils" // ⚡️ ADDED: Import utils for CDNBuilder
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"momo-radio/internal/models"
+	"momo-radio/internal/utils"
 )
 
 type StatsHandler struct {
 	db  *gorm.DB
-	cdn *utils.CDNBuilder // ⚡️ ADDED: CDN injection
+	cdn *utils.CDNBuilder
 }
 
 func NewStatsHandler(db *gorm.DB, cdn *utils.CDNBuilder) *StatsHandler {
@@ -65,6 +65,7 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 	var currentTrack models.Track
 	var startsAt time.Time
 
+	// ⚡️ FIXED: Using standard updated_at for sorting to satisfy GORM/Postgres
 	if err := h.db.Where("organization_id = ?", orgID).Order("updated_at DESC").First(&streamState).Error; err == nil {
 		var foundTracks []models.Track
 		h.db.Preload("Artists").Preload("Album").
@@ -86,7 +87,8 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 			if !playedAt.IsZero() {
 				startsAt = playedAt
 			} else {
-				startsAt = streamState.UpdatedAt
+				// ⚡️ FIXED: Use the dedicated heartbeat field for playback seek calculations
+				startsAt = streamState.LastHeartbeat
 			}
 		}
 	}
@@ -119,7 +121,6 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 
 	var waveformURL string
 	if currentTrack.WaveformKey != "" {
-		// Note: Adjust "BuildAssetURL" to whatever method you named it in utils.CDNBuilder
 		waveformURL = h.cdn.BuildAssetURL(currentTrack.WaveformKey, orgID.String())
 	}
 

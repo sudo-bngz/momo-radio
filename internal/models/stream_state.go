@@ -17,7 +17,8 @@ type StreamState struct {
 	// Crucial for keeping HLS segment continuity across engine restarts
 	Sequence int `gorm:"column:hls_media_sequence;not null;default:0" json:"hls_media_sequence"`
 
-	UpdatedAt time.Time `gorm:"column:last_heartbeat" json:"last_heartbeat"` // Monitors pipeline lifecycle
+	UpdatedAt     time.Time `json:"updated_at"`                                  // Standard GORM auto-update field
+	LastHeartbeat time.Time `gorm:"column:last_heartbeat" json:"last_heartbeat"` // Monitors pipeline lifecycle & seek position
 }
 
 // TableName overrides GORM's default pluralization strategy
