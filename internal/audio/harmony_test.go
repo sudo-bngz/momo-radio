@@ -1,9 +1,19 @@
 package audio
 
 import (
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 	"testing"
+
+	"go.uber.org/zap"
 )
+
+func init() {
+	// Provide a dummy logger so tests don't panic when they hit logger.Log
+	if logger.Log == nil {
+		logger.Log = zap.NewNop()
+	}
+}
 
 func TestAreKeysCompatible(t *testing.T) {
 	tests := []struct {

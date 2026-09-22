@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"momo-radio/internal/config"
-
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"momo-radio/internal/config"
+	"momo-radio/internal/logger"
 )
 
 // DirectURLProvider perfectly matches your storage.Client signature
@@ -54,7 +56,15 @@ func (b *CDNBuilder) GetHLSStreamURL(orgID uuid.UUID, mountSlug string) string {
 		baseURL = "https://" + baseURL
 	}
 
-	return fmt.Sprintf("%s/%s/%s/index.m3u8", baseURL, orgID.String(), mountSlug)
+	finalURL := fmt.Sprintf("%s/%s/%s/index.m3u8", baseURL, orgID.String(), mountSlug)
+
+	logger.Log.Debug("Constructed HLS Stream URL",
+		zap.String("org_id", orgID.String()),
+		zap.String("mount", mountSlug),
+		zap.String("url", finalURL),
+	)
+
+	return finalURL
 }
 
 // BuildAssetURL extracts the Prod bucket and region from config for the direct URL (used for cover art, audio tracks, etc.)
@@ -108,6 +118,7 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 func (c *CDNBuilder) PurgeCache(fullFileURL string) error {
 	apiKey := c.cfg.CDN.APIKey
 	if apiKey == "" || !c.cfg.CDN.Enabled {
+		logger.Log.Debug("CDN purge skipped (CDN disabled or missing API key)", zap.String("url", fullFileURL))
 		return nil // Skip gracefully if CDN is disabled
 	}
 
@@ -116,6 +127,7 @@ func (c *CDNBuilder) PurgeCache(fullFileURL string) error {
 
 	req, err := http.NewRequest("POST", reqURL, nil)
 	if err != nil {
+		logger.Log.Error("Failed to create CDN purge HTTP request", zap.Error(err), zap.String("url", fullFileURL))
 		return err
 	}
 	req.Header.Add("AccessKey", apiKey)
@@ -124,13 +136,17 @@ func (c *CDNBuilder) PurgeCache(fullFileURL string) error {
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		logger.Log.Error("CDN purge API network request failed", zap.Error(err), zap.String("url", fullFileURL))
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("BunnyCDN purge failed with status: %d", resp.StatusCode)
+		err := fmt.Errorf("BunnyCDN purge failed with status: %d", resp.StatusCode)
+		logger.Log.Warn("CDN purge request rejected by provider", zap.Error(err), zap.String("url", fullFileURL))
+		return err
 	}
 
+	logger.Log.Info("Successfully purged CDN cache", zap.String("url", fullFileURL))
 	return nil
 }

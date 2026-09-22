@@ -1,6 +1,12 @@
 package utils
 
-import "strings"
+import (
+	"strings"
+
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
+)
 
 // Fallback splitter if Discogs fails or track is completely unknown
 func SplitArtistFallback(rawArtist string) []string {
@@ -18,5 +24,13 @@ func SplitArtistFallback(rawArtist string) []string {
 			results = append(results, clean)
 		}
 	}
+
+	if len(results) > 1 {
+		logger.Log.Debug("Artist name split by fallback string manipulation",
+			zap.String("raw_artist", rawArtist),
+			zap.Strings("split_results", results),
+		)
+	}
+
 	return results
 }

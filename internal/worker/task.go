@@ -43,15 +43,21 @@ func NewTrackWorker(db *gorm.DB, st *storage.Client, cdn *utils.CDNBuilder) *Tra
 func (w *TrackWorker) HandleDeleteTrackTask(ctx context.Context, t *asynq.Task) error {
 	var payload TrackDeletionPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		logger.Log.Error("Failed to unmarshal track deletion payload", zap.Error(err))
 		return fmt.Errorf("failed to unmarshal track deletion payload: %w", err)
 	}
 
-	logger.Log.Info("Processing track deletion", zap.Uint("track_id", payload.TrackID))
+	logger.Log.Info("Processing track deletion",
+		zap.Uint("track_id", payload.TrackID),
+		zap.String("org_id", payload.OrganizationID.String()),
+	)
 
 	// 1. Delete HLS / Audio assets (from bucketAssets)
 	if payload.Key != "" {
 		if err := w.storage.DeleteAssetFile(payload.Key); err != nil {
 			logger.Log.Warn("Failed to delete audio file from assets bucket", zap.Error(err), zap.String("key", payload.Key))
+		} else {
+			logger.Log.Debug("Deleted audio asset", zap.String("key", payload.Key))
 		}
 	}
 
@@ -59,6 +65,8 @@ func (w *TrackWorker) HandleDeleteTrackTask(ctx context.Context, t *asynq.Task) 
 	if payload.MasterKey != "" {
 		if err := w.storage.DeleteMasterFile(payload.MasterKey); err != nil {
 			logger.Log.Warn("Failed to delete master audio file from master bucket", zap.Error(err), zap.String("key", payload.MasterKey))
+		} else {
+			logger.Log.Debug("Deleted master audio file", zap.String("key", payload.MasterKey))
 		}
 	}
 
@@ -66,17 +74,23 @@ func (w *TrackWorker) HandleDeleteTrackTask(ctx context.Context, t *asynq.Task) 
 	if payload.WaveformKey != "" {
 		if err := w.storage.DeleteAssetFile(payload.WaveformKey); err != nil {
 			logger.Log.Warn("Failed to delete waveform file from assets bucket", zap.Error(err), zap.String("key", payload.WaveformKey))
+		} else {
+			logger.Log.Debug("Deleted waveform file", zap.String("key", payload.WaveformKey))
 		}
 	}
 
 	// 4. Purge CDN cache
 	if w.cdn != nil && payload.Key != "" {
-		fullURL := fmt.Sprintf("%s/%s", "https://cdn.yourdomain.com", payload.Key) // Update if needed
-		go func() {
-			if err := w.cdn.PurgeCache(fullURL); err != nil {
-				logger.Log.Warn("Failed to purge CDN cache for deleted track", zap.Error(err), zap.String("url", fullURL))
+		// ⚡️ FIXED: Use the dynamic CDN builder instead of hardcoded domain
+		fullURL := w.cdn.BuildAssetURL(payload.Key, payload.OrganizationID.String())
+
+		go func(url string) {
+			if err := w.cdn.PurgeCache(url); err != nil {
+				logger.Log.Warn("Failed to purge CDN cache for deleted track", zap.Error(err), zap.String("url", url))
+			} else {
+				logger.Log.Debug("Successfully purged CDN cache", zap.String("url", url))
 			}
-		}()
+		}(fullURL)
 	}
 
 	// 5. DATABASE CLEANUP
@@ -88,20 +102,24 @@ func (w *TrackWorker) HandleDeleteTrackTask(ctx context.Context, t *asynq.Task) 
 			logger.Log.Info("Track already removed from DB, skipping", zap.Uint("track_id", payload.TrackID))
 			return nil
 		}
+		logger.Log.Error("Failed to fetch track for deletion", zap.Error(err), zap.Uint("track_id", payload.TrackID))
 		return err
 	}
 
 	// Step 5b: Clear Many-to-Many Artist links
-	// (This safely removes rows in `track_artists` without deleting the actual Artist records)
 	if err := w.db.Model(&track).Association("Artists").Clear(); err != nil {
-		logger.Log.Warn("Failed to clear track_artists association", zap.Error(err))
+		logger.Log.Warn("Failed to clear track_artists association", zap.Error(err), zap.Uint("track_id", track.ID))
 	}
 
 	// Step 5c: Wipe any PlayHistory references
-	w.db.Unscoped().Where("track_id = ?", track.ID).Delete(&models.PlayHistory{})
+	if err := w.db.Unscoped().Where("track_id = ?", track.ID).Delete(&models.PlayHistory{}).Error; err != nil {
+		logger.Log.Warn("Failed to clear track play history", zap.Error(err), zap.Uint("track_id", track.ID))
+	}
 
-	// Step 5d: Remove from playlists (if you have a playlist_tracks join table, raw SQL is the safest way to clear it without loading all playlists)
-	w.db.Exec("DELETE FROM playlist_tracks WHERE track_id = ?", track.ID)
+	// Step 5d: Remove from playlists
+	if err := w.db.Exec("DELETE FROM playlist_tracks WHERE track_id = ?", track.ID).Error; err != nil {
+		logger.Log.Warn("Failed to remove track from playlists", zap.Error(err), zap.Uint("track_id", track.ID))
+	}
 
 	// Step 5e: Finally, Hard delete the track itself
 	if err := w.db.Unscoped().Delete(&track).Error; err != nil {
@@ -109,6 +127,10 @@ func (w *TrackWorker) HandleDeleteTrackTask(ctx context.Context, t *asynq.Task) 
 		return err
 	}
 
-	logger.Log.Info("Track completely wiped successfully", zap.Uint("track_id", payload.TrackID))
+	logger.Log.Info("Track completely wiped successfully",
+		zap.Uint("track_id", payload.TrackID),
+		zap.String("org_id", payload.OrganizationID.String()),
+	)
+
 	return nil
 }

@@ -24,8 +24,6 @@ func (s *RandomSelector) PickTrack(rules *models.RuleSet, _ *models.Track) (*mod
 	query := s.db.Model(&models.Track{})
 	query = applyBaseFilters(query, rules, s.orgID)
 
-	// ⚡️ FIXED: Using Limit(1).Find() instead of First().
-	// This prevents GORM from spamming "record not found" errors when the library is empty.
 	err := query.Order("RANDOM()").Limit(1).Find(&tracks).Error
 	if err != nil {
 		logger.Log.Error("Database error during random track selection",
