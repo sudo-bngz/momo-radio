@@ -2,8 +2,12 @@ package audio
 
 import (
 	"math"
-	"momo-radio/internal/models"
 	"strings"
+
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
+	"momo-radio/internal/models"
 )
 
 // CalculateMixScore determines how well 'next' follows 'prev'.
@@ -37,6 +41,15 @@ func CalculateMixScore(prev, next models.Track) float64 {
 		score += 40.0
 	}
 
+	// Log at Debug level because this might be called thousands of times per auto-DJ cycle
+	logger.Log.Debug("Calculated mix score",
+		zap.Any("prev_track_id", prev.ID),
+		zap.Any("next_track_id", next.ID),
+		zap.Float64("score", score),
+		zap.Float64("bpm_diff", bpmDiff),
+		zap.Float64("dance_diff", danceDiff),
+	)
+
 	return score
 }
 
@@ -52,6 +65,10 @@ func areKeysCompatible(k1, s1, k2, s2 string) bool {
 	c2, ok2 := toCamelot(k2, s2)
 
 	if !ok1 || !ok2 {
+		logger.Log.Debug("Camelot conversion failed for harmonic mixing",
+			zap.String("k1", k1), zap.String("s1", s1), zap.Bool("ok1", ok1),
+			zap.String("k2", k2), zap.String("s2", s2), zap.Bool("ok2", ok2),
+		)
 		return false
 	}
 

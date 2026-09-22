@@ -50,10 +50,16 @@ func (e *Engine) runOrchestrator(ctx context.Context, orgID uuid.UUID, output *i
 		default:
 			var selectedTrack *models.Track
 			var err error
+			currentMode := "Unknown"
 
 			if firstRun && resumeID != 0 {
 				if dbErr := e.db.DB.Preload("Artists").Where("organization_id = ?", orgID).First(&selectedTrack, resumeID).Error; dbErr == nil {
 					lastTrack = selectedTrack
+					currentMode = "Resume"
+					logger.Log.Info("Resuming track from previous state",
+						zap.String("org_id", orgID.String()),
+						zap.Uint("track_id", resumeID),
+					)
 				}
 				firstRun = false
 			}
@@ -62,6 +68,7 @@ func (e *Engine) runOrchestrator(ctx context.Context, orgID uuid.UUID, output *i
 				activeSlot := e.scheduler.GetCurrentSchedule(orgID)
 
 				if activeSlot != nil && activeSlot.PlaylistID != nil {
+					currentMode = "Playlist"
 					selectedTrack, err = e.pickNextFromPlaylist(orgID, *activeSlot.PlaylistID, lastTrack)
 				} else if activeSlot != nil && activeSlot.RuleSetID != nil {
 					mode := "random"
@@ -72,15 +79,28 @@ func (e *Engine) runOrchestrator(ctx context.Context, orgID uuid.UUID, output *i
 					if !exists {
 						selector = selectors["random"]
 					}
+					currentMode = selector.Name()
 					selectedTrack, err = selector.PickTrack(activeSlot.RuleSet, lastTrack)
 				}
 			}
 
 			if err != nil || selectedTrack == nil {
+				logger.Log.Warn("Primary selection failed or nil track, falling back to pure random",
+					zap.String("org_id", orgID.String()),
+					zap.Error(err),
+				)
+				currentMode = "Fallback Random"
 				selectedTrack, _ = selectors["random"].PickTrack(nil, nil)
 			}
 
 			if selectedTrack != nil && selectedTrack.ID != 0 && selectedTrack.Key != "" {
+				logger.Log.Info("Now Playing",
+					zap.String("org_id", orgID.String()),
+					zap.String("mode", currentMode),
+					zap.Uint("track_id", selectedTrack.ID),
+					zap.String("title", selectedTrack.Title),
+				)
+
 				e.state.UpdateTrack(orgID, selectedTrack.ID, 0)
 				e.cache.Prefetch([]string{selectedTrack.Key})
 				go e.cache.Cleanup([]string{selectedTrack.Key})
@@ -97,7 +117,7 @@ func (e *Engine) runOrchestrator(ctx context.Context, orgID uuid.UUID, output *i
 					time.Sleep(1 * time.Second)
 				}
 			} else {
-				logger.Log.Warn("Orchestrator idle: No tracks in library.", zap.String("org_id", orgID.String()))
+				logger.Log.Warn("Orchestrator idle: No playable tracks found in library.", zap.String("org_id", orgID.String()))
 				time.Sleep(10 * time.Second)
 			}
 		}
@@ -115,6 +135,11 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 			Scan(&currentSortOrder)
 	}
 
+	logger.Log.Debug("Attempting to pick next track from playlist",
+		zap.Uint("playlist_id", playlistID),
+		zap.Int("current_sort_order", currentSortOrder),
+	)
+
 	err := e.db.DB.Model(&models.Track{}).
 		Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 		Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ? AND playlist_tracks.sort_order > ?", playlistID, orgID, currentSortOrder).
@@ -124,6 +149,7 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 		First(&track).Error
 
 	if err != nil {
+		logger.Log.Debug("Reached end of playlist, wrapping to beginning", zap.Uint("playlist_id", playlistID))
 		err = e.db.DB.Model(&models.Track{}).
 			Joins("JOIN playlist_tracks ON playlist_tracks.track_id = tracks.id").
 			Where("playlist_tracks.playlist_id = ? AND tracks.organization_id = ?", playlistID, orgID).
@@ -152,7 +178,6 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 	endsAt := now.Add(time.Duration(durationMs) * time.Millisecond)
 
 	// Build the cover URL if you store relative paths in the DB.
-	// Adjust "t.Picture" or "t.WaveformKey" based on your exact models.Track field names!
 	coverURL := t.Album.CoverURL
 	if coverURL != "" && !strings.HasPrefix(coverURL, "http") {
 		baseURL := strings.TrimRight(e.cfg.CDN.Assets, "/")
@@ -181,8 +206,14 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 	ctx := context.Background()
 	key := fmt.Sprintf("radio:%s:now_playing", orgID.String())
 
-	_ = e.rdb.Set(ctx, key, data, 24*time.Hour).Err()
-	_ = e.rdb.Publish(ctx, key, data).Err()
+	if err := e.rdb.Set(ctx, key, data, 24*time.Hour).Err(); err != nil {
+		logger.Log.Error("Failed to set now_playing in Redis", zap.Error(err))
+	}
+	if err := e.rdb.Publish(ctx, key, data).Err(); err != nil {
+		logger.Log.Error("Failed to publish now_playing to Redis pubsub", zap.Error(err))
+	} else {
+		logger.Log.Debug("Pushed now_playing update to Redis", zap.Uint("track_id", t.ID))
+	}
 }
 
 func (e *Engine) recordTrackPlay(orgID uuid.UUID, t *models.Track) {
@@ -204,12 +235,17 @@ func (e *Engine) recordTrackPlay(orgID uuid.UUID, t *models.Track) {
 		}
 		return tx.Create(&history).Error
 	})
+
 	if err != nil {
-		logger.Log.Error("Failed to record play", zap.String("org_id", orgID.String()), zap.Error(err))
+		logger.Log.Error("Failed to record play history", zap.String("org_id", orgID.String()), zap.Error(err))
+	} else {
+		logger.Log.Debug("Recorded track play history successfully", zap.Uint("track_id", t.ID))
 	}
 }
 
 func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
+	logger.Log.Debug("Fetching track from cache for FFmpeg pipe", zap.String("key", key))
+
 	localPath, err := e.cache.GetLocalPath(key)
 	if err != nil {
 		return err
@@ -221,6 +257,7 @@ func (e *Engine) streamFileToPipe(key string, pipe *io.PipeWriter) error {
 	}
 	defer f.Close()
 
+	logger.Log.Debug("Streaming track bytes into FFmpeg pipe", zap.String("local_path", localPath))
 	_, err = io.Copy(pipe, f)
 	return err
 }

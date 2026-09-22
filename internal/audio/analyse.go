@@ -3,11 +3,14 @@ package audio
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
 )
 
 type DeepAnalysis struct {
@@ -163,7 +166,7 @@ func autoGenerateProfile() (string, error) {
 		return profilePath, nil
 	}
 
-	log.Println("Building Essentia SVM Profile YAML...")
+	logger.Log.Info("Building Essentia SVM Profile YAML...")
 
 	yamlContent := `outputFormat: json
 outputFrames: 0
@@ -193,16 +196,21 @@ highlevel:
 
 func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 	absPath, _ := filepath.Abs(path)
+	filename := filepath.Base(path)
 
 	// 1. Create a "Safe" temporary WAV file (44.1kHz, Mono)
 	safeWav := absPath + ".safe.wav"
 	jsonPath := absPath + ".json"
 
-	log.Printf("Pre-transcoding: %s", filepath.Base(path))
+	logger.Log.Debug("Pre-transcoding audio for Essentia", zap.String("filename", filename))
 
 	convCmd := exec.Command("ffmpeg", "-y", "-i", absPath, "-ar", "44100", "-ac", "1", "-f", "wav", safeWav)
 	if out, err := convCmd.CombinedOutput(); err != nil {
-		log.Printf("Pre-transcode failed: %v | %s", err, string(out))
+		logger.Log.Error("Pre-transcode failed",
+			zap.String("filename", filename),
+			zap.String("output", string(out)),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 	defer os.Remove(safeWav)
@@ -210,12 +218,12 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 	// 2. Ensure the SVM Profile exists
 	profilePath, err := autoGenerateProfile()
 	if err != nil {
-		log.Printf("Warning: Failed to generate SVM profile: %v. Running without high-level models.", err)
+		logger.Log.Warn("Failed to generate SVM profile. Running without high-level models.", zap.Error(err))
 		profilePath = ""
 	}
 
 	// 3. Run the extractor
-	log.Printf("Running Essentia...")
+	logger.Log.Info("Running Essentia", zap.String("filename", filename))
 	var cmd *exec.Cmd
 	if profilePath != "" {
 		cmd = exec.Command("streaming_extractor_music", safeWav, jsonPath, profilePath)
@@ -225,7 +233,11 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("Essentia failed: %v\nOutput: %s", err, string(out))
+		logger.Log.Error("Essentia failed",
+			zap.String("filename", filename),
+			zap.String("output", string(out)),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("essentia crash")
 	}
 
@@ -238,7 +250,7 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 
 	var raw EssentiaJSON
 	if err := json.Unmarshal(data, &raw); err != nil {
-		log.Printf("Failed to parse JSON: %v", err)
+		logger.Log.Error("Failed to parse Essentia JSON", zap.Error(err))
 		return nil, err
 	}
 
@@ -267,14 +279,15 @@ func AnalyzeDeep(path string) (*DeepAnalysis, error) {
 		MLCharacteristics: sortedTags.Characteristics,
 	}
 
-	log.Printf("Result: %s | %.2f BPM | %s %s | Genres: %v | Moods: %v | Chars: %v",
-		filepath.Base(path),
-		analysis.BPM,
-		analysis.MusicalKey,
-		analysis.Scale,
-		analysis.MLGenres,
-		analysis.MLMoods,
-		analysis.MLCharacteristics,
+	logger.Log.Info("Essentia analysis complete",
+		zap.String("filename", filename),
+		zap.Float64("bpm", analysis.BPM),
+		zap.String("musical_key", analysis.MusicalKey),
+		zap.String("scale", analysis.Scale),
+		zap.Strings("genres", analysis.MLGenres),
+		zap.Strings("moods", analysis.MLMoods),
+		zap.Strings("characteristics", analysis.MLCharacteristics),
 	)
+
 	return analysis, nil
 }

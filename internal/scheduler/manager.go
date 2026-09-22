@@ -16,7 +16,6 @@ type Manager struct {
 	timezone string
 }
 
-// ⚡️ Require timezone on initialization
 func NewManager(db *gorm.DB, tz string) *Manager {
 	if tz == "" {
 		tz = "UTC"

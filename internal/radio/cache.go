@@ -2,11 +2,14 @@ package radio
 
 import (
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
 )
 
 // StorageProvider defines what we need from the storage layer
@@ -24,7 +27,10 @@ type CacheManager struct {
 func NewCacheManager(storage StorageProvider, tmpDir string) *CacheManager {
 	cacheDir := filepath.Join(tmpDir, "track_cache")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		log.Printf("Failed to create cache dir: %v", err)
+		logger.Log.Error("Failed to create cache directory",
+			zap.String("dir", cacheDir),
+			zap.Error(err),
+		)
 	}
 
 	return &CacheManager{
@@ -40,6 +46,7 @@ func (c *CacheManager) GetLocalPath(key string) (string, error) {
 	// 1. Check if it already exists
 	if c.exists(localPath) {
 		os.Chtimes(localPath, time.Now(), time.Now())
+		logger.Log.Debug("Cache Hit", zap.String("key", key))
 		return localPath, nil
 	}
 
@@ -48,6 +55,7 @@ func (c *CacheManager) GetLocalPath(key string) (string, error) {
 	waitCh, isDownloading := c.pending[key]
 	if isDownloading {
 		c.mu.Unlock()
+		logger.Log.Debug("Waiting for existing download to complete", zap.String("key", key))
 		<-waitCh              // Wait for the other goroutine to finish
 		return localPath, nil // Return now that it's downloaded
 	}
@@ -64,8 +72,12 @@ func (c *CacheManager) GetLocalPath(key string) (string, error) {
 		c.mu.Unlock()
 	}()
 
-	log.Printf("Cache Miss: Downloading %s", key)
+	logger.Log.Info("Cache Miss: Downloading track", zap.String("key", key))
 	if err := c.download(key, localPath); err != nil {
+		logger.Log.Error("Failed to download track to cache",
+			zap.String("key", key),
+			zap.Error(err),
+		)
 		return "", err
 	}
 
@@ -75,9 +87,13 @@ func (c *CacheManager) GetLocalPath(key string) (string, error) {
 func (c *CacheManager) Prefetch(keys []string) {
 	for _, key := range keys {
 		go func(k string) {
+			logger.Log.Debug("Prefetching track", zap.String("key", k))
 			_, err := c.GetLocalPath(k)
 			if err != nil {
-				log.Printf("Prefetch failed for %s: %v", k, err)
+				logger.Log.Warn("Prefetch failed",
+					zap.String("key", k),
+					zap.Error(err),
+				)
 			}
 		}(key)
 	}
@@ -92,16 +108,29 @@ func (c *CacheManager) Cleanup(keepKeys []string) {
 
 	files, err := os.ReadDir(c.baseDir)
 	if err != nil {
+		logger.Log.Error("Failed to read cache directory for cleanup", zap.Error(err))
 		return
 	}
 
+	cleanedCount := 0
 	for _, file := range files {
 		fullPath := filepath.Join(c.baseDir, file.Name())
 		if !keepMap[fullPath] {
 			// Check age? Or just aggressive cleanup?
 			// For now, simple cleanup of anything not in the current playlist
-			os.Remove(fullPath)
+			if err := os.Remove(fullPath); err == nil {
+				cleanedCount++
+			} else {
+				logger.Log.Warn("Failed to delete stale cache file",
+					zap.String("file", file.Name()),
+					zap.Error(err),
+				)
+			}
 		}
+	}
+
+	if cleanedCount > 0 {
+		logger.Log.Debug("Cleaned up stale tracks from cache", zap.Int("count", cleanedCount))
 	}
 }
 

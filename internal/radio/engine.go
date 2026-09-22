@@ -83,13 +83,19 @@ func (e *Engine) StartSupervisor(ctx context.Context) {
 		}
 
 		if err := json.Unmarshal([]byte(msg.Payload), &payload); err != nil {
-			logger.Log.Error("Invalid control payload dropped", zap.Error(err), zap.String("payload", msg.Payload))
+			logger.Log.Error("Invalid control payload dropped",
+				zap.Error(err),
+				zap.String("payload", msg.Payload),
+			)
 			continue
 		}
 
 		orgUUID, err := uuid.Parse(payload.OrgID)
 		if err != nil {
-			logger.Log.Error("Invalid UUID parsed from payload", zap.Error(err), zap.String("org_id", payload.OrgID))
+			logger.Log.Error("Invalid UUID parsed from payload",
+				zap.Error(err),
+				zap.String("org_id", payload.OrgID),
+			)
 			continue
 		}
 
@@ -150,14 +156,22 @@ func (e *Engine) runTenantPipeline(ctx context.Context, orgID uuid.UUID) {
 	var defaultMount models.MountPoint
 	err := e.db.DB.Where("organization_id = ? AND is_default = ?", orgID, true).First(&defaultMount).Error
 	if err != nil {
-		logger.Log.Error("Aborting: No active default mount point found.", zap.String("org_id", orgID.String()), zap.Error(err))
+		logger.Log.Error("Aborting: No active default mount point found.",
+			zap.String("org_id", orgID.String()),
+			zap.Error(err),
+		)
 		return
 	}
 
 	state, err := e.state.GetCurrentState(orgID)
 	var resumeTrackID uint
-	if err == nil && time.Since(state.UpdatedAt) < 10*time.Minute {
-		logger.Log.Info("RECOVERED STATE: Resuming track", zap.String("org_id", orgID.String()), zap.Uint("track_id", state.TrackID))
+
+	// ⚡️ FIXED: Use LastHeartbeat instead of UpdatedAt to match your business logic model
+	if err == nil && time.Since(state.LastHeartbeat) < 10*time.Minute {
+		logger.Log.Info("RECOVERED STATE: Resuming track",
+			zap.String("org_id", orgID.String()),
+			zap.Uint("track_id", state.TrackID),
+		)
 		resumeTrackID = state.TrackID
 	}
 

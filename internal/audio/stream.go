@@ -3,12 +3,14 @@ package audio
 import (
 	"fmt"
 	"io"
-	"log"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 
+	"go.uber.org/zap"
+
 	"momo-radio/internal/config"
+	"momo-radio/internal/logger"
 )
 
 func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startSequence int64, segmentDir string, targetBitrate int) {
@@ -61,14 +63,27 @@ func StartStreamProcess(input io.Reader, cfg *config.Config, runID int64, startS
 	cmd.Stdin = input
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("FFmpeg failed to start: %v", err)
+		logger.Log.Error("FFmpeg failed to start", zap.Error(err))
 		return
 	}
 
-	log.Printf("FFmpeg started (RunID: %d | Seq: %s | Dir: %s | Bitrate: %s)", runID, startNum, segmentDir, bitrate)
+	logger.Log.Info("FFmpeg started",
+		zap.Int64("run_id", runID),
+		zap.String("start_sequence", startNum),
+		zap.String("segment_dir", segmentDir),
+		zap.String("bitrate", bitrate),
+		zap.String("codec", codec),
+	)
 
 	if err := cmd.Wait(); err != nil {
-		log.Printf("FFmpeg exited: %v", err)
+		logger.Log.Warn("FFmpeg exited with error",
+			zap.Int64("run_id", runID),
+			zap.Error(err),
+		)
+	} else {
+		logger.Log.Info("FFmpeg process finished cleanly",
+			zap.Int64("run_id", runID),
+		)
 	}
 }
 

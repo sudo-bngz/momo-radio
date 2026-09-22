@@ -3,14 +3,16 @@ package audio
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"momo-radio/internal/config"
+	"momo-radio/internal/logger"
 )
 
 // StartFFmpeg executes the HLS transcoding process using multi-tenant dynamic parameters
@@ -49,10 +51,14 @@ func StartFFmpeg(input io.Reader, cfg *config.Config, outputDir string, bitrate 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	log.Printf("[FFMPEG] Pipeline starting (Bitrate: %s, Codec: %s, OutDir: %s)",
-		bitrate, cfg.Radio.AudioCodec, outputDir)
+	logger.Log.Info("FFMPEG Pipeline starting",
+		zap.String("bitrate", bitrate),
+		zap.String("codec", cfg.Radio.AudioCodec),
+		zap.String("output_dir", outputDir),
+	)
 
 	if err := cmd.Run(); err != nil {
+		logger.Log.Error("ffmpeg execution failure", zap.Error(err))
 		return fmt.Errorf("ffmpeg execution failure: %w", err)
 	}
 
@@ -80,7 +86,17 @@ func Normalize(input, output string) error {
 		"-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
 		"-c:a", "libmp3lame", "-b:a", "192k",
 		output)
-	return cmd.Run()
+
+	err := cmd.Run()
+	if err != nil {
+		logger.Log.Error("Audio normalization failed",
+			zap.String("input", input),
+			zap.String("output", output),
+			zap.Error(err),
+		)
+	}
+
+	return err
 }
 
 // Validate checks if the file is large enough and decodable by ffmpeg
@@ -88,19 +104,28 @@ func Validate(path string) error {
 	// 1. Check File Size (e.g., must be > 500KB to be a valid track)
 	info, err := os.Stat(path)
 	if err != nil {
-		log.Printf("File system error: %v", err)
+		logger.Log.Error("File system error during validation",
+			zap.String("path", path),
+			zap.Error(err),
+		)
 		return err
 	}
 
 	if info.Size() < 500*1024 {
-		log.Printf("⚠️ File too small (%d bytes). Likely a failed download.", info.Size())
+		logger.Log.Warn("File too small. Likely a failed download.",
+			zap.String("path", path),
+			zap.Int64("size_bytes", info.Size()),
+		)
 		return os.ErrInvalid
 	}
 
 	// 2. Check Integrity via ffprobe
 	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path)
 	if err := cmd.Run(); err != nil {
-		log.Printf("Integrity check failed (corrupt stream): %v", err)
+		logger.Log.Error("Integrity check failed (corrupt stream)",
+			zap.String("path", path),
+			zap.Error(err),
+		)
 		return err
 	}
 

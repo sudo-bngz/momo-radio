@@ -8,13 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"momo-radio/internal/dj"
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 )
 
-// ⚡️ Added orgID to simulate a specific tenant's station
 func (e *Engine) runSimulation(orgID uuid.UUID) {
+	logger.Log.Info("Starting dry playlist simulation", zap.String("org_id", orgID.String()))
+
 	fmt.Printf("\n--- DRY PLAYLIST SIMULATION FOR TENANT: %s ---\n", orgID.String())
 	fmt.Println("Logic: Uses Scheduler + Selector Strategy (No DB updates)")
 	fmt.Println("--------------------------------------------------------------------------------")
@@ -47,7 +50,6 @@ func (e *Engine) runSimulation(orgID uuid.UUID) {
 
 		if activeSlot != nil && activeSlot.Playlist != nil {
 			currentMode = "Playlist"
-			// ⚡️ Pass orgID into the Playlist Picker
 			selectedTrack, err = e.pickNextFromPlaylist(orgID, activeSlot.Playlist.ID, lastTrack)
 		} else if activeSlot != nil && activeSlot.RuleSet != nil {
 			mode := strings.ToLower(activeSlot.RuleSet.Mode)
@@ -65,6 +67,11 @@ func (e *Engine) runSimulation(orgID uuid.UUID) {
 		}
 
 		if err != nil || selectedTrack == nil {
+			logger.Log.Error("Simulation track selection failed",
+				zap.String("org_id", orgID.String()),
+				zap.String("show_name", showName),
+				zap.Error(err),
+			)
 			fmt.Fprintf(w, "%s\tERROR\t---\tSelection Failed: %v\t---\t---\t%s\n",
 				simulatedTime.Format("15:04:05"), err, showName)
 			break
@@ -80,6 +87,18 @@ func (e *Engine) runSimulation(orgID uuid.UUID) {
 			artistStr = strings.Join(artistNames, ", ")
 		}
 
+		// Log structured data for backend querying
+		logger.Log.Debug("Simulation picked track",
+			zap.String("org_id", orgID.String()),
+			zap.String("mode", currentMode),
+			zap.String("artist", artistStr),
+			zap.String("title", selectedTrack.Title),
+			zap.Float64("bpm", selectedTrack.BPM),
+			zap.String("key", selectedTrack.MusicalKey),
+			zap.String("show", showName),
+		)
+
+		// Print visual table for the terminal
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%.0f\t%s\t%s\n",
 			simulatedTime.Format("15:04:05"),
 			currentMode,
@@ -99,6 +118,7 @@ func (e *Engine) runSimulation(orgID uuid.UUID) {
 	}
 
 	fmt.Println("\nSimulation Complete. Above is what your listeners would hear right now.")
+	logger.Log.Info("Simulation complete", zap.String("org_id", orgID.String()))
 }
 
 func truncate(s string, max int) string {

@@ -5,8 +5,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
 )
 
@@ -16,8 +18,12 @@ type Selector interface {
 	PickTrack(rules *models.RuleSet, lastTrack *models.Track) (*models.Track, error)
 }
 
-// ⚡️ Added orgID parameter to the factory
 func NewSelector(mode string, db *gorm.DB, orgID uuid.UUID) Selector {
+	logger.Log.Debug("Instantiating AutoDJ selector",
+		zap.String("mode", mode),
+		zap.String("org_id", orgID.String()),
+	)
+
 	switch strings.ToLower(mode) {
 	case "starvation":
 		// Pass orgID into the specific selector
@@ -28,14 +34,22 @@ func NewSelector(mode string, db *gorm.DB, orgID uuid.UUID) Selector {
 	}
 }
 
-// ⚡️ Forcefully accept orgID so NO query can ever escape the tenant's library!
 func applyBaseFilters(db *gorm.DB, rules *models.RuleSet, orgID uuid.UUID) *gorm.DB {
 	// 1. ⚡️ THE LOCK: Always restrict to the specific organization first!
 	db = db.Where("organization_id = ?", orgID)
 
 	if rules == nil {
+		logger.Log.Debug("Applying base AutoDJ filters without RuleSet", zap.String("org_id", orgID.String()))
 		return db
 	}
+
+	logger.Log.Debug("Applying AutoDJ RuleSet filters",
+		zap.String("org_id", orgID.String()),
+		zap.String("genre", rules.Genre),
+		zap.Float64("min_bpm", rules.MinBPM), // ⚡️ FIXED: Using Float64
+		zap.Float64("max_bpm", rules.MaxBPM), // ⚡️ FIXED: Using Float64
+		zap.Int("min_year", rules.MinYear),
+	)
 
 	// 2. Filter by Genre
 	if rules.Genre != "" {
@@ -69,7 +83,7 @@ func parseCSV(input string) []string {
 	if input == "" {
 		return result
 	}
-	for _, str := range strings.Split(input, ",") {
+	for str := range strings.SplitSeq(input, ",") {
 		if trimmed := strings.TrimSpace(str); trimmed != "" {
 			result = append(result, trimmed)
 		}
