@@ -33,11 +33,11 @@ func (s *EnrichStep) Name() string { return "queueing_enrichment" }
 func (s *EnrichStep) Execute(ctx *ProcessingContext) error {
 	// If the user hasn't configured Discogs, bypass enrichment entirely
 	if ctx.Worker.cfg.Services.DiscogsToken == "" {
-		return nil
+		logger.Log.Warn("Discogs API key is missing. Queueing enrichment task anyway.",
+			zap.Any("track_id", ctx.Track.ID),
+		)
 	}
 
-	// ⚡️ THE FIX: Explicitly load the newly saved Artists from the DB!
-	// This prevents the in-memory race condition where GORM Association hasn't updated the slice.
 	var dbArtists []models.Artist
 	if err := ctx.Worker.db.DB.Model(ctx.Track).Association("Artists").Find(&dbArtists); err == nil {
 		ctx.Track.Artists = dbArtists

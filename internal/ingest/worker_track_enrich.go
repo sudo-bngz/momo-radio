@@ -16,7 +16,7 @@ import (
 )
 
 func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error {
-	var payload localTrackEnrichPayload
+	var payload TrackEnrichPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		logger.Log.Error("Failed to parse track enrich payload", zap.Error(err))
 		return fmt.Errorf("failed to parse track enrich payload: %v", err)
@@ -32,9 +32,10 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 		return fmt.Errorf("track not found: %w", err)
 	}
 
-	// Skip if completely enriched
+	// Determine existing tag validity
 	cleanGenre := strings.TrimSpace(track.Genre)
-	hasValidGenre := cleanGenre != "" && cleanGenre != "-" && strings.ToLower(cleanGenre) != "unknown"
+	isMLGenre := len(track.MLGenres) > 0 && cleanGenre == track.MLGenres[0]
+	hasValidGenre := cleanGenre != "" && cleanGenre != "-" && strings.ToLower(cleanGenre) != "unknown" && !isMLGenre
 	hasStyle := strings.TrimSpace(track.Style) != ""
 	hasCoverArt := track.AlbumID != nil && track.Album.CoverKey != ""
 	hasAlbumDetails := track.AlbumID != nil && track.Album.Publisher != "" && track.Album.Year != ""
@@ -51,7 +52,6 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 	apiToken := w.cfg.Services.DiscogsToken
 	hasAcousticMatch := false
 
-	// Strip noise BEFORE querying the APIs
 	cleanSearchTitle := NormalizeTitle(payload.TrackTitle)
 	cleanSearchArtist := payload.ArtistName
 	if parsedArtists := NormalizeArtist(payload.ArtistName); len(parsedArtists) > 0 {
@@ -69,10 +69,9 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 			mbData = mbResult
 			hasAcousticMatch = true
 
-			// UPGRADE OUR SEARCH STRINGS! We now have the verified truth.
 			cleanSearchArtist = mbResult.ArtistName
 			if mbResult.ReleaseName != "" {
-				cleanSearchTitle = mbResult.ReleaseName // Search by Album/Release, not Track
+				cleanSearchTitle = mbResult.ReleaseName
 			}
 			logger.Log.Info("Acoustic Match Found! Upgrading search strings",
 				zap.String("search_artist", cleanSearchArtist),
@@ -133,7 +132,7 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 			score := CalculateConfidence(hasAcousticMatch, payload.ArtistName, payload.TrackTitle, itunesData.TrackTitle, []string{itunesData.ArtistName})
 
 			if score >= 80 {
-				finalGenre = itunesData.Genre // iTunes doesn't do "Styles", just Genres
+				finalGenre = itunesData.Genre
 				finalYear = itunesData.Year
 				finalCoverURL = itunesData.CoverURL
 				logger.Log.Info("iTunes Match!", zap.Int("confidence_score", score))
@@ -145,26 +144,39 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 		}
 	}
 
-	// Override Year with MusicBrainz if it's available (MB is the most accurate for dates)
 	if mbData != nil && mbData.Year != "" {
 		finalYear = mbData.Year
 	}
 
 	// -------------------------------------------------------------------------
-	// THE MERGE: Safely apply the best data to the Database
+	// THE MERGE: Priority -> ID3 > Discogs/iTunes > ML Fallback
 	// -------------------------------------------------------------------------
-
 	updates := map[string]interface{}{}
-	if track.Genre == "" && finalGenre != "" {
-		updates["genre"] = finalGenre
+
+	if !hasValidGenre {
+		if finalGenre != "" {
+			updates["genre"] = finalGenre
+		} else if len(track.MLGenres) > 0 {
+			// Tier 4: Fallback to ML ONLY when Discogs and iTunes both fail
+			updates["genre"] = track.MLGenres[0]
+		}
 	}
-	if track.Style == "" && finalStyle != "" {
+
+	if !hasStyle && finalStyle != "" {
 		updates["style"] = finalStyle
 	}
+
+	if strings.TrimSpace(track.Mood) == "" && len(track.MLMoods) > 0 {
+		updates["mood"] = track.MLMoods[0]
+	}
+
 	if len(updates) > 0 {
 		w.db.DB.Model(&track).Updates(updates)
 	}
 
+	// -------------------------------------------------------------------------
+	// ALBUM METADATA UPDATE
+	// -------------------------------------------------------------------------
 	if track.AlbumID != nil {
 		var album models.Album
 		w.db.DB.First(&album, *track.AlbumID)
