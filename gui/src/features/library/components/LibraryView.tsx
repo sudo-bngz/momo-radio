@@ -4,6 +4,7 @@ import {
 } from '@chakra-ui/react';
 import { Plus, Music, ChevronDown } from 'lucide-react';
 import { useNavigate, useMatch, useLocation } from 'react-router-dom'; 
+import axios from 'axios'; // ⚡️ We use Axios, just like your working single upload
 
 import { TrackListView } from './TrackListView';
 import { PlaylistGridView } from './PlaylistGridView';
@@ -59,45 +60,87 @@ export const LibraryView: React.FC = () => {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    // Force UI to switch to Tracks tab immediately so the user can watch them appear
+    setActiveTab('tracks');
+    navigate('/library', { state: { activeTab: 'tracks' } });
 
     const toastId = toaster.create({
-      title: `Uploading ${file.name}...`,
+      title: `Preparing ${files.length} tracks...`,
+      description: "Requesting secure upload links.",
       type: "loading",
     });
 
     try {
-      const response = await api.uploadTrack(file);
+      // 1. Get presigned URLs for all files
+      const filePayload = files.map(f => ({ 
+        filename: f.name, 
+        content_type: f.type || 'application/octet-stream' 
+      }));
+      const presignRes = await api.bulkPresign(filePayload); 
 
-      // 1. Force the UI to switch to the Tracks tab immediately
-      setActiveTab('tracks');
-      navigate('/library', { state: { activeTab: 'tracks' } });
+      // 2. Native Concurrency Limiter (5 at a time)
+      const CONCURRENCY_LIMIT = 5;
+      let completedCount = 0;
 
-      // 2. Wait a tiny moment for TrackListView to mount, then broadcast the new track
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('track_uploaded', { 
-          detail: { track_id: response.track_id } 
-        }));
-      }, 150);
+      for (let i = 0; i < presignRes.tickets.length; i += CONCURRENCY_LIMIT) {
+        const batch = presignRes.tickets.slice(i, i + CONCURRENCY_LIMIT);
+        
+        const batchPromises = batch.map(async (ticket: any) => {
+          const file = files.find(f => f.name === ticket.filename);
+          if (!file) return null;
+          
+          await axios.put(ticket.url, file, {
+            headers: { 'Content-Type': file.type || 'application/octet-stream' }
+          });
+          
+          return { filename: ticket.filename, file_key: ticket.key };
+        });
 
+        // Wait for this specific batch of 5 to finish uploading to B2
+        const results = await Promise.all(batchPromises);
+        const validResults = results.filter(res => res !== null) as { filename: string, file_key: string }[];
+        
+        if (validResults.length > 0) {
+          // 3. Confirm JUST this batch with the Go backend
+          const confirmRes = await api.bulkConfirm(validResults);
+          
+          // 4. Dispatch the exact event TrackListView expects for each track
+          // This makes them instantly appear in the UI while the next batch uploads
+          confirmRes.ids.forEach((id: number) => {
+            window.dispatchEvent(new CustomEvent('track_uploaded', { 
+              detail: { track_id: id } 
+            }));
+          });
+
+          completedCount += validResults.length;
+          toaster.update(toastId, {
+            title: `Uploading tracks (${completedCount}/${files.length})`,
+            type: "loading",
+          });
+        }
+      }
+
+      // 5. Final success message when the entire queue finishes
       toaster.update(toastId, {
-        title: "Upload Complete",
-        description: "Background worker has started analysis.",
+        title: "Bulk Upload Complete",
+        description: `Successfully queued ${files.length} tracks for processing.`,
         type: "success",
         duration: 5000,
       });
 
     } catch (error) {
-      console.error("Upload failed:", error);
+      console.error("Bulk upload failed:", error);
       toaster.update(toastId, {
         title: "Upload Failed",
-        description: "There was an error transferring your file.",
+        description: "There was an error transferring your files.",
         type: "error",
         duration: 5000,
       });
     } finally {
-      event.target.value = '';
+      if (event.target) event.target.value = '';
     }
   };
 
@@ -105,7 +148,14 @@ export const LibraryView: React.FC = () => {
 
   return (
     <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
-      <input type="file" accept=".mp3,.flac,.wav" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
+      <input 
+        type="file" 
+        multiple 
+        accept=".mp3,.flac,.wav" 
+        ref={fileInputRef} 
+        onChange={handleFileUpload} 
+        style={{ display: 'none' }} 
+      />
       
       <VStack align="start" gap={1}>
         <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
@@ -131,9 +181,22 @@ export const LibraryView: React.FC = () => {
       {!isDetailViewActive && (
         <Flex justify="space-between" align="center" pb={2}>
           <HStack gap={4} overflowX="auto" css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
-            <Button bg="gray.900" color="white" borderRadius="full" w="48px" h="48px" p={0} _hover={{ bg: "black" }} onClick={handleAddClick} flexShrink={0}>
+            
+            <Button 
+              title="Upload at least 5 tracks to unlock autonomous broadcasting."
+              bg="gray.900" 
+              color="white" 
+              borderRadius="full" 
+              w="48px" 
+              h="48px" 
+              p={0} 
+              _hover={{ bg: "black" }} 
+              onClick={handleAddClick} 
+              flexShrink={0}
+            >
               <Icon as={Plus} boxSize={6} />
             </Button>
+
             <HStack gap={2}>
               {TABS.map((tab) => {
                 const isActive = activeTab === tab.id;

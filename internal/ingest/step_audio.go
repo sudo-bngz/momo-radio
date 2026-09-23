@@ -13,7 +13,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// ANALYSIS STEP
+// ANALYSIS STEP (Acoustic, Local Metadata, and Fingerprinting ONLY)
 // -----------------------------------------------------------------------------
 type AnalysisStep struct{}
 
@@ -24,19 +24,20 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		return fmt.Errorf("invalid audio file format")
 	}
 
-	// Safely initialize if empty, preserving what step_metadata.go already did!
-	if ctx.Meta == nil {
-		ctx.Meta = &metadata.Track{}
+	// 1. Local ID3/FLAC Parsing ONLY (No APIs)
+	meta, err := metadata.GetLocal(ctx.RawPath)
+	if err != nil {
+		meta = metadata.Track{}
 	}
 
 	// Fallback to filename parsing ONLY if the file has zero embedded tags
-	if len(ctx.Meta.Artists) == 0 || ctx.Meta.Title == "" {
+	if len(meta.Artists) == 0 || meta.Title == "" {
 		cleanA, cleanT := utils.SanitizeFilename(filepath.Base(ctx.Payload.FileKey))
-		if len(ctx.Meta.Artists) == 0 {
-			ctx.Meta.Artists = []string{cleanA}
+		if len(meta.Artists) == 0 {
+			meta.Artists = []string{cleanA}
 		}
-		if ctx.Meta.Title == "" {
-			ctx.Meta.Title = cleanT
+		if meta.Title == "" {
+			meta.Title = cleanT
 		}
 	}
 
@@ -46,30 +47,41 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 	<-ctx.Worker.analysisSem
 
 	if err == nil {
-		ctx.Meta.BPM = analysis.BPM
-		ctx.Meta.MusicalKey = analysis.MusicalKey
-		ctx.Meta.Scale = analysis.Scale
-		ctx.Meta.Danceability = analysis.Danceability
-		ctx.Meta.Loudness = analysis.Loudness
-		ctx.Meta.Duration = analysis.Duration
-		ctx.Meta.Energy = analysis.Energy
-		ctx.Meta.MLMoods = analysis.MLMoods
-		ctx.Meta.MLGenres = analysis.MLGenres
-		ctx.Meta.MLCharacteristics = analysis.MLCharacteristics
+		meta.BPM = analysis.BPM
+		meta.MusicalKey = analysis.MusicalKey
+		meta.Scale = analysis.Scale
+		meta.Danceability = analysis.Danceability
+		meta.Loudness = analysis.Loudness
+		meta.Duration = analysis.Duration
+		meta.Energy = analysis.Energy
+		meta.MLMoods = analysis.MLMoods
+		meta.MLGenres = analysis.MLGenres
+		meta.MLCharacteristics = analysis.MLCharacteristics
 	} else {
-		logger.Log.Warn("Deep analysis failed", zap.String("raw_path", ctx.RawPath), zap.Error(err))
+		logger.Log.Warn("Deep analysis failed",
+			zap.String("raw_path", ctx.RawPath),
+			zap.Error(err),
+		)
 	}
 
-	// 3. Acoustic Fingerprinting
+	// 3. Deterministic Acoustic Fingerprinting (Chromaprint / AcoustID)
 	ctx.Worker.updateStatus(ctx.Ctx, ctx.Payload.TrackIDStr(), "fingerprinting", 50)
 
 	mbid, err := audio.GetMusicBrainzID(ctx.RawPath, ctx.Worker.cfg.Services.AcoustIDKey)
 	if err != nil {
-		logger.Log.Warn("Acoustic fingerprinting skipped/failed", zap.Any("track_id", ctx.Payload.TrackID), zap.Error(err))
+		logger.Log.Warn("Acoustic fingerprinting skipped/failed",
+			zap.Any("track_id", ctx.Payload.TrackID),
+			zap.Error(err),
+		)
 	} else {
-		ctx.MusicBrainzID = mbid
+		logger.Log.Info("Successfully fingerprinted track",
+			zap.Any("track_id", ctx.Payload.TrackID),
+			zap.String("mbid", mbid),
+		)
+		ctx.MusicBrainzID = mbid // Save it securely to the context pipeline
 	}
 
+	ctx.Meta = &meta
 	return nil
 }
 

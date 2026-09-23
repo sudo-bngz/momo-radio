@@ -81,9 +81,23 @@ type LibraryTrack struct {
 	MLCharacteristics pq.StringArray `json:"ml_characteristics"`
 }
 
-type PresignRequest struct {
+// -----------------------------------------------------------------------------
+// BULK PRESIGN URL HANDLER
+// -----------------------------------------------------------------------------
+
+type FileTicketReq struct {
 	Filename    string `json:"filename" binding:"required"`
 	ContentType string `json:"content_type" binding:"required"`
+}
+
+type BulkPresignRequest struct {
+	Files []FileTicketReq `json:"files" binding:"required,min=1,max=100"` // Max 100 files per batch
+}
+
+type FileTicketRes struct {
+	Filename string `json:"filename"`
+	URL      string `json:"url"`
+	Key      string `json:"key"`
 }
 
 func (h *TrackHandler) HandlePresign(c *gin.Context) {
@@ -93,32 +107,50 @@ func (h *TrackHandler) HandlePresign(c *gin.Context) {
 		return
 	}
 
-	var req PresignRequest
+	var req BulkPresignRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. Expected an array of files."})
 		return
 	}
 
-	// Generate a unique, collision-proof storage key
-	safeFilename := strings.ReplaceAll(filepath.Base(req.Filename), " ", "_")
-	fileKey := fmt.Sprintf("incoming/%s/%d_%s", orgID.String(), time.Now().Unix(), safeFilename)
+	var tickets []FileTicketRes
 
-	// Generate the URL directly to Backblaze (Valid for 15 minutes)
-	url, err := h.storage.GeneratePresignedUrl(c.Request.Context(), fileKey, req.ContentType, 15*time.Minute)
-	if err != nil {
-		slog.Error("Failed to generate presigned URL", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate upload URL"})
-		return
+	for _, fileReq := range req.Files {
+		// Generate a unique, collision-proof storage key
+		safeFilename := strings.ReplaceAll(filepath.Base(fileReq.Filename), " ", "_")
+		fileKey := fmt.Sprintf("incoming/%s/%d_%s", orgID.String(), time.Now().Unix(), safeFilename)
+
+		// Generate the URL directly to Backblaze (Valid for 1 hour for bulk uploads)
+		url, err := h.storage.GeneratePresignedUrl(c.Request.Context(), fileKey, fileReq.ContentType, time.Hour)
+		if err != nil {
+			slog.Error("Failed to generate presigned URL", "filename", fileReq.Filename, "error", err)
+			continue // Skip this file but continue processing the rest
+		}
+
+		tickets = append(tickets, FileTicketRes{
+			Filename: fileReq.Filename,
+			URL:      url,
+			Key:      fileKey,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"url": url,
-		"key": fileKey,
+		"message": fmt.Sprintf("Generated %d presigned URLs", len(tickets)),
+		"tickets": tickets,
 	})
 }
 
-type UploadConfirmPayload struct {
-	FileKey string `json:"file_key" binding:"required"`
+// -----------------------------------------------------------------------------
+// BULK UPLOAD CONFIRMATION & ASYNQ ENQUEUE
+// -----------------------------------------------------------------------------
+
+type FileConfirmReq struct {
+	FileKey  string `json:"file_key" binding:"required"`
+	Filename string `json:"filename" binding:"required"` // Added filename so UI shows the real name during processing
+}
+
+type BulkUploadConfirmPayload struct {
+	Files []FileConfirmReq `json:"files" binding:"required,min=1"`
 }
 
 func (h *TrackHandler) UploadTrack(c *gin.Context) {
@@ -128,63 +160,52 @@ func (h *TrackHandler) UploadTrack(c *gin.Context) {
 		return
 	}
 
-	var req UploadConfirmPayload
+	var req BulkUploadConfirmPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload. Expected an array of files."})
 		return
 	}
 
-	// 1. Create a "Skeleton" Track in the database
-	newTrack := models.Track{
-		OrganizationID:     orgID,
-		Title:              "Processing Upload...",
-		Key:                req.FileKey,
-		MasterKey:          req.FileKey,
-		ProcessingStatus:   "pending",
-		ProcessingProgress: 0,
-	}
+	var queuedTracks []uint
 
-	if err := h.db.Create(&newTrack).Error; err != nil {
-		slog.Error("Failed to create track DB record", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database insert failed"})
-		return
-	}
+	for _, fileConfirm := range req.Files {
+		// 1. Create a "Skeleton" Track in the database
+		newTrack := models.Track{
+			OrganizationID:     orgID,
+			Title:              fileConfirm.Filename, // Use real filename instead of "Processing Upload..."
+			Key:                fileConfirm.FileKey,
+			MasterKey:          fileConfirm.FileKey,
+			ProcessingStatus:   "pending",
+			ProcessingProgress: 0,
+		}
 
-	// 2. Enqueue Asynq Task for the background worker
-	redisAddr := fmt.Sprintf("%s:%s", h.config.Redis.Host, h.config.Redis.Port)
-	var tlsConf *tls.Config
-	if h.config.Redis.TLS {
-		tlsConf = &tls.Config{MinVersion: tls.VersionTLS12}
-	}
+		if err := h.db.Create(&newTrack).Error; err != nil {
+			slog.Error("Failed to create track DB record", "file_key", fileConfirm.FileKey, "error", err)
+			continue
+		}
 
-	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
-		Addr:      redisAddr,
-		Password:  h.config.Redis.Password,
-		DB:        h.config.Redis.DB,
-		TLSConfig: tlsConf,
-	})
-	defer asynqClient.Close()
+		// 2. Enqueue Asynq Task using the already-injected h.asynqClient!
+		payloadData := map[string]any{
+			"track_id": newTrack.ID,
+			"file_key": fileConfirm.FileKey,
+		}
+		payloadBytes, _ := json.Marshal(payloadData)
+		task := asynq.NewTask("track:process", payloadBytes)
 
-	payloadData := map[string]any{
-		"track_id": newTrack.ID,
-		"file_key": req.FileKey,
-	}
-	payloadBytes, _ := json.Marshal(payloadData)
-	task := asynq.NewTask("track:process", payloadBytes)
+		if _, err := h.asynqClient.Enqueue(task); err != nil {
+			slog.Error("Failed to queue processing job", "track_id", newTrack.ID, "error", err)
+			h.db.Model(&newTrack).Update("processing_status", "failed")
+			continue
+		}
 
-	_, err := asynqClient.Enqueue(task)
-	if err != nil {
-		slog.Error("Failed to queue processing job", "error", err)
-		h.db.Model(&newTrack).Update("processing_status", "failed")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue processing job"})
-		return
+		queuedTracks = append(queuedTracks, newTrack.ID)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"status":   "queued",
-		"message":  "File safely in storage, processing started.",
-		"track_id": newTrack.ID,
-		"key":      req.FileKey,
+		"status":  "queued",
+		"message": fmt.Sprintf("Successfully queued %d tracks for processing.", len(queuedTracks)),
+		"queued":  len(queuedTracks),
+		"ids":     queuedTracks,
 	})
 }
 

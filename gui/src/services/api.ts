@@ -154,20 +154,14 @@ apiClient.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
-/**
- * STRICT RESPONSE INTERCEPTOR
- * Intercepts Network errors (5xx/Timeout) AND 401 Unauthorized errors.
- */
 apiClient.interceptors.response.use(
   (response) => {
-    // ⚡️ NEW: If a request succeeds, ensure the "API Down" lock is lifted
     if (useNetworkStore.getState().isApiDown) {
       useNetworkStore.getState().setApiDown(false);
     }
     return response;
   },
   async (error) => {
-    // Catch Network Errors (Connection refused/timeout) OR Server crashes (502, 503, 504)
     if (
       error.code === 'ERR_NETWORK' ||
       error.message === 'Network Error' ||
@@ -176,14 +170,9 @@ apiClient.interceptors.response.use(
       useNetworkStore.getState().setApiDown(true);
     }
 
-    // Existing Logic: Catch 401 Unauthorized
     if (error.response && error.response.status === 401) {
       console.warn('Session expired or unauthorized. Triggering manual re-login.');
-      
-      // 1. Trigger the un-closable blurred modal
       useAuthStore.getState().setSessionExpired(true);
-      
-      // 2. Kill the Supabase session locally so it cannot auto-reconnect
       await supabase.auth.signOut();
     }
     return Promise.reject(error);
@@ -214,14 +203,9 @@ export const api = {
   },
 
   uploadTrack: async (file: File, onProgress?: (percent: number) => void): Promise<any> => {
-    // A. Ask backend for permission and a direct link
     const { url, key } = await api.getPresignedUrl(file.name, file.type);
-
-    // B. Upload DIRECTLY to Backblaze B2
     await axios.put(url, file, {
-      headers: {
-        'Content-Type': file.type,
-      },
+      headers: { 'Content-Type': file.type },
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -229,12 +213,18 @@ export const api = {
         }
       },
     });
+    const response = await apiClient.post('/upload/confirm-direct', { file_key: key });
+    return response.data;
+  },
 
-    // C. Tell your backend the file is ready in B2
-    const response = await apiClient.post('/upload/confirm-direct', {
-      file_key: key, 
-    });
-    
+  bulkPresign: async (files: { filename: string, content_type: string }[]): Promise<{ message: string, tickets: { filename: string, url: string, key: string }[] }> => {
+    const response = await apiClient.post('/upload/presign', { files });
+    return response.data;
+  },
+
+  bulkConfirm: async (files: { filename: string, file_key: string }[]): Promise<{ status: string, message: string, queued: number, ids: number[] }> => {
+    // Reverted to /upload/confirm-direct
+    const response = await apiClient.post('/upload/confirm-direct', { files });
     return response.data;
   },
 
@@ -245,7 +235,6 @@ export const api = {
 
   searchLibrary: async (query: string, params?: { scale?: string; genre?: string; limit?: number }): Promise<SearchHit[]> => {
     if (!query.trim()) return [];
-    
     const searchParams = new URLSearchParams({ q: query });
     if (params?.scale) searchParams.set('scale', params.scale);
     if (params?.genre) searchParams.set('genre', params.genre);
@@ -257,55 +246,23 @@ export const api = {
 
   searchTracksByFilter: async (filterExpression: string, limit: number = 100): Promise<SearchResponse> => {
     const response = await apiClient.get<SearchResponse>('/tracks/search', {
-      params: {
-        q: "",
-        filter: filterExpression,
-        limit: limit,
-      },
+      params: { q: "", filter: filterExpression, limit: limit },
     });
-    
     return response.data;
   },
 
   searchTracksByTag: async (tag: string, limit: number = 100): Promise<SearchResponse> => {
-    // Escape any double quotes in the tag to prevent Meilisearch syntax errors
     const safeTag = tag.replace(/"/g, '\\"');
-
-    // List all the filterable attributes we configured in the Go backend
-    const attributes = [
-      'genre',
-      'style',
-      'mood',
-      'scale',
-      'musical_key',
-      'artists_names',
-      'album_title',
-      'year',
-      'publisher'
-    ];
-
-    // This dynamically builds: `genre = "tag" OR style = "tag" OR mood = "tag"...`
-    const filterExpression = attributes
-      .map(attr => `${attr} = "${safeTag}"`)
-      .join(' OR ');
+    const attributes = ['genre', 'style', 'mood', 'scale', 'musical_key', 'artists_names', 'album_title', 'year', 'publisher'];
+    const filterExpression = attributes.map(attr => `${attr} = "${safeTag}"`).join(' OR ');
 
     const response = await apiClient.get<SearchResponse>('/tracks/search', {
-      params: {
-        q: "", // Leave full-text search empty so we rely strictly on the filters
-        filter: filterExpression,
-        limit: limit,
-      },
+      params: { q: "", filter: filterExpression, limit: limit },
     });
-    
     return response.data;
   },
 
-  getTracks: async (params?: { 
-    limit?: number; 
-    offset?: number; 
-    search?: string; 
-    sort?: string 
-  }): Promise<{ data: Track[], meta: { total: number, limit: number, offset: number } }> => {
+  getTracks: async (params?: { limit?: number; offset?: number; search?: string; sort?: string }): Promise<{ data: Track[], meta: { total: number, limit: number, offset: number } }> => {
     const response = await apiClient.get('/tracks', { params });
     return response.data;
   },
@@ -318,9 +275,11 @@ export const api = {
   updateTrack: async (id: number | string, data: Partial<Track>): Promise<void> => {
     await apiClient.put(`/tracks/${id}`, data);
   },
+  
   deleteTrack: async (id: number | string): Promise<void> => {
     await apiClient.delete(`/tracks/${id}`);
   },
+  
   analysis: async (id: number | string): Promise<void> => {
     await apiClient.post(`/tracks/${id}/analysis`);
   },
@@ -336,9 +295,7 @@ export const api = {
   },
 
   getAlbumTracks: async (albumId: number) => {
-    const response = await apiClient.get('/tracks', {
-      params: { album_id: albumId }
-    });
+    const response = await apiClient.get('/tracks', { params: { album_id: albumId } });
     return response.data;
   },
 
@@ -363,10 +320,7 @@ export const api = {
     return response.data;
   },
 
-  updatePlaylist: async (
-    playlistId: number, 
-    data: { name?: string; description?: string; color?: string }
-  ): Promise<void> => {
+  updatePlaylist: async (playlistId: number, data: { name?: string; description?: string; color?: string }): Promise<void> => {
     await apiClient.put(`/playlists/${playlistId}`, data);
   },
   
@@ -395,17 +349,12 @@ export const api = {
   
   // 4. SCHEDULER
   getSchedule: async (start: string, end: string): Promise<ScheduleSlot[]> => {
-    const response = await apiClient.get<ScheduleSlot[]>('/schedules', {
-      params: { start, end }
-    });
+    const response = await apiClient.get<ScheduleSlot[]>('/schedules', { params: { start, end } });
     return response.data;
   },
 
   createScheduleSlot: async (playlistId: number, startTime: string): Promise<ScheduleSlot> => {
-    const response = await apiClient.post<ScheduleSlot>('/schedules', {
-      playlist_id: playlistId,
-      start_time: startTime
-    });
+    const response = await apiClient.post<ScheduleSlot>('/schedules', { playlist_id: playlistId, start_time: startTime });
     return response.data;
   },
 
@@ -419,9 +368,7 @@ export const api = {
     return response.data;
   },
 
-  // NEW: SSE Stream URL Generator for Now Playing
   getNowPlayingStreamUrl: (orgId: string): string => {
-    // API_BASE_URL is dynamically resolved above (e.g. "http://localhost:8080/api/v1")
     return `${API_BASE_URL.replace(/\/$/, '')}/public/${orgId}/now-playing`;
   },
 
@@ -484,11 +431,8 @@ export const api = {
     formData.append('file', file);
     formData.append('type', type);
 
-    // Use apiClient so it automatically attaches auth tokens and organization IDs
     const response = await apiClient.post<{ url: string; key: string }>('/public-page/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
+      headers: { 'Content-Type': 'multipart/form-data' }
     });
 
     return response.data;
