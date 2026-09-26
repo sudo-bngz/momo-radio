@@ -21,6 +21,7 @@ interface TrackListViewProps {
 }
 
 export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
+  const globalSearch = useSearchStore((state: any) => state.globalSearch || state.search);
   const setGlobalSearch = useSearchStore((state: any) => state.setGlobalSearch || state.setSearch); 
 
   const { 
@@ -32,12 +33,14 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
   const [shareTrack, setShareTrack] = useState<any | null>(null);
-  
-  // ⚡️ ADDED: State to manage the track being deleted
   const [trackToDelete, setTrackToDelete] = useState<any | null>(null);
 
   useAdvancedSearch(setTracks, setSearchQuery);
   useTrackProcessing(tracks, setTracks);
+
+  useEffect(() => {
+    setSearchQuery(globalSearch || '');
+  }, [globalSearch, setSearchQuery]);
 
   useEffect(() => { 
     setSortBy(sortBy as any); 
