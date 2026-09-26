@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Box, VStack, Spinner, Table, Dialog, Button, Text } from '@chakra-ui/react'; // ⚡️ ADDED: Dialog, Button, Text
+import { Box, VStack, Spinner, Table, Dialog, Button, Text } from '@chakra-ui/react';
 import { useLibrary } from '../hook/useLibrary';
 import { usePlayer } from '../../../context/PlayerContext';
 import { useSearchStore } from '../../../store/useSearchStore';
@@ -56,14 +56,12 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   const handleRetry = async (e: React.MouseEvent, rawId: number | string) => {
     e.stopPropagation();
 
-    // 1. Clean the ID just in case it came from Meilisearch as "track-123"
     const targetId = typeof rawId === 'string' ? Number(rawId.replace('track-', '')) : rawId;
 
     try {
       await api.analysis(targetId);
       toaster.create({ title: "Analysis Restarted", type: "info" });
       
-      // 2. Safely update the local state using string comparison
       setTracks(tracks.map(t => 
         String(t.id ?? t.id ?? t.key) === String(rawId) 
           ? { ...t, processing_status: 'pending', status: 'pending' } 
@@ -86,7 +84,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
     const targetId = String(rawId);
 
     if (!rawId || targetId === 'undefined' || targetId === 'null') {
-      // Silently remove it from the local UI state without hitting the API
       setTracks(tracks.filter(t => t !== trackToDelete));
       setTrackToDelete(null);
       return;
@@ -94,7 +91,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
 
     try {
       await api.deleteTrack(targetId);
-      // Cleanly filter it out using the same safe ID resolution
       setTracks(tracks.filter(t => String(t.id ?? t.id ?? t.key) !== targetId));
       toaster.create({ title: "Track deleted", type: "success" });
     } catch (error) {
@@ -122,16 +118,19 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   return (
     <VStack align="stretch" h="100%" gap={0} position="relative">
       <Box flex="1" overflowY="auto" onScroll={handleScroll}
+        // ⚡️ Custom scrollbar now inherits the global border token
         css={{
           '&::-webkit-scrollbar': { width: '8px' },
-          '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-gray-200)', borderRadius: '4px' },
+          '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-border)', borderRadius: '4px' },
         }}
       >
+        {/* ⚡️ All raw CSS fully semanticized for dark mode */}
         <Table.Root css={{
-          "& th": { borderBottom: "1px solid var(--chakra-colors-gray-200)", py: 4, fontWeight: "500", color: "var(--chakra-colors-gray-600)" },
-          "& td": { py: 3, borderBottom: "1px solid var(--chakra-colors-gray-50)", color: "var(--chakra-colors-gray-800)", transition: "background 0.2s" }
+          "& th": { borderBottom: "1px solid var(--chakra-colors-border)", py: 4, fontWeight: "500", color: "var(--chakra-colors-fg-muted)" },
+          "& td": { py: 3, borderBottom: "1px solid var(--chakra-colors-border)", color: "var(--chakra-colors-fg)", transition: "background 0.2s" }
         }}>
-          <Table.Header position="sticky" top={0} bg="white" zIndex={1}>
+          {/* ⚡️ bg="bg" so the sticky header adapts instead of staying white */}
+          <Table.Header position="sticky" top={0} bg="bg" zIndex={1}>
             <Table.Row>
               <Table.ColumnHeader w="50px"></Table.ColumnHeader>
               <Table.ColumnHeader w="64px">Artwork</Table.ColumnHeader>
@@ -161,7 +160,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
                   setSelectedTrack={setSelectedTrack}
                   setShareTrack={setShareTrack}
                   handleRetry={handleRetry}
-                  handleDelete={handleDeleteClick} // ⚡️ Passed the new click handler
+                  handleDelete={handleDeleteClick} 
                   handleAttributeClick={handleAttributeClick}
                 />
               ))
@@ -171,7 +170,7 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
 
         {isFetchingMore && (
           <Box py={6} display="flex" justifyContent="center">
-            <Spinner size="md" color="blue.500" />
+            <Spinner size="md" color="blue.500" _dark={{ color: "blue.400" }} />
           </Box>
         )}
       </Box>
@@ -179,21 +178,22 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       <Dialog.Root open={!!trackToDelete} onOpenChange={(e) => { if (!e.open) setTrackToDelete(null); }}>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content>
+          {/* ⚡️ Ensure Dialog Content maps to the panel background explicitly */}
+          <Dialog.Content bg="bg.panel" color="fg">
             <Dialog.Header>
-              <Dialog.Title>Delete Track</Dialog.Title>
+              <Dialog.Title color="fg">Delete Track</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body>
-              <Text color="gray.600">
-                Are you sure you want to delete <Text as="span" fontWeight="bold" color="gray.900">"{trackToDelete?.title}"</Text>? 
+              <Text color="fg.muted">
+                Are you sure you want to delete <Text as="span" fontWeight="bold" color="fg">"{trackToDelete?.title}"</Text>? 
                 This will permanently remove the audio files and all associated data from the infrastructure. This action cannot be undone.
               </Text>
             </Dialog.Body>
             <Dialog.Footer>
-              <Button variant="ghost" onClick={() => setTrackToDelete(null)}>Cancel</Button>
+              <Button variant="ghost" onClick={() => setTrackToDelete(null)} color="fg">Cancel</Button>
               <Button colorPalette="red" onClick={confirmDelete}>Yes, Delete Track</Button>
             </Dialog.Footer>
-            <Dialog.CloseTrigger />
+            <Dialog.CloseTrigger color="fg.muted" _hover={{ bg: "whiteAlpha.100" }} />
           </Dialog.Content>
         </Dialog.Positioner>
       </Dialog.Root>

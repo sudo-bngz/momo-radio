@@ -8,7 +8,7 @@ import { api } from '../../../services/api';
 import type { MountPoint } from '../../../services/api'; 
 import { StreamSettingsPanel } from './StreamSettingsView';
 import { useBroadcastStore } from '../../../store/useBroadcast';
-import { usePlayer } from '../../../context/PlayerContext'; // Adjust path if needed
+import { usePlayer } from '../../../context/PlayerContext';
 
 export const MountPoints: React.FC = () => {
   const [mounts, setMounts] = useState<MountPoint[]>([]);
@@ -94,22 +94,22 @@ export const MountPoints: React.FC = () => {
 
   if (loading) {
     return (
-      <Center h="300px" bg="white" borderRadius="2xl" border="1px solid" borderColor="gray.100" shadow="sm">
-        <Spinner size="xl" color="gray.400" />
+      <Center h="300px" bg="bg.panel" borderRadius="2xl" border="1px solid" borderColor="border" shadow="sm">
+        <Spinner size="xl" color="fg.muted" />
       </Center>
     );
   }
 
   if (error) {
     return (
-      <Center h="300px" bg="white" borderRadius="2xl" border="1px solid" borderColor="red.100" shadow="sm">
-        <Text color="red.500" fontWeight="500">{error}</Text>
+      <Center h="300px" bg="bg.panel" borderRadius="2xl" border="1px solid" borderColor="red.100" _dark={{ borderColor: "red.900" }} shadow="sm">
+        <Text color="red.500" _dark={{ color: "red.400" }} fontWeight="500">{error}</Text>
       </Center>
     );
   }
 
   return (
-    <Box w="100%" bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="gray.100" shadow="sm">
+    <Box w="100%" bg="bg.panel" p={6} borderRadius="2xl" border="1px solid" borderColor="border" shadow="sm">
       <style>
         {`
           @keyframes pulseRed {
@@ -131,22 +131,23 @@ export const MountPoints: React.FC = () => {
           display="flex" 
           alignItems="center" 
           justifyContent="center" 
-          bg="blackAlpha.400" 
+          bg="blackAlpha.600" 
           backdropFilter="blur(2px)"
         >
-          <Box bg="white" p={6} borderRadius="2xl" shadow="2xl" maxW="400px" w="90%" border="1px solid" borderColor="gray.100">
-            <Heading size="md" color="gray.900" mb={3}>Stop Broadcast?</Heading>
-            <Text color="gray.600" fontSize="sm" mb={6}>
+          <Box bg="bg.panel" p={6} borderRadius="2xl" shadow="2xl" maxW="400px" w="90%" border="1px solid" borderColor="border">
+            <Heading size="md" color="fg" mb={3}>Stop Broadcast?</Heading>
+            <Text color="fg.muted" fontSize="sm" mb={6}>
               This will immediately disconnect your live transmission. Listeners will hear silence until the fallback sequence resumes.
             </Text>
             <HStack justify="flex-end" gap={3}>
-              <Button variant="ghost" onClick={() => setShowStopConfirm(false)} size="sm">
+              <Button variant="ghost" color="fg" _hover={{ bg: "gray.100", _dark: { bg: "whiteAlpha.100" } }} onClick={() => setShowStopConfirm(false)} size="sm">
                 Cancel
               </Button>
               <Button 
                 bg="red.500" 
                 color="white" 
-                _hover={{ bg: "red.600" }} 
+                _dark={{ bg: "red.600" }}
+                _hover={{ bg: "red.600", _dark: { bg: "red.500" } }} 
                 size="sm" 
                 onClick={() => {
                   setShowStopConfirm(false);
@@ -162,27 +163,27 @@ export const MountPoints: React.FC = () => {
 
       <Flex justify="space-between" align="center" mb={6}>
         <Box>
-          <Heading size="sm" fontWeight="bold" color="gray.800" mb={1}>Audio Streams</Heading>
-          <Text fontSize="xs" color="gray.500">Manage your transmission endpoints and control the live broadcast engine.</Text>
+          <Heading size="sm" fontWeight="bold" color="fg" mb={1}>Audio Streams</Heading>
+          <Text fontSize="xs" color="fg.muted">Manage your transmission endpoints and control the live broadcast engine.</Text>
         </Box>
       </Flex>
 
-      <Box overflowX="auto" border="1px solid" borderColor="gray.50" borderRadius="xl">
+      <Box overflowX="auto" border="1px solid" borderColor="border" borderRadius="xl">
         <Table.Root variant="line" size="md">
-          <Table.Header bg="gray.50">
+          <Table.Header bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}>
             <Table.Row>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Stream Name</Table.ColumnHeader>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Quality</Table.ColumnHeader>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Status</Table.ColumnHeader>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs">Direct URL</Table.ColumnHeader>
-              <Table.ColumnHeader color="gray.600" fontWeight="bold" fontSize="xs" textAlign="right"></Table.ColumnHeader>
+              <Table.ColumnHeader color="fg.muted" fontWeight="bold" fontSize="xs">Stream Name</Table.ColumnHeader>
+              <Table.ColumnHeader color="fg.muted" fontWeight="bold" fontSize="xs">Quality</Table.ColumnHeader>
+              <Table.ColumnHeader color="fg.muted" fontWeight="bold" fontSize="xs">Status</Table.ColumnHeader>
+              <Table.ColumnHeader color="fg.muted" fontWeight="bold" fontSize="xs">Direct URL</Table.ColumnHeader>
+              <Table.ColumnHeader color="fg.muted" fontWeight="bold" fontSize="xs" textAlign="right"></Table.ColumnHeader>
             </Table.Row>
           </Table.Header>
 
           <Table.Body>
             {mounts.length === 0 ? (
               <Table.Row>
-                <Table.Cell colSpan={5} textAlign="center" py={8} color="gray.400">
+                <Table.Cell colSpan={5} textAlign="center" py={8} color="fg.muted">
                   No streams configured.
                 </Table.Cell>
               </Table.Row>
@@ -196,8 +197,12 @@ export const MountPoints: React.FC = () => {
                 return (
                   <Table.Row 
                     key={mount.id} 
-                    bg={isRowLive ? "red.50/40" : "transparent"} 
-                    _hover={{ bg: isRowLive ? "red.50/80" : "gray.50/50" }}
+                    bg={isRowLive ? "red.50/80" : "transparent"} 
+                    _dark={{ bg: isRowLive ? "red.900/30" : "transparent" }}
+                    _hover={{ 
+                      bg: isRowLive ? "red.50" : "gray.50",
+                      _dark: { bg: isRowLive ? "red.900/50" : "whiteAlpha.50" }
+                    }}
                     transition="background 0.2s"
                   >
                     <Table.Cell maxW="280px">
@@ -205,9 +210,17 @@ export const MountPoints: React.FC = () => {
                         <Button 
                           size="sm" 
                           variant="ghost" 
-                          color={isThisStreamActive ? "red.600" : "gray.400"}
+                          color={isThisStreamActive ? "red.600" : "fg.muted"}
                           bg={isThisStreamActive ? "red.50" : "transparent"}
-                          _hover={isRowLive ? { bg: isThisStreamActive ? "red.100" : "gray.100", color: "red.500" } : {}}
+                          _dark={{ 
+                            color: isThisStreamActive ? "red.400" : "fg.muted",
+                            bg: isThisStreamActive ? "red.900/40" : "transparent" 
+                          }}
+                          _hover={isRowLive ? { 
+                            bg: isThisStreamActive ? "red.100" : "gray.100", 
+                            color: "red.500",
+                            _dark: { bg: isThisStreamActive ? "red.800/60" : "whiteAlpha.200", color: "red.300" }
+                          } : {}}
                           onClick={() => handlePlayStop(mount)}
                           borderRadius="full"
                           w="32px" 
@@ -225,9 +238,9 @@ export const MountPoints: React.FC = () => {
                         </Button>
 
                         <HStack gap={2}>
-                          <Text fontSize="sm" fontFamily="mono" fontWeight="600" color="gray.800">{mount.slug}</Text>
+                          <Text fontSize="sm" fontFamily="mono" fontWeight="600" color="fg">{mount.slug}</Text>
                           {mount.is_default && (
-                            <Badge color="blue.600" bg="blue.50" fontSize="10px" px={2} py={0.5} borderRadius="md">
+                            <Badge color="blue.600" bg="blue.50" _dark={{ bg: "blue.900", color: "blue.300" }} fontSize="10px" px={2} py={0.5} borderRadius="md">
                               Default
                             </Badge>
                           )}
@@ -236,7 +249,7 @@ export const MountPoints: React.FC = () => {
                     </Table.Cell>
 
                     <Table.Cell>
-                      <Badge color="gray.700" bg="gray.100" fontSize="11px" px={2} py={1} borderRadius="md">
+                      <Badge color="fg" bg="gray.100" _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }} fontSize="11px" px={2} py={1} borderRadius="md">
                         {mount.bitrate} kbps
                       </Badge>
                     </Table.Cell>
@@ -249,20 +262,21 @@ export const MountPoints: React.FC = () => {
                             h="8px" 
                             borderRadius="full" 
                             bg={isLive ? "red.500" : "gray.300"} 
+                            _dark={{ bg: isLive ? "red.400" : "whiteAlpha.400" }}
                             boxShadow={isLive ? "0 0 8px rgba(229, 62, 62, 0.6)" : "none"}
                             animation={isLive ? "pulseRed 2s ease-in-out infinite" : "none"}
                           />
-                          <Text fontSize="xs" fontWeight="700" letterSpacing="wide" color={isLive ? "red.500" : "gray.500"}>
+                          <Text fontSize="xs" fontWeight="700" letterSpacing="wide" color={isLive ? "red.500" : "fg.muted"} _dark={{ color: isLive ? "red.400" : "fg.muted" }}>
                             {isLive ? "LIVE" : "STANDBY"}
                           </Text>
                         </HStack>
                       ) : (
-                        <Text fontSize="xs" color="gray.400">-</Text>
+                        <Text fontSize="xs" color="fg.muted">-</Text>
                       )}
                     </Table.Cell>
 
                     <Table.Cell maxW="320px">
-                      <Text fontSize="xs" fontFamily="mono" color="gray.600" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">
+                      <Text fontSize="xs" fontFamily="mono" color="fg.muted" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">
                         {mount.hls_url}
                       </Text>
                     </Table.Cell>
@@ -273,11 +287,17 @@ export const MountPoints: React.FC = () => {
                           <>
                             <Button
                               size="sm"
-                              bg={isLive ? "red.50" : "gray.900"}
-                              color={isLive ? "red.600" : "white"}
+                              bg={isLive ? "red.50" : "fg"}
+                              color={isLive ? "red.600" : "bg"}
                               border={isLive ? "1px solid" : "none"}
                               borderColor="red.200"
-                              _hover={isLive ? { bg: "red.100" } : { bg: "black" }}
+    
+                              _dark={{ 
+                                bg: isLive ? "red.900/40" : "fg", 
+                                color: isLive ? "red.300" : "bg",
+                                borderColor: "red.800"
+                              }}
+                              _hover={isLive ? { bg: "red.100", _dark: { bg: "red.800/60" } } : { opacity: 0.8 }}
                               onClick={() => isLive ? setShowStopConfirm(true) : handleBroadcastToggle()}
                               disabled={isToggling}
                               minW="70px"
@@ -285,24 +305,24 @@ export const MountPoints: React.FC = () => {
                               {isToggling ? <Spinner size="xs" mr={2} /> : null}
                               {isLive ? "Stop" : "Start"}
                             </Button>
-                            <Box w="1px" h="16px" bg="gray.200" mx={1} />
+                            <Box w="1px" h="16px" bg="border" mx={1} />
                           </>
                         )}
 
                         <Button 
                           size="sm" 
                           variant="ghost" 
-                          color="gray.500" 
-                          _hover={{ bg: "gray.100", color: "gray.800" }} 
+                          color="fg.muted" 
+                          _hover={{ bg: "gray.100", color: "fg", _dark: { bg: "whiteAlpha.200" } }} 
                           onClick={() => copyToClipboard(mount.hls_url, mount.id)}
                         >
-                          <Icon as={copiedId === mount.id ? Check : Copy} boxSize={4} color={copiedId === mount.id ? "green.500" : "inherit"} />
+                          <Icon as={copiedId === mount.id ? Check : Copy} boxSize={4} color={copiedId === mount.id ? "green.500" : "inherit"} _dark={{ color: copiedId === mount.id ? "green.400" : "inherit" }} />
                         </Button>
                         <Button 
                           size="sm" 
                           variant="ghost" 
-                          color="gray.500" 
-                          _hover={{ bg: "gray.100", color: "gray.800" }} 
+                          color="fg.muted" 
+                          _hover={{ bg: "gray.100", color: "fg", _dark: { bg: "whiteAlpha.200" } }} 
                           onClick={() => setEditingMount(mount)} 
                         >
                           <Icon as={Settings} boxSize={4} />
@@ -310,8 +330,9 @@ export const MountPoints: React.FC = () => {
                         <Button 
                           size="sm" 
                           variant="ghost" 
-                          color="red.400" 
-                          _hover={{ bg: "red.50", color: "red.600" }} 
+                          color="red.500" 
+                          _dark={{ color: "red.400" }}
+                          _hover={{ bg: "red.50", color: "red.600", _dark: { bg: "red.900/40", color: "red.300" } }} 
                           disabled={mount.is_default}
                           onClick={() => setEditingMount(mount)} 
                         >

@@ -1,57 +1,66 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Box, VStack, HStack, Text, Heading, Icon, Button, IconButton, Flex 
 } from '@chakra-ui/react';
 import { Activity, Settings, Plus, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-
-// ⚡️ V2.0.0 UPDATE: Using the official legacy entry point for WidthProvider and data-grid support
 import { WidthProvider, Responsive } from 'react-grid-layout/legacy';
 
-const ResponsiveGridLayout = WidthProvider(Responsive);
-
-// Grid styles required for dragging and resizing
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
 import { useDashboardLayoutStore } from '../../../store/useDashboardLayoutStore';
 import { WidgetRegistry } from './WidgetRegistry';
+import { SectionColors } from '../../../theme';
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
 
 export const DashboardView: React.FC = () => {
   const navigate = useNavigate();
-  const { 
-    widgets, isEditMode, setEditMode, updateLayouts, removeWidget, addWidget 
-  } = useDashboardLayoutStore();
+  const { widgets, isEditMode, setEditMode, updateLayouts, removeWidget, addWidget } = useDashboardLayoutStore();
 
   const handleLayoutChange = (layout: any) => {
     updateLayouts(layout);
   };
 
   return (
-    <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light" animation="fade-in 0.3s ease-out">
+    <VStack 
+      align="stretch" h="100%" gap={8} animation="fade-in 0.3s ease-out"
+      bg="transparent" // ⚡️ Let it inherit the dark background from the App layout
+      color="fg" // ⚡️ Semantic foreground color
+    >
       
-      {/* 1. HEADER (Pixel-perfect match to LibraryView) */}
+      {/* HEADER */}
       <VStack align="start" gap={1}>
-        <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
-          <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
+        <HStack gap={2} fontSize="sm" color="fg.muted" mb={1}>
+          <Box 
+            w="24px" h="24px" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center"
+            bg={`${SectionColors.dashboard}.500`}
+            _dark={{ bg: `${SectionColors.dashboard}.400` }}
+          >
             <Icon as={Activity} boxSize={3} strokeWidth={3} />
           </Box>
-          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "gray.900" }} onClick={() => navigate('/')}>
+          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => navigate('/')}>
             Dashboard
           </Text>
-          <Text color="gray.300">/</Text>
-          <Text color="gray.900" fontWeight="500">Overview</Text>
+          <Text color="border">/</Text>
+          <Text color="fg" fontWeight="500">Overview</Text>
         </HStack>
-        <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
+        
+        <Heading size="3xl" fontWeight="normal" color="fg" letterSpacing="tight">
           Station Overview
         </Heading>
       </VStack>
 
-      {/* 2. DASHBOARD CONTROLS */}
+      {/* CONTROLS */}
       <Flex justify="flex-end" align="center" pb={2}>
         <HStack gap={3}>
           {isEditMode && (
-            <Button size="sm" bg="gray.900" color="white" _hover={{ bg: "black" }} borderRadius="full" px={4} onClick={() => addWidget('live-broadcast')}>
+            <Button 
+              size="sm" bg="fg" color="bg" borderRadius="full" px={4} 
+              _hover={{ opacity: 0.8 }} 
+              onClick={() => addWidget('live-broadcast')}
+            >
               <Icon as={Plus} boxSize={4} mr={1.5} />
               Add Widget
             </Button>
@@ -60,9 +69,11 @@ export const DashboardView: React.FC = () => {
             size="sm" 
             variant={isEditMode ? "solid" : "outline"} 
             bg={isEditMode ? "green.500" : "transparent"}
-            color={isEditMode ? "white" : "gray.700"}
-            borderColor={isEditMode ? "green.500" : "gray.200"}
-            _hover={isEditMode ? { bg: "green.600" } : { bg: "gray.50" }}
+            color={isEditMode ? "white" : "fg"}
+            borderColor={isEditMode ? "green.500" : "border"}
+            _dark={{
+              bg: isEditMode ? "green.600" : "transparent",
+            }}
             borderRadius="full"
             px={4}
             onClick={() => setEditMode(!isEditMode)}
@@ -73,15 +84,15 @@ export const DashboardView: React.FC = () => {
         </HStack>
       </Flex>
 
-      {/* 3. THE INTERACTIVE GRID */}
+      {/* GRID */}
       <Box flex="1" overflowX="hidden" overflowY="auto" pb={8} mx="-12px" px="12px">
         <ResponsiveGridLayout
-          className="layout"
+          className={`layout ${isEditMode ? 'is-editing' : ''}`}
           layouts={{ lg: widgets.map(w => w.layout) }}
           breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
           cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
           rowHeight={80} 
-          onLayoutChange={handleLayoutChange}
+          onLayoutChange={handleLayoutChange} 
           isDraggable={isEditMode}
           isResizable={isEditMode}
           margin={[24, 24]} 
@@ -90,24 +101,13 @@ export const DashboardView: React.FC = () => {
           {widgets.map((widget) => (
             <div key={widget.id} data-grid={widget.layout}>
               <Box 
-                position="relative" 
-                h="100%" 
-                w="100%"
-                transition="outline 0.2s"
-                _hover={isEditMode ? { outline: '2px dashed #CBD5E1', outlineOffset: '4px', cursor: 'grab' } : {}}
+                position="relative" h="100%" w="100%" transition="outline 0.2s"
+                _hover={isEditMode ? { outline: '2px dashed', outlineColor: 'border', outlineOffset: '4px', cursor: 'grab' } : {}}
               >
-                {/* Delete Button (Only visible in edit mode) */}
                 {isEditMode && (
                   <IconButton
-                    aria-label="Remove widget"
-                    size="xs"
-                    position="absolute"
-                    top="-10px"
-                    right="-10px"
-                    bg="red.500"
-                    color="white"
-                    borderRadius="full"
-                    zIndex={10}
+                    aria-label="Remove widget" size="xs" position="absolute" top="-10px" right="-10px"
+                    bg="red.500" color="white" borderRadius="full" zIndex={10}
                     onClick={() => removeWidget(widget.id)}
                     _hover={{ bg: "red.600" }}
                   >
@@ -115,7 +115,6 @@ export const DashboardView: React.FC = () => {
                   </IconButton>
                 )}
                 
-                {/* THE WIDGET CONTENT */}
                 <Box h="100%" w="100%" pointerEvents={isEditMode ? 'none' : 'auto'} css={{ '> div': { height: '100%' } }}>
                    <WidgetRegistry type={widget.type} />
                 </Box>
@@ -124,20 +123,6 @@ export const DashboardView: React.FC = () => {
           ))}
         </ResponsiveGridLayout>
       </Box>
-
-      {/* Grid specific animation and styling adjustments */}
-      <style>{`
-        @keyframes pulse-fast { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
-        .react-grid-item.react-grid-placeholder {
-          background: #E2E8F0 !important;
-          border-radius: 16px;
-          opacity: 0.5;
-        }
-        .react-resizable-handle {
-          opacity: ${isEditMode ? 1 : 0};
-          transition: opacity 0.2s;
-        }
-      `}</style>
     </VStack>
   );
 };

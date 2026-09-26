@@ -52,7 +52,8 @@ export const GlobalPlayer = () => {
       {/* 1. THE VISUAL PLAYER */}
       <Box 
         position="fixed" bottom={0} left={0} right={0} h="76px" 
-        bg="gray.50" borderTop="1px solid" borderColor="gray.200"
+        // ⚡️ Semantic styling for the player bar
+        bg="bg.panel" borderTop="1px solid" borderColor="border"
         zIndex={9999} px={6}
         transform={isOffScreen ? "translateY(100%)" : "translateY(0)"}
         transition="transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
@@ -63,7 +64,6 @@ export const GlobalPlayer = () => {
             {isLiveStream && liveMeta ? (
               <HStack gap={3}>
                 
-                {/* ⚡️ LIVE COVER ART: Removed the problematic 'fallback' prop */}
                 {liveMeta.cover_url ? (
                   <Image 
                     src={liveMeta.cover_url} 
@@ -73,19 +73,21 @@ export const GlobalPlayer = () => {
                     flexShrink={0}
                   />
                 ) : (
-                  <Box boxSize="48px" bg="gray.100" borderRadius="md" flexShrink={0} />
+                  // ⚡️ Fallback square correctly colored for dark mode
+                  <Box boxSize="48px" bg="gray.100" _dark={{ bg: "whiteAlpha.200" }} borderRadius="md" flexShrink={0} />
                 )}
 
                 <Box>
                   <HStack gap={2} mb={0.5}>
-                    <Badge color="red.600" bg="red.50" fontSize="10px" px={1.5} borderRadius="sm">
+                    {/* ⚡️ Live badge dynamically flips to deep red in dark mode */}
+                    <Badge color="red.600" bg="red.50" _dark={{ color: "red.300", bg: "red.900" }} fontSize="10px" px={1.5} borderRadius="sm">
                       LIVE
                     </Badge>
-                    <Text fontSize="xs" fontWeight="bold" color="gray.800" lineClamp={1}>
+                    <Text fontSize="xs" fontWeight="bold" color="fg" lineClamp={1}>
                       {liveMeta.title}
                     </Text>
                   </HStack>
-                  <Text fontSize="xs" color="gray.500" lineClamp={1}>
+                  <Text fontSize="xs" color="fg.muted" lineClamp={1}>
                     {liveMeta.artist} {liveMeta.playlist_name ? `• ${liveMeta.playlist_name}` : ''}
                   </Text>
                 </Box>
@@ -102,13 +104,12 @@ export const GlobalPlayer = () => {
 
           {/* Center: Waveform (Library) OR Live Progress */}
           <HStack flex="1" gap={4} ml={4} minW="0">
-            <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px" textAlign="right">
+            <Text fontSize="xs" color="fg.muted" fontVariantNumeric="tabular-nums" w="35px" textAlign="right">
               {formatTime(currentTimeDisplay)}
             </Text>
             
             <Box flex="1" h="40px" display="flex" alignItems="center">
               {isLiveStream ? (
-                // ⚡️ FIXED: Check for waveform_url instead of waveform_key
                 liveMeta?.waveform_url ? (
                   <WaveSurferPlayer 
                     key={`live-${liveMeta.track_id}`}
@@ -121,10 +122,11 @@ export const GlobalPlayer = () => {
                   />
                 ) : (
                   // Fallback solid bar if the track has no waveform
-                  <Box w="100%" h="6px" bg="gray.200" borderRadius="full" overflow="hidden" position="relative">
+                  <Box w="100%" h="6px" bg="gray.200" _dark={{ bg: "whiteAlpha.200" }} borderRadius="full" overflow="hidden" position="relative">
                     <Box 
                       h="100%" 
                       bg="red.500" 
+                      _dark={{ bg: "red.400" }}
                       w={`${progress}%`} 
                       transition={progress === 0 ? "none" : "width 1s linear"} 
                       borderRadius="full" 
@@ -132,7 +134,6 @@ export const GlobalPlayer = () => {
                   </Box>
                 )
               ) : (
-                // ⚡️ STANDARD LIBRARY WAVEFORM
                 currentTrack && audioRef.current && (
                   <WaveSurferPlayer 
                     key={currentTrack.id}
@@ -146,7 +147,7 @@ export const GlobalPlayer = () => {
               )}
             </Box>
             
-            <Text fontSize="xs" color="gray.500" fontVariantNumeric="tabular-nums" w="35px">
+            <Text fontSize="xs" color="fg.muted" fontVariantNumeric="tabular-nums" w="35px">
               {formatTime(durationDisplay)}
             </Text>
           </HStack>

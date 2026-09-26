@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, Flex, VStack, HStack, Text, Icon, Button, Spinner, Badge // ⚡️ FIXED: Imported Badge
+  Box, Flex, VStack, HStack, Text, Icon, Button, Spinner, Badge
 } from '@chakra-ui/react';
 import { X, Link as LinkIcon, Copy, Trash2, Check, Music, Download, Clock } from 'lucide-react';
 import { api, type ShareItem } from '../../../services/api';
@@ -102,7 +102,7 @@ export const ShareDrawer: React.FC<ShareDrawerProps> = ({ isOpen, onClose, track
       {/* Backdrop */}
       <Box 
         position="fixed" top={0} left={0} w="100vw" h="100vh" 
-        bg="blackAlpha.400" zIndex={1300} 
+        bg="blackAlpha.600" zIndex={1300} backdropFilter="blur(2px)"
         opacity={isOpen ? 1 : 0} transition="opacity 0.3s"
         onClick={onClose}
       />
@@ -110,56 +110,58 @@ export const ShareDrawer: React.FC<ShareDrawerProps> = ({ isOpen, onClose, track
       {/* Drawer Panel */}
       <Flex 
         position="fixed" top={0} right={0} h="100vh" w={{ base: "100%", md: "440px" }} 
-        bg="white" zIndex={1400} shadow="2xl" direction="column"
+        bg="bg.panel" zIndex={1400} shadow="2xl" direction="column"
         transform={isOpen ? "translateX(0)" : "translateX(100%)"}
         transition="transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
       >
         {/* Header */}
-        <Flex justify="space-between" align="center" p={6} borderBottom="1px solid" borderColor="gray.100">
-          <Text fontSize="lg" fontWeight="600" color="gray.900">Share track(s)</Text>
-          <Button size="sm" variant="ghost" borderRadius="full" p={0} onClick={onClose} color="gray.500" _hover={{ bg: "gray.100" }}>
+        <Flex justify="space-between" align="center" p={6} borderBottom="1px solid" borderColor="border">
+          <Text fontSize="lg" fontWeight="600" color="fg">Share track(s)</Text>
+          <Button size="sm" variant="ghost" borderRadius="full" p={0} onClick={onClose} color="fg.muted" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }}>
             <Icon as={X} boxSize={5} />
           </Button>
         </Flex>
 
         <Box flex="1" overflowY="auto" p={6}>
           {/* Track Context */}
-          <HStack gap={4} p={3} bg="gray.50" borderRadius="xl" border="1px solid" borderColor="gray.100" mb={8}>
-            <Box w="48px" h="48px" borderRadius="md" overflow="hidden" bg="gray.200" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
+          <HStack gap={4} p={3} bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} borderRadius="xl" border="1px solid" borderColor="border" mb={8}>
+            <Box w="48px" h="48px" borderRadius="md" overflow="hidden" bg="gray.200" _dark={{ bg: "whiteAlpha.200" }} flexShrink={0} display="flex" alignItems="center" justifyContent="center">
               {track.cover_url ? (
                 <img src={track.cover_url} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                <Icon as={Music} boxSize={5} color="gray.400" />
+                <Icon as={Music} boxSize={5} color="var(--chakra-colors-fg-muted)" />
               )}
             </Box>
             <VStack align="start" gap={0} flex={1} overflow="hidden">
-              {/* ⚡️ FIXED: Changed noOfLines to lineClamp for Chakra v3 */}
-              <Text fontWeight="600" color="gray.900" lineClamp={1}>{track.title}</Text>
-              <Text fontSize="sm" color="gray.500" lineClamp={1}>{track.artist}</Text>
+              <Text fontWeight="600" color="fg" lineClamp={1}>{track.title}</Text>
+              <Text fontSize="sm" color="fg.muted" lineClamp={1}>{track.artist}</Text>
             </VStack>
           </HStack>
 
           {/* Create New Link Section */}
-          <Box border="1px solid" borderColor="gray.200" borderRadius="xl" overflow="hidden" mb={8}>
-            <Flex p={4} bg="gray.50" borderBottom="1px solid" borderColor="gray.200" align="center" gap={3}>
-              <Box p={2} bg="blue.100" color="blue.600" borderRadius="lg">
+          <Box border="1px solid" borderColor="border" borderRadius="xl" overflow="hidden" mb={8}>
+            <Flex p={4} bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} borderBottom="1px solid" borderColor="border" align="center" gap={3}>
+              {/* ⚡️ FIXED: Merged duplicate _dark objects here */}
+              <Box p={2} bg="blue.100" color="blue.600" _dark={{ bg: "blue.900", color: "blue.300" }} borderRadius="lg">
                 <Icon as={LinkIcon} boxSize={4} />
               </Box>
               <VStack align="start" gap={0}>
-                <Text fontWeight="600" fontSize="sm" color="gray.900">Share by link</Text>
-                <Text fontSize="xs" color="gray.500">Generate custom links, use them freely</Text>
+                <Text fontWeight="600" fontSize="sm" color="fg">Share by link</Text>
+                <Text fontSize="xs" color="fg.muted">Generate custom links, use them freely</Text>
               </VStack>
             </Flex>
             
-            <VStack p={4} gap={5} bg="white" align="stretch">
+            <VStack p={4} gap={5} bg="bg.panel" align="stretch">
               {/* Allow Downloads Toggle */}
               <Flex justify="space-between" align="center">
-                <HStack gap={2} color="gray.700">
+                <HStack gap={2} color="fg">
                   <Icon as={Download} boxSize={4} />
                   <Text fontSize="sm" fontWeight="500">Allow Downloads</Text>
                 </HStack>
                 <Box 
-                  w="40px" h="22px" bg={allowDownload ? "blue.500" : "gray.200"} 
+                  w="40px" h="22px" 
+                  bg={allowDownload ? "blue.500" : "gray.200"} 
+                  _dark={{ bg: allowDownload ? "blue.400" : "whiteAlpha.300" }}
                   borderRadius="full" position="relative" cursor="pointer" transition="all 0.2s"
                   onClick={() => setAllowDownload(!allowDownload)}
                 >
@@ -169,16 +171,22 @@ export const ShareDrawer: React.FC<ShareDrawerProps> = ({ isOpen, onClose, track
 
               {/* Expiration Select */}
               <Flex justify="space-between" align="center">
-                <HStack gap={2} color="gray.700">
+                <HStack gap={2} color="fg">
                   <Icon as={Clock} boxSize={4} />
                   <Text fontSize="sm" fontWeight="500">Link Expiration</Text>
                 </HStack>
+                
+                {/* ⚡️ FIXED: Using native <select> but tapping directly into Chakra CSS variables so it supports dark mode properly */}
                 <select 
                   value={expiresIn} 
                   onChange={(e) => setExpiresIn(Number(e.target.value))}
                   style={{
-                    padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--chakra-colors-gray-200)',
-                    fontSize: '13px', outline: 'none', background: 'white', cursor: 'pointer'
+                    padding: '4px 8px', borderRadius: '6px', 
+                    border: '1px solid var(--chakra-colors-border)',
+                    fontSize: '13px', outline: 'none', 
+                    background: 'var(--chakra-colors-bg-panel)', 
+                    color: 'var(--chakra-colors-fg)', 
+                    cursor: 'pointer'
                   }}
                 >
                   <option value={0}>Never expire</option>
@@ -189,24 +197,24 @@ export const ShareDrawer: React.FC<ShareDrawerProps> = ({ isOpen, onClose, track
               </Flex>
 
               <Button 
-                w="100%" size="sm" bg="gray.900" color="white" _hover={{ bg: "gray.800" }} 
+                w="100%" size="sm" bg="fg" color="bg" _hover={{ opacity: 0.8 }} 
                 borderRadius="lg" onClick={handleGenerateLink} disabled={isGenerating}
               >
-                {isGenerating ? <Spinner size="xs" /> : "Generate Link"}
+                {isGenerating ? <Spinner size="xs" color="bg" /> : "Generate Link"}
               </Button>
             </VStack>
           </Box>
 
           {/* Existing Links Section */}
           <HStack justify="space-between" mb={4}>
-            <Text fontWeight="600" fontSize="sm" color="gray.900">Existing links</Text>
+            <Text fontWeight="600" fontSize="sm" color="fg">Existing links</Text>
             <Badge size="sm" colorPalette="gray" borderRadius="full" px={2}>{existingShares.length}</Badge>
           </HStack>
 
           {isLoading ? (
-            <Flex justify="center" py={8}><Spinner color="gray.400" /></Flex>
+            <Flex justify="center" py={8}><Spinner color="fg.muted" /></Flex>
           ) : existingShares.length === 0 ? (
-            <Text fontSize="sm" color="gray.500" textAlign="center" py={4} bg="gray.50" borderRadius="lg" border="1px dashed" borderColor="gray.200">
+            <Text fontSize="sm" color="fg.muted" textAlign="center" py={4} bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} borderRadius="lg" border="1px dashed" borderColor="border">
               No active links for this track.
             </Text>
           ) : (
@@ -216,14 +224,14 @@ export const ShareDrawer: React.FC<ShareDrawerProps> = ({ isOpen, onClose, track
                 const urlPreview = `${window.location.origin}/s/${share.token.substring(0, 6)}...`;
                 
                 return (
-                  <Flex key={share.id} p={3} border="1px solid" borderColor="gray.200" borderRadius="lg" justify="space-between" align="center" bg="white" _hover={{ borderColor: "gray.300" }}>
+                  <Flex key={share.id} p={3} border="1px solid" borderColor="border" borderRadius="lg" justify="space-between" align="center" bg="bg.panel" _hover={{ borderColor: "fg.muted" }}>
                     <HStack gap={3}>
-                      <Icon as={LinkIcon} boxSize={4} color="gray.400" />
+                      <Icon as={LinkIcon} boxSize={4} color="var(--chakra-colors-fg-muted)" />
                       <VStack align="start" gap={0}>
-                        <Text fontSize="sm" fontWeight="500" color="gray.700" fontFamily="monospace">
+                        <Text fontSize="sm" fontWeight="500" color="fg" fontFamily="monospace">
                           {urlPreview}
                         </Text>
-                        <HStack gap={2} fontSize="xs" color="gray.500">
+                        <HStack gap={2} fontSize="xs" color="fg.muted">
                           <Text>{share.play_count} plays</Text>
                           <Text>•</Text>
                           <Text>{share.allow_download ? "Downloadable" : "Stream only"}</Text>
@@ -232,11 +240,11 @@ export const ShareDrawer: React.FC<ShareDrawerProps> = ({ isOpen, onClose, track
                     </HStack>
                     
                     <HStack gap={1}>
-                      <Button size="xs" variant="ghost" onClick={() => handleCopy(share.token)} color={isCopied ? "green.500" : "gray.600"}>
+                      <Button size="xs" variant="ghost" onClick={() => handleCopy(share.token)} color={isCopied ? "green.500" : "fg.muted"} _dark={{ color: isCopied ? "green.400" : "fg.muted" }}>
                         <Icon as={isCopied ? Check : Copy} boxSize={3.5} mr={1} />
                         {isCopied ? "Copied" : "Copy"}
                       </Button>
-                      <Button size="xs" variant="ghost" color="gray.400" _hover={{ color: "red.500", bg: "red.50" }} onClick={() => handleRevoke(share.id)}>
+                      <Button size="xs" variant="ghost" color="fg.muted" _hover={{ color: "red.600", bg: "red.50", _dark: { color: "red.300", bg: "red.900" } }} onClick={() => handleRevoke(share.id)}>
                         <Icon as={Trash2} boxSize={3.5} />
                       </Button>
                     </HStack>

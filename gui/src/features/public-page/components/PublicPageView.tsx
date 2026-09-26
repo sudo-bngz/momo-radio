@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Box, Flex, Heading, Text, VStack, HStack, Button, Spinner, Center, Icon 
 } from '@chakra-ui/react';
-import { Save, Globe, ExternalLink } from 'lucide-react'; // ⚡️ IMPORTED: ExternalLink
+import { Save, Globe, ExternalLink } from 'lucide-react'; 
 import { usePublicPage } from '../hooks/usePublicPage';
 import { PageSettings } from './PageSettings';
 import { PageBuilder } from './PageBuilder';
@@ -19,8 +19,8 @@ export const PublicPageView: React.FC = () => {
 
   if (loading || !config) {
     return (
-      <Center h="100%" minH="400px" bg="white">
-        <Spinner size="xl" color="gray.400" />
+      <Center h="100%" minH="400px" bg="transparent">
+        <Spinner size="xl" color="fg.muted" />
       </Center>
     );
   }
@@ -29,18 +29,19 @@ export const PublicPageView: React.FC = () => {
   const liveUrl = `https://${config.slug}.${config.base_domain || 'momoradio.fm'}`;
 
   return (
-    <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
+    // ⚡️ Removed hardcoded background and data-theme to support global dark mode
+    <VStack align="stretch" h="100%" gap={8} bg="transparent">
       
       {/* HEADER */}
       <Flex justify="space-between" align="flex-end" wrap="wrap" gap={4}>
         <VStack align="start" gap={1}>
-          <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
-            <Box w="24px" h="24px" bg="pink.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
+          <HStack gap={2} fontSize="sm" color="fg.muted" mb={1}>
+            <Box w="24px" h="24px" bg="pink.500" _dark={{ bg: "pink.400" }} color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
               <Icon as={Globe} boxSize={3} strokeWidth={3} />
             </Box>
-            <Text color="gray.900" fontWeight="500">Public Page</Text>
+            <Text color="fg" fontWeight="500">Public Page</Text>
           </HStack>
-          <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">
+          <Heading size="3xl" fontWeight="normal" color="fg" letterSpacing="tight">
             Listener Portal
           </Heading>
         </VStack>
@@ -51,9 +52,9 @@ export const PublicPageView: React.FC = () => {
             variant="outline" 
             borderRadius="full" 
             px={6} 
-            borderColor="gray.200"
-            color="gray.700"
-            _hover={{ bg: "gray.50", borderColor: "gray.300" }}
+            borderColor="border"
+            color="fg.muted"
+            _hover={{ bg: "gray.50", color: "fg", _dark: { bg: "whiteAlpha.100" } }}
             disabled={!!slugError}
           >
             <Icon as={ExternalLink} boxSize={4} mr={2} />
@@ -61,10 +62,11 @@ export const PublicPageView: React.FC = () => {
           </Button>
 
           <Button 
-            bg="blue.500" color="white" borderRadius="full" px={6} _hover={{ bg: "blue.600" }} 
+            bg="blue.600" color="white" _dark={{ bg: "blue.500" }} borderRadius="full" px={6} 
+            _hover={{ bg: "blue.700", _dark: { bg: "blue.400" } }} 
             onClick={saveConfig} disabled={saving || !!slugError}
           >
-            {saving ? <Spinner size="sm" mr={2} /> : <Icon as={Save} boxSize={4} mr={2} />}
+            {saving ? <Spinner size="sm" mr={2} color="white" /> : <Icon as={Save} boxSize={4} mr={2} />}
             Publish Changes
           </Button>
         </HStack>
@@ -75,20 +77,20 @@ export const PublicPageView: React.FC = () => {
         <HStack gap={2}>
           <Button
             onClick={() => setActiveTab('settings')} size="sm" borderRadius="full" px={5} h="36px"
-            bg={activeTab === 'settings' ? 'gray.900' : 'transparent'} 
-            color={activeTab === 'settings' ? 'white' : 'gray.600'} 
+            bg={activeTab === 'settings' ? 'fg' : 'transparent'} 
+            color={activeTab === 'settings' ? 'bg' : 'fg.muted'} 
             fontWeight={activeTab === 'settings' ? '600' : '500'}
-            _hover={activeTab === 'settings' ? {} : { bg: 'gray.100', color: 'gray.900' }} 
+            _hover={activeTab === 'settings' ? {} : { bg: 'gray.100', color: 'fg', _dark: { bg: 'whiteAlpha.100' } }} 
             transition="all 0.2s"
           >
             Station Settings
           </Button>
           <Button
             onClick={() => setActiveTab('builder')} size="sm" borderRadius="full" px={5} h="36px"
-            bg={activeTab === 'builder' ? 'gray.900' : 'transparent'} 
-            color={activeTab === 'builder' ? 'white' : 'gray.600'} 
+            bg={activeTab === 'builder' ? 'fg' : 'transparent'} 
+            color={activeTab === 'builder' ? 'bg' : 'fg.muted'} 
             fontWeight={activeTab === 'builder' ? '600' : '500'}
-            _hover={activeTab === 'builder' ? {} : { bg: 'gray.100', color: 'gray.900' }} 
+            _hover={activeTab === 'builder' ? {} : { bg: 'gray.100', color: 'fg', _dark: { bg: 'whiteAlpha.100' } }} 
             transition="all 0.2s"
           >
             Page Builder

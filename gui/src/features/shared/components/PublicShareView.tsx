@@ -77,7 +77,6 @@ export const PublicShareView: React.FC = () => {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Detailed format for the metadata row (e.g., "4 min 58 sec")
   const formatDurationLong = (time: number) => {
     if (isNaN(time)) return '0 min';
     const m = Math.floor(time / 60);
@@ -87,19 +86,19 @@ export const PublicShareView: React.FC = () => {
 
   if (loading) {
     return (
-      <Flex w="100vw" h="100vh" align="center" justify="center" bg="gray.900">
-        <Spinner size="xl" color="blue.500" />
+      <Flex w="100vw" h="100vh" align="center" justify="center" bg="bg">
+        <Spinner size="xl" color="blue.500" _dark={{ color: "blue.400" }} />
       </Flex>
     );
   }
 
   if (error || !data) {
     return (
-      <Flex w="100vw" h="100vh" align="center" justify="center" bg="gray.900" p={4}>
-        <VStack gap={4} p={8} bg="whiteAlpha.100" backdropFilter="blur(10px)" borderRadius="2xl" maxW="md" textAlign="center" border="1px solid" borderColor="whiteAlpha.200">
-          <Icon as={AlertCircle} boxSize={12} color="red.400" />
-          <Heading size="md" color="white">Track Unavailable</Heading>
-          <Text color="gray.400">{error}</Text>
+      <Flex w="100vw" h="100vh" align="center" justify="center" bg="bg" p={4}>
+        <VStack gap={4} p={8} bg="bg.panel" backdropFilter="blur(10px)" borderRadius="2xl" maxW="md" textAlign="center" border="1px solid" borderColor="border">
+          <Icon as={AlertCircle} boxSize={12} color="red.500" _dark={{ color: "red.400" }} />
+          <Heading size="md" color="fg">Track Unavailable</Heading>
+          <Text color="fg.muted">{error}</Text>
         </VStack>
       </Flex>
     );
@@ -113,9 +112,9 @@ export const PublicShareView: React.FC = () => {
   const downloadUrl = `${getApiBaseUrl()}/api/v1/public/shares/${token}/download`;
 
   return (
-    <Flex w="100vw" h="100vh" align="center" justify="center" position="relative" overflow="hidden" bg="gray.900">
+    <Flex w="100vw" h="100vh" align="center" justify="center" position="relative" overflow="hidden" bg="bg">
       
-      {/* 1. Dynamic Blurred Background */}
+      {/* 1. Dynamic Blurred Background (Theme Responsive Opacities) */}
       <Box position="absolute" top={0} left={0} w="100%" h="100%" zIndex={0}>
         {track.cover_url ? (
           <Box
@@ -123,25 +122,27 @@ export const PublicShareView: React.FC = () => {
             backgroundImage={`url(${track.cover_url})`}
             backgroundSize="cover"
             backgroundPosition="center"
-            filter="blur(80px) brightness(0.4)"
+            filter="blur(80px)"
+            opacity={0.3}
+            _dark={{ opacity: 0.2 }}
             transform="scale(1.2)"
           />
         ) : (
-          <Box w="100%" h="100%" bgGradient="linear(to-br, gray.800, gray.900)" />
+          <Box w="100%" h="100%" bgGradient="linear(to-br, gray.50, gray.100)" _dark={{ bgGradient: "linear(to-br, gray.800, gray.900)" }} />
         )}
       </Box>
 
-      {/* 2. Top Bar: "Shared by" (Matches screenshot info) */}
+      {/* 2. Top Bar: "Shared by" */}
       <Flex position="absolute" top={0} left={0} w="100%" p={{ base: 4, md: 8 }} zIndex={10} justify="space-between" align="center">
         <HStack gap={3}>
-           <Box bg="whiteAlpha.200" p={2.5} borderRadius="lg" backdropFilter="blur(12px)" border="1px solid" borderColor="whiteAlpha.200">
-             <Icon as={Radio} color="white" boxSize={5} />
+           <Box bg="whiteAlpha.600" _dark={{ bg: "whiteAlpha.200" }} p={2.5} borderRadius="lg" backdropFilter="blur(12px)" border="1px solid" borderColor="border">
+             <Icon as={Radio} color="fg.muted" boxSize={5} />
            </Box>
            <VStack gap={0} align="start">
-             <Text fontSize="xs" color="whiteAlpha.600" fontWeight="600" textTransform="uppercase" letterSpacing="wider">
+             <Text fontSize="xs" color="fg.muted" fontWeight="600" textTransform="uppercase" letterSpacing="wider">
                Shared via
              </Text>
-             <Text fontSize="sm" color="white" fontWeight="700" letterSpacing="tight">
+             <Text fontSize="sm" color="fg" fontWeight="700" letterSpacing="tight">
                Momo.Radio
              </Text>
            </VStack>
@@ -162,14 +163,16 @@ export const PublicShareView: React.FC = () => {
         zIndex={1} 
         w="90%" 
         maxW="440px" 
-        bg="whiteAlpha.100" 
+        bg="whiteAlpha.800" 
         backdropFilter="blur(32px)" 
         borderRadius="3xl" 
         p={{ base: 6, md: 8 }} 
         gap={6} 
         border="1px solid" 
-        borderColor="whiteAlpha.300" 
-        shadow="dark-lg"
+        borderColor="border" 
+        shadow="xl"
+        // ⚡️ FIXED: Merged duplicate _dark objects into one cleanly
+        _dark={{ bg: "blackAlpha.400", shadow: "dark-lg" }}
       >
         {/* Cover Art */}
         <Box 
@@ -177,41 +180,42 @@ export const PublicShareView: React.FC = () => {
           aspectRatio={1} 
           borderRadius="2xl" 
           overflow="hidden" 
-          bg="gray.800" 
+          bg="gray.100" 
+          _dark={{ bg: "whiteAlpha.100" }}
           display="flex" 
           alignItems="center" 
           justifyContent="center"
-          shadow="xl"
+          shadow="sm"
         >
           {track.cover_url ? (
             <img src={track.cover_url} alt={track.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            <Icon as={Music} boxSize={20} color="gray.600" />
+            <Icon as={Music} boxSize={20} color="var(--chakra-colors-fg-muted)" />
           )}
         </Box>
 
         {/* Metadata */}
         <VStack gap={1.5} textAlign="center" w="100%">
-          <Heading size="xl" color="white" fontWeight="700" letterSpacing="tight" lineClamp={1}>
+          <Heading size="xl" color="fg" fontWeight="700" letterSpacing="tight" lineClamp={1}>
             {track.title}
           </Heading>
-          <Text color="whiteAlpha.800" fontSize="md" fontWeight="500">
+          <Text color="fg.muted" fontSize="md" fontWeight="500">
             {artistName}
           </Text>
           
-          {/* Detailed Info Row (Matches screenshot context) */}
-          <Text fontSize="sm" color="whiteAlpha.600" fontWeight="500" mt={1}>
+          <Text fontSize="sm" color="fg.muted" fontWeight="500" mt={1}>
             1 track • {formatDurationLong(track.duration)} • Album: {albumName}
           </Text>
         </VStack>
 
         <HStack gap={2} justify="center" flexWrap="wrap">
-          {track.bpm && <Badge size="sm" bg="whiteAlpha.200" color="white" border="none" borderRadius="full" px={3}>{Math.round(track.bpm)} BPM</Badge>}
-          {track.musical_key && <Badge size="sm" bg="whiteAlpha.200" color="white" border="none" borderRadius="full" px={3}>{track.musical_key} {track.scale}</Badge>}
+          {track.bpm && <Badge size="sm" bg="blackAlpha.50" color="fg.muted" _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }} border="none" borderRadius="full" px={3}>{Math.round(track.bpm)} BPM</Badge>}
+          {track.musical_key && <Badge size="sm" bg="blackAlpha.50" color="fg.muted" _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }} border="none" borderRadius="full" px={3}>{track.musical_key} {track.scale}</Badge>}
         </HStack>
 
         {/* Scrubber / Progress Bar */}
         <VStack w="100%" gap={2} pt={2}>
+          {/* ⚡️ FIXED: Reverted to standard HTML input to fix TypeScript errors */}
           <input 
             type="range" 
             min={0} 
@@ -225,16 +229,17 @@ export const PublicShareView: React.FC = () => {
             }} 
           />
           <HStack w="100%" justify="space-between">
-            <Text fontSize="xs" color="whiteAlpha.700" fontWeight="600">{formatTime(progress)}</Text>
-            <Text fontSize="xs" color="whiteAlpha.700" fontWeight="600">{formatTime(track.duration)}</Text>
+            <Text fontSize="xs" color="fg.muted" fontWeight="600">{formatTime(progress)}</Text>
+            <Text fontSize="xs" color="fg.muted" fontWeight="600">{formatTime(track.duration)}</Text>
           </HStack>
         </VStack>
 
         {/* Controls */}
         <HStack w="100%" justify="center" gap={6} pt={2}>
           <Button 
-            w="64px" h="64px" borderRadius="full" bg="white" color="gray.900" 
-            _hover={{ bg: "gray.200", transform: "scale(1.05)" }}
+            w="64px" h="64px" borderRadius="full" 
+            bg="fg" color="bg" 
+            _hover={{ opacity: 0.8, transform: "scale(1.05)" }}
             _active={{ transform: "scale(0.95)" }}
             transition="all 0.2s" onClick={togglePlay} p={0}
           >
@@ -244,11 +249,12 @@ export const PublicShareView: React.FC = () => {
 
         {/* Conditional Download Button */}
         {allow_download && (
-          <Box w="100%" pt={5} borderTop="1px solid" borderColor="whiteAlpha.200">
+          <Box w="100%" pt={5} borderTop="1px solid" borderColor="border">
             <a href={downloadUrl} style={{ width: '100%', textDecoration: 'none', display: 'block' }}>
               <Button 
-                w="100%" variant="surface" bg="whiteAlpha.200" color="white"
-                _hover={{ bg: "whiteAlpha.300" }} borderRadius="xl" h="48px"
+                w="100%" variant="surface" bg="blackAlpha.50" color="fg"
+                _dark={{ bg: "whiteAlpha.200", color: "white" }}
+                _hover={{ bg: "blackAlpha.100", _dark: { bg: "whiteAlpha.300" } }} borderRadius="xl" h="48px"
               >
                 <Icon as={Download} boxSize={4} mr={2} />
                 Download Track
@@ -258,10 +264,10 @@ export const PublicShareView: React.FC = () => {
         )}
       </VStack>
 
-      {/* 4. Footer (Matches screenshot context) */}
+      {/* 4. Footer */}
       <Flex position="absolute" bottom={0} left={0} w="100%" p={{ base: 4, md: 8 }} zIndex={10} justify="center" align="center">
-         <Text fontSize="sm" color="whiteAlpha.600" fontWeight="500">
-            Powered by <Box as="span" color="white" fontWeight="700">Momo.Radio</Box>
+         <Text fontSize="sm" color="fg.muted" fontWeight="500">
+            Powered by <Box as="span" color="fg" fontWeight="700">Momo.Radio</Box>
          </Text>
       </Flex>
       

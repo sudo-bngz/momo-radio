@@ -146,7 +146,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 
   if (!isOpen && !track) return null;
 
-  // ⚡️ SAFELY EXTRACT MULTIPLE ARTISTS
   let artistList: string[] = [];
   if (fullTrack?.artists && Array.isArray(fullTrack.artists)) {
     artistList = fullTrack.artists.map((a: any) => a.name);
@@ -159,7 +158,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
   const albumTitle = fullTrack?.album?.title || (typeof fullTrack?.album === 'string' ? fullTrack.album : track?.album) || '';
   const coverURL = fullTrack?.cover_url || fullTrack?.album?.cover_url || track?.cover_url;
 
-  // Formatters
   const displayBPM = fullTrack?.bpm ? Math.round(fullTrack.bpm) : '-';
   const displayKey = fullTrack?.musical_key ? `${fullTrack.musical_key} ${fullTrack.scale || ''}`.trim() : '-';
   const displayDuration = fullTrack?.duration 
@@ -168,7 +166,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
     
   const lastPlayedDate = formatTimeAgo(fullTrack?.last_played);
 
-  // Helper to handle navigation and closing the drawer simultaneously
   const handleNavigate = (path: string) => {
     onClose();
     navigate(path);
@@ -176,10 +173,11 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 
   return (
     <>
+      {/* ⚡️ ADDED BLUR: backdropFilter added to the overlay Box */}
       <Box 
         position="fixed" top={0} left={0} right={0} bottom={0} 
-        bg="rgba(0, 0, 0, 0.4)" opacity={isOpen ? 1 : 0} 
-        pointerEvents={isOpen ? "auto" : "none"} transition="opacity 0.3s" 
+        bg="blackAlpha.600" backdropFilter="blur(4px)" opacity={isOpen ? 1 : 0} 
+        pointerEvents={isOpen ? "auto" : "none"} transition="all 0.3s" 
         zIndex={10000} onClick={onClose}
       />
 
@@ -187,10 +185,10 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
         as="form" 
         onSubmit={handleSave} 
         position="fixed" top={0} right={0} bottom={0} 
-        w="500px" maxW="100vw" bg="white" direction="column"
+        w="500px" maxW="100vw" bg="bg.panel" color="fg" direction="column"
         transform={isOpen ? "translateX(0)" : "translateX(100%)"}
         transition="transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
-        zIndex={10001} boxShadow="-4px 0 24px rgba(0,0,0,0.1)"
+        zIndex={10001} boxShadow="-4px 0 24px rgba(0,0,0,0.15)"
       >
         {/* HEADER */}
         <Box px={6} pt={6} pb={2}>
@@ -198,25 +196,24 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
             <HStack gap={4}>
               <Flex 
                 align="center" justify="center" w="56px" h="56px" 
-                bg="gray.100" borderRadius="md" overflow="hidden" 
-                border="1px solid" borderColor="gray.200" flexShrink={0}
+                bg="gray.100" _dark={{ bg: "whiteAlpha.100" }} borderRadius="md" overflow="hidden" 
+                border="1px solid" borderColor="border" flexShrink={0}
               >
                 {coverURL ? (
                   <img src={coverURL} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <Icon as={Music} boxSize={6} color="gray.400" />
+                  <Icon as={Music} boxSize={6} color="fg.muted" />
                 )}
               </Flex>
               <VStack align="start" gap={0}>
-                <Text fontSize="lg" fontWeight="bold" color="gray.900">{fullTrack?.title || track?.title}</Text>
+                <Text fontSize="lg" fontWeight="bold" color="fg">{fullTrack?.title || track?.title}</Text>
                 
-                {/* ⚡️ MULTI-ARTIST HEADER LINKS */}
                 <HStack gap={1} flexWrap="wrap">
                   {artistList.length > 0 ? (
                     artistList.map((artist, idx) => (
                       <React.Fragment key={idx}>
                         <Text 
-                          fontSize="sm" color="blue.600" cursor="pointer"
+                          fontSize="sm" color="blue.600" _dark={{ color: "blue.400" }} cursor="pointer"
                           _hover={{ textDecoration: "underline" }}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -225,30 +222,37 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                         >
                           {artist}
                         </Text>
-                        {idx < artistList.length - 1 && <Text fontSize="sm" color="gray.500">, </Text>}
+                        {idx < artistList.length - 1 && <Text fontSize="sm" color="fg.muted">, </Text>}
                       </React.Fragment>
                     ))
                   ) : (
-                    <Text fontSize="sm" color="gray.400">Unknown Artist</Text>
+                    <Text fontSize="sm" color="fg.muted">Unknown Artist</Text>
                   )}
                 </HStack>
-
               </VStack>
             </HStack>
-            <IconButton aria-label="Close" variant="ghost" size="sm" color="gray.500" onClick={onClose}>
+            <IconButton aria-label="Close" variant="ghost" size="sm" color="fg.muted" _hover={{ bg: "whiteAlpha.100" }} onClick={onClose}>
               <Icon as={X} boxSize={5} />
             </IconButton>
           </Flex>
 
-          <HStack gap={6} borderBottom="1px solid" borderColor="gray.100" overflowX="auto"
+          <HStack gap={6} borderBottom="1px solid" borderColor="border" overflowX="auto"
             css={{ '&::-webkit-scrollbar': { display: 'none' } }}
           >
             {TABS.map(tab => (
               <Box 
                 key={tab} px={1} pb={3} cursor="pointer"
-                borderBottom="2px solid" borderColor={activeTab === tab ? "blue.600" : "transparent"}
-                color={activeTab === tab ? "blue.600" : "gray.500"} fontWeight={activeTab === tab ? "600" : "500"}
-                onClick={() => setActiveTab(tab)} _hover={{ color: "blue.600" }} transition="all 0.2s"
+                borderBottom="2px solid" 
+                // ⚡️ Combined _dark styles for tabs
+                borderColor={activeTab === tab ? "blue.600" : "transparent"}
+                color={activeTab === tab ? "blue.600" : "fg.muted"} 
+                _dark={{
+                  borderColor: activeTab === tab ? "blue.400" : "transparent",
+                  color: activeTab === tab ? "blue.400" : "fg.muted"
+                }}
+                fontWeight={activeTab === tab ? "600" : "500"}
+                onClick={() => setActiveTab(tab)} 
+                _hover={{ color: "blue.600", _dark: { color: "blue.400" } }} transition="all 0.2s"
                 whiteSpace="nowrap"
               >
                 <Text fontSize="sm">{tab}</Text>
@@ -260,7 +264,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
         {/* BODY */}
         <Box flex="1" overflowY="auto" px={6} py={6}>
           {isLoading ? (
-            <Flex justify="center" align="center" h="100%"><Spinner color="blue.500" /></Flex>
+            <Flex justify="center" align="center" h="100%"><Spinner color="blue.500" _dark={{ color: "blue.400" }} /></Flex>
           ) : (
             <>
               {/* DETAILS TAB */}
@@ -268,7 +272,6 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                 <VStack align="stretch" gap={6}>
                   <EditableField label="Title" name="title" value={fullTrack?.title} isEditing={isEditing} />
                   
-                  {/* ⚡️ MULTI-ARTIST DETAIL COMPONENT */}
                   <MultiArtistEditableField 
                     label="Artist(s)" 
                     artists={artistList} 
@@ -286,23 +289,22 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                   <EditableField 
                     label="Album Name" name="album" value={albumTitle} isEditing={isEditing} 
                     placeholder="Original Mix / EP Name" 
-                    onLinkClick={() => handleNavigate(`/albums/${encodeURIComponent(albumTitle)}`)}
+                    onLinkClick={() => handleNavigate(`/library/albums/${encodeURIComponent(albumTitle)}`)}
                   />
                   <EditableField 
                     label="Publisher/Label" name="publisher" value={fullTrack?.album?.publisher} isEditing={isEditing} 
                     placeholder="e.g. Warp Records" 
-                    onLinkClick={() => handleNavigate(`/labels/${encodeURIComponent(fullTrack?.album?.publisher)}`)}
                   />
                   <EditableField label="Catalog No." name="catalog_number" value={fullTrack?.album?.catalog_number} isEditing={isEditing} placeholder="e.g. WAP62" />
                   <EditableField label="Country" name="release_country" value={fullTrack?.album?.release_country} isEditing={isEditing} placeholder="e.g. UK, US, FR" />
                 </VStack>
               </Box>
 
-              {/* ⚡️ TAGS TAB REBUILT FOR AI METADATA */}
+              {/* TAGS TAB */}
               <Box display={activeTab === 'Tags' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
                   <Box>
-                    <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" color="gray.500" mb={4}>Manual Tags</Text>
+                    <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" color="fg.muted" mb={4}>Manual Tags</Text>
                     <VStack align="stretch" gap={4}>
                       <FormRow label="Genre(s)">
                         <Box>
@@ -326,46 +328,26 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                     </VStack>
                   </Box>
 
-                  <Box borderTop="1px solid" borderColor="gray.200" my={2} />
+                  <Box borderTop="1px solid" borderColor="border" my={2} />
 
-                  {/* AI GENERATED TAGS SECTION */}
                   <Box>
                     <HStack mb={4} justify="space-between">
                       <HStack>
-                        <Icon as={Sparkles} boxSize={4} color="purple.500" />
-                        <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" color="purple.600">Auto-Generated Tags</Text>
+                        <Icon as={Sparkles} boxSize={4} color="purple.500" _dark={{ color: "purple.400" }} />
+                        <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" color="purple.600" _dark={{ color: "purple.400" }}>Auto-Generated Tags</Text>
                       </HStack>
                     </HStack>
 
-                    <VStack align="stretch" gap={4} bg="gray.50" p={4} borderRadius="md" border="1px solid" borderColor="gray.100">
-                      
+                    <VStack align="stretch" gap={4} bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} p={4} borderRadius="md" border="1px solid" borderColor="border">
                       <FormRow label="AI Genres">
-                        <ArrayTagDisplay 
-                          tags={fullTrack?.ml_genres} 
-                          colorScheme="blue" 
-                          icon={Tag}
-                          onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} 
-                        />
+                        <ArrayTagDisplay tags={fullTrack?.ml_genres} colorScheme="blue" icon={Tag} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
                       </FormRow>
-
                       <FormRow label="Moods">
-                        <ArrayTagDisplay 
-                          tags={fullTrack?.ml_moods} 
-                          colorScheme="purple" 
-                          icon={Sparkles}
-                          onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} 
-                        />
+                        <ArrayTagDisplay tags={fullTrack?.ml_moods} colorScheme="purple" icon={Sparkles} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
                       </FormRow>
-
                       <FormRow label="Characteristics">
-                        <ArrayTagDisplay 
-                          tags={fullTrack?.ml_characteristics} 
-                          colorScheme="green" 
-                          icon={Activity}
-                          onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} 
-                        />
+                        <ArrayTagDisplay tags={fullTrack?.ml_characteristics} colorScheme="green" icon={Activity} onTagClick={(tag: string) => handleNavigate(`/?search=${encodeURIComponent(tag)}`)} />
                       </FormRow>
-                      
                     </VStack>
                   </Box>
 
@@ -375,58 +357,56 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
               {/* ACOUSTICS TAB */}
               <Box display={activeTab === 'Acoustics' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
-                  <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
-                    <Flex bg="blue.100" p={3} borderRadius="full"><Icon as={Activity} boxSize={5} color="blue.600" /></Flex>
+                  <HStack bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} p={4} borderRadius="lg" gap={4}>
+                    <Flex bg="blue.100" _dark={{ bg: "blue.900" }} p={3} borderRadius="full"><Icon as={Activity} boxSize={5} color="blue.600" _dark={{ color: "blue.300" }} /></Flex>
                     <VStack align="start" gap={0}>
-                      <Text fontSize="sm" fontWeight="600" color="gray.900">Acoustic Analysis</Text>
-                      <Text fontSize="xs" color="gray.500">Calculated during ingestion.</Text>
+                      <Text fontSize="sm" fontWeight="600" color="fg">Acoustic Analysis</Text>
+                      <Text fontSize="xs" color="fg.muted">Calculated during ingestion.</Text>
                     </VStack>
                   </HStack>
 
-                  <FormRow label="BPM"><Text fontSize="sm" fontWeight="600" color="gray.900">{displayBPM}</Text></FormRow>
-                  <FormRow label="Musical Key"><Text fontSize="sm" fontWeight="600" color="gray.900">{displayKey}</Text></FormRow>
-                  <FormRow label="Duration"><Text fontSize="sm" fontWeight="600" color="gray.900">{displayDuration}</Text></FormRow>
+                  <FormRow label="BPM"><Text fontSize="sm" fontWeight="600" color="fg">{displayBPM}</Text></FormRow>
+                  <FormRow label="Musical Key"><Text fontSize="sm" fontWeight="600" color="fg">{displayKey}</Text></FormRow>
+                  <FormRow label="Duration"><Text fontSize="sm" fontWeight="600" color="fg">{displayDuration}</Text></FormRow>
 
-                  <Box borderTop="1px dashed" borderColor="gray.200" my={2} />
+                  <Box borderTop="1px dashed" borderColor="border" my={2} />
 
-                  <FormRow label="Danceability"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.danceability ? fullTrack.danceability.toFixed(2) : '-'}</Text></FormRow>
-                  <FormRow label="Energy"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.energy ? fullTrack.energy.toFixed(2) : '-'}</Text></FormRow>
-                  <FormRow label="Loudness"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.loudness ? `${fullTrack.loudness.toFixed(1)} dB` : '-'}</Text></FormRow>
+                  <FormRow label="Danceability"><Text fontSize="sm" fontWeight="600" color="fg">{fullTrack?.danceability ? fullTrack.danceability.toFixed(2) : '-'}</Text></FormRow>
+                  <FormRow label="Energy"><Text fontSize="sm" fontWeight="600" color="fg">{fullTrack?.energy ? fullTrack.energy.toFixed(2) : '-'}</Text></FormRow>
+                  <FormRow label="Loudness"><Text fontSize="sm" fontWeight="600" color="fg">{fullTrack?.loudness ? `${fullTrack.loudness.toFixed(1)} dB` : '-'}</Text></FormRow>
                 </VStack>
               </Box>
 
               {/* FILE SPECS TAB */}
               <Box display={activeTab === 'File' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
-                  <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
-                    <Flex bg="blue.100" p={3} borderRadius="full"><Icon as={HardDrive} boxSize={5} color="blue.600" /></Flex>
+                  <HStack bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} p={4} borderRadius="lg" gap={4}>
+                    <Flex bg="blue.100" _dark={{ bg: "blue.900" }} p={3} borderRadius="full"><Icon as={HardDrive} boxSize={5} color="blue.600" _dark={{ color: "blue.300" }} /></Flex>
                     <VStack align="start" gap={0}>
-                      <Text fontSize="sm" fontWeight="600" color="gray.900">Audio File Specs</Text>
-                      <Text fontSize="xs" color="gray.500">Extracted securely during ingestion.</Text>
+                      <Text fontSize="sm" fontWeight="600" color="fg">Audio File Specs</Text>
+                      <Text fontSize="xs" color="fg.muted">Extracted securely during ingestion.</Text>
                     </VStack>
                   </HStack>
                   
-                  <FormRow label="Format"><Text fontSize="sm" fontWeight="600" color="gray.900" textTransform="uppercase">{fullTrack?.format || '-'}</Text></FormRow>
-                  <FormRow label="File Size"><Text fontSize="sm" fontWeight="600" color="gray.900">{formatBytes(fullTrack?.file_size)}</Text></FormRow>
-                  
-                  {/* ⚡️ FIX: Removed the division by 1000 so it renders the DB value properly */}
-                  <FormRow label="Bitrate"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.bitrate ? `${fullTrack.bitrate} kbps` : '-'}</Text></FormRow>
+                  <FormRow label="Format"><Text fontSize="sm" fontWeight="600" color="fg" textTransform="uppercase">{fullTrack?.format || '-'}</Text></FormRow>
+                  <FormRow label="File Size"><Text fontSize="sm" fontWeight="600" color="fg">{formatBytes(fullTrack?.file_size)}</Text></FormRow>
+                  <FormRow label="Bitrate"><Text fontSize="sm" fontWeight="600" color="fg">{fullTrack?.bitrate ? `${fullTrack.bitrate} kbps` : '-'}</Text></FormRow>
                 </VStack>
               </Box>
 
               {/* RADIO TAB */}
               <Box display={activeTab === 'Radio' ? 'block' : 'none'}>
                 <VStack align="stretch" gap={6}>
-                  <HStack bg="gray.50" p={4} borderRadius="lg" gap={4}>
-                    <Flex bg="blue.100" p={3} borderRadius="full"><Icon as={Radio} boxSize={5} color="blue.600" /></Flex>
+                  <HStack bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} p={4} borderRadius="lg" gap={4}>
+                    <Flex bg="blue.100" _dark={{ bg: "blue.900" }} p={3} borderRadius="full"><Icon as={Radio} boxSize={5} color="blue.600" _dark={{ color: "blue.300" }} /></Flex>
                     <VStack align="start" gap={0}>
-                      <Text fontSize="sm" fontWeight="600" color="gray.900">Broadcasting Stats</Text>
-                      <Text fontSize="xs" color="gray.500">Auto-generated by the radio engine.</Text>
+                      <Text fontSize="sm" fontWeight="600" color="fg">Broadcasting Stats</Text>
+                      <Text fontSize="xs" color="fg.muted">Auto-generated by the radio engine.</Text>
                     </VStack>
                   </HStack>
                   
-                  <FormRow label="Play Count"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.play_count || 0}</Text></FormRow>
-                  <FormRow label="Last Played"><Text fontSize="sm" fontWeight="600" color="gray.900">{lastPlayedDate}</Text></FormRow>
+                  <FormRow label="Play Count"><Text fontSize="sm" fontWeight="600" color="fg">{fullTrack?.play_count || 0}</Text></FormRow>
+                  <FormRow label="Last Played"><Text fontSize="sm" fontWeight="600" color="fg">{lastPlayedDate}</Text></FormRow>
                 </VStack>
               </Box>
             </>
@@ -434,24 +414,24 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
         </Box>
 
         {/* FOOTER */}
-        <Flex px={6} py={4} borderTop="1px solid" borderColor="gray.100" bg="gray.50" justify="space-between" align="center">
+        <Flex px={6} py={4} borderTop="1px solid" borderColor="border" bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} justify="space-between" align="center">
           <Box>
-            {message && <Text fontSize="sm" fontWeight="500" color={message.type === 'success' ? 'green.600' : 'red.500'}>{message.text}</Text>}
+            {message && <Text fontSize="sm" fontWeight="500" color={message.type === 'success' ? 'green.600' : 'red.500'} _dark={{ color: message.type === 'success' ? 'green.400' : 'red.400' }}>{message.text}</Text>}
           </Box>
           
           <HStack gap={3}>
             {!isEditing ? (
               <>
-                <Button variant="ghost" color="gray.600" onClick={onClose}>Close</Button>
-                <Button bg="white" color="gray.900" border="1px solid" borderColor="gray.200" _hover={{ bg: "gray.50" }} onClick={(e) => { e.preventDefault(); setIsEditing(true); }}>
+                <Button variant="ghost" color="fg.muted" _hover={{ bg: "whiteAlpha.100" }} onClick={onClose}>Close</Button>
+                <Button bg="bg" color="fg" border="1px solid" borderColor="border" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} onClick={(e) => { e.preventDefault(); setIsEditing(true); }}>
                   <Icon as={Edit2} boxSize={4} mr={2} />
                   Edit Metadata
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" color="gray.600" onClick={handleCancelEdit} disabled={isSaving}>Cancel</Button>
-                <Button type="submit" bg="blue.600" color="white" _hover={{ bg: "blue.700" }} loading={isSaving}>
+                <Button variant="ghost" color="fg.muted" _hover={{ bg: "whiteAlpha.100" }} onClick={handleCancelEdit} disabled={isSaving}>Cancel</Button>
+                <Button type="submit" bg="blue.600" color="white" _dark={{ bg: "blue.500" }} _hover={{ bg: "blue.700", _dark: { bg: "blue.600" } }} loading={isSaving}>
                   Save Changes
                 </Button>
               </>
@@ -467,7 +447,7 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
 
 const FormRow = ({ label, children }: { label: string, children: React.ReactNode }) => (
   <Grid templateColumns="120px 1fr" alignItems="center" gap={4}>
-    <Text fontSize="sm" color="gray.500">{label}</Text>
+    <Text fontSize="sm" color="fg.muted">{label}</Text>
     <Box w="100%">{children}</Box>
   </Grid>
 );
@@ -475,10 +455,10 @@ const FormRow = ({ label, children }: { label: string, children: React.ReactNode
 const StyledInput = (props: any) => (
   <Input 
     {...props}
-    h="38px" fontSize="sm" bg="white" color="gray.900"
-    border="1px solid" borderColor="gray.200" borderRadius="md" px={3} w="100%"
-    _placeholder={{ color: "gray.400" }}
-    _focus={{ borderColor: "blue.500", ring: "1px", ringColor: "blue.500" }}
+    h="38px" fontSize="sm" bg="bg" color="fg"
+    border="1px solid" borderColor="border" borderRadius="md" px={3} w="100%"
+    _placeholder={{ color: "fg.muted" }}
+    _focus={{ borderColor: "blue.500", ring: "1px", ringColor: "blue.500", _dark: { borderColor: "blue.400", ringColor: "blue.400" } }}
   />
 );
 
@@ -491,7 +471,8 @@ const EditableField = ({ label, name, value, isEditing, placeholder = '', onLink
       ) : (
         <Text 
           fontSize="sm" fontWeight="600" h="38px" display="flex" alignItems="center"
-          color={value ? (isClickable ? "blue.600" : "gray.900") : "gray.400"} 
+          color={value ? (isClickable ? "blue.600" : "fg") : "fg.muted"} 
+          _dark={{ color: value ? (isClickable ? "blue.400" : "fg") : "fg.muted" }}
           cursor={isClickable ? "pointer" : "default"}
           _hover={isClickable ? { textDecoration: "underline" } : {}}
           onClick={() => { if (isClickable) onLinkClick(); }}
@@ -513,7 +494,8 @@ const MultiArtistEditableField = ({ label, artists, isEditing, onNavigate }: any
           defaultValue={artists.join(', ')} 
           readOnly 
           bg="gray.50" 
-          color="gray.500" 
+          _dark={{ bg: "whiteAlpha.50" }}
+          color="fg.muted" 
           title="Artist relationships must be edited via the Re-Ingest flow." 
         />
       ) : (
@@ -522,17 +504,17 @@ const MultiArtistEditableField = ({ label, artists, isEditing, onNavigate }: any
             artists.map((artist: string, idx: number) => (
               <React.Fragment key={idx}>
                 <Text
-                  fontSize="sm" fontWeight="600" color="blue.600" cursor="pointer"
+                  fontSize="sm" fontWeight="600" color="blue.600" _dark={{ color: "blue.400" }} cursor="pointer"
                   _hover={{ textDecoration: "underline" }}
                   onClick={() => onNavigate(artist)}
                 >
                   {artist}
                 </Text>
-                {idx < artists.length - 1 && <Text fontSize="sm" fontWeight="600" color="gray.900">, </Text>}
+                {idx < artists.length - 1 && <Text fontSize="sm" fontWeight="600" color="fg">, </Text>}
               </React.Fragment>
             ))
           ) : (
-            <Text fontSize="sm" fontWeight="600" color="gray.400">-</Text>
+            <Text fontSize="sm" fontWeight="600" color="fg.muted">-</Text>
           )}
         </HStack>
       )}
@@ -540,12 +522,12 @@ const MultiArtistEditableField = ({ label, artists, isEditing, onNavigate }: any
   );
 };
 
-// ⚡️ NEW: Dedicated Array Renderer for Postgres String Arrays
 const ArrayTagDisplay = ({ tags, colorScheme = "blue", icon: IconCmp, onTagClick }: any) => {
   if (!tags || !Array.isArray(tags) || tags.length === 0) {
-    return <Text fontSize="sm" color="gray.400" h="38px" display="flex" alignItems="center">-</Text>;
+    return <Text fontSize="sm" color="fg.muted" h="38px" display="flex" alignItems="center">-</Text>;
   }
 
+  // Dynamic tags mapping beautifully to dark mode equivalents
   const bg = `${colorScheme}.50`;
   const color = `${colorScheme}.700`;
   const border = `${colorScheme}.100`;
@@ -554,8 +536,10 @@ const ArrayTagDisplay = ({ tags, colorScheme = "blue", icon: IconCmp, onTagClick
     <HStack flexWrap="wrap" gap={2}>
       {tags.map((tag: string, index: number) => (
         <HStack 
-          key={index} px={2.5} py={1} bg={bg} color={color} gap={1.5}
-          fontSize="xs" fontWeight="600" borderRadius="md" border="1px solid" borderColor={border}
+          key={index} px={2.5} py={1} gap={1.5}
+          bg={bg} color={color} border="1px solid" borderColor={border}
+          _dark={{ bg: `${colorScheme}.900`, color: `${colorScheme}.200`, borderColor: `${colorScheme}.800` }}
+          fontSize="xs" fontWeight="600" borderRadius="md" 
           cursor={onTagClick ? "pointer" : "default"} transition="all 0.2s"
           _hover={onTagClick ? { transform: "translateY(-1px)", shadow: "sm", opacity: 0.8 } : {}}
           onClick={() => onTagClick && onTagClick(tag)}
@@ -569,7 +553,7 @@ const ArrayTagDisplay = ({ tags, colorScheme = "blue", icon: IconCmp, onTagClick
 };
 
 const TagDisplay = ({ rawString, colorScheme = "gray", onTagClick }: any) => {
-  if (!rawString.trim()) return <Text fontSize="sm" color="gray.400" h="38px" display="flex" alignItems="center">-</Text>;
+  if (!rawString.trim()) return <Text fontSize="sm" color="fg.muted" h="38px" display="flex" alignItems="center">-</Text>;
   const tags = rawString.split(',').map((s: string) => s.trim()).filter(Boolean);
   
   const bg = colorScheme === 'gray' ? 'gray.100' : `${colorScheme}.50`;
@@ -580,8 +564,14 @@ const TagDisplay = ({ rawString, colorScheme = "gray", onTagClick }: any) => {
     <HStack flexWrap="wrap" gap={2} my={2}>
       {tags.map((tag: string, index: number) => (
         <Box 
-          key={index} px={2.5} py={1} bg={bg} color={color} 
-          fontSize="xs" fontWeight="600" borderRadius="md" border="1px solid" borderColor={border}
+          key={index} px={2.5} py={1} 
+          bg={bg} color={color} border="1px solid" borderColor={border}
+          _dark={
+            colorScheme === 'gray' 
+              ? { bg: "whiteAlpha.200", color: "whiteAlpha.900", borderColor: "whiteAlpha.300" } 
+              : { bg: `${colorScheme}.900`, color: `${colorScheme}.200`, borderColor: `${colorScheme}.800` }
+          }
+          fontSize="xs" fontWeight="600" borderRadius="md" 
           cursor={onTagClick ? "pointer" : "default"} transition="all 0.2s"
           _hover={onTagClick ? { transform: "translateY(-1px)", shadow: "sm", opacity: 0.8 } : {}}
           onClick={() => onTagClick && onTagClick(tag)}

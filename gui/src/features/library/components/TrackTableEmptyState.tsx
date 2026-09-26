@@ -13,7 +13,7 @@ export const TrackTableEmptyState: React.FC<Props> = ({ isLoading, colSpan = 9 }
       <Table.Row>
         <Table.Cell colSpan={colSpan} textAlign="center" py={12}>
           <Box display="flex" justifyContent="center">
-            <Spinner size="xl" color="blue.500" />
+            <Spinner size="xl" color="blue.500" _dark={{ color: "blue.400" }} />
           </Box>
         </Table.Cell>
       </Table.Row>
@@ -22,10 +22,10 @@ export const TrackTableEmptyState: React.FC<Props> = ({ isLoading, colSpan = 9 }
 
   return (
     <Table.Row>
-      <Table.Cell colSpan={colSpan} textAlign="center" py={12} color="gray.500">
+      <Table.Cell colSpan={colSpan} textAlign="center" py={12} color="fg.muted">
         <VStack gap={2}>
-          <Icon as={Music} boxSize={8} color="gray.300" />
-          <Text fontWeight="500" color="gray.900">No tracks found</Text>
+          <Icon as={Music} boxSize={8} color="fg.muted" />
+          <Text fontWeight="500" color="fg">No tracks found</Text>
           <Text fontSize="sm">Try adjusting your search query.</Text>
         </VStack>
       </Table.Cell>

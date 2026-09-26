@@ -10,10 +10,10 @@ export const PlaybackControls = () => {
       <IconButton
         aria-label="Previous"
         variant="ghost"
-        color="gray.700"
+        color="fg.muted"
         onClick={playPrevious}
         bg="transparent" 
-        _hover={{ bg: "gray.50" }}
+        _hover={{ bg: "gray.50", color: "fg", _dark: { bg: "whiteAlpha.100", color: "fg" } }}
         size="md"
       >
         <Icon as={SkipBack} boxSize={4} fill="currentColor" />
@@ -23,13 +23,14 @@ export const PlaybackControls = () => {
         as="button" 
         onClick={togglePlayPause} 
         align="center" justify="center" 
-        w="42px" h="42px" // Scaled down from 54px
-        bg="white" 
-        color="gray.900"
+        w="42px" h="42px"
+        bg="bg" 
+        color="fg"
+        _dark={{ bg: "whiteAlpha.200" }}
         borderRadius="full" 
         boxShadow="0 2px 8px rgba(0,0,0,0.06)"
-        border="1px solid" borderColor="gray.100"
-        _hover={{ transform: "scale(1.05)" }} 
+        border="1px solid" borderColor="border"
+        _hover={{ transform: "scale(1.05)", bg: "gray.50", _dark: { bg: "whiteAlpha.300" } }} 
         _active={{ transform: "scale(0.95)" }}
         transition="all 0.2s"
       >
@@ -43,9 +44,9 @@ export const PlaybackControls = () => {
       <IconButton
         aria-label="Next"
         variant="ghost"
-        color="gray.700"
+        color="fg.muted"
         onClick={playNext}
-        _hover={{ bg: "gray.50" }}
+        _hover={{ bg: "gray.50", color: "fg", _dark: { bg: "whiteAlpha.100", color: "fg" } }}
         size="md"
         bg="transparent" 
       >

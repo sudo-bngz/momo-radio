@@ -4,7 +4,7 @@ import {
 } from '@chakra-ui/react';
 import { Plus, Music, ChevronDown } from 'lucide-react';
 import { useNavigate, useMatch, useLocation } from 'react-router-dom'; 
-import axios from 'axios'; // ⚡️ We use Axios, just like your working single upload
+import axios from 'axios';
 
 import { TrackListView } from './TrackListView';
 import { PlaylistGridView } from './PlaylistGridView';
@@ -63,7 +63,6 @@ export const LibraryView: React.FC = () => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
-    // Force UI to switch to Tracks tab immediately so the user can watch them appear
     setActiveTab('tracks');
     navigate('/library', { state: { activeTab: 'tracks' } });
 
@@ -74,14 +73,12 @@ export const LibraryView: React.FC = () => {
     });
 
     try {
-      // 1. Get presigned URLs for all files
       const filePayload = files.map(f => ({ 
         filename: f.name, 
         content_type: f.type || 'application/octet-stream' 
       }));
       const presignRes = await api.bulkPresign(filePayload); 
 
-      // 2. Native Concurrency Limiter (5 at a time)
       const CONCURRENCY_LIMIT = 5;
       let completedCount = 0;
 
@@ -99,16 +96,12 @@ export const LibraryView: React.FC = () => {
           return { filename: ticket.filename, file_key: ticket.key };
         });
 
-        // Wait for this specific batch of 5 to finish uploading to B2
         const results = await Promise.all(batchPromises);
         const validResults = results.filter(res => res !== null) as { filename: string, file_key: string }[];
         
         if (validResults.length > 0) {
-          // 3. Confirm JUST this batch with the Go backend
           const confirmRes = await api.bulkConfirm(validResults);
           
-          // 4. Dispatch the exact event TrackListView expects for each track
-          // This makes them instantly appear in the UI while the next batch uploads
           confirmRes.ids.forEach((id: number) => {
             window.dispatchEvent(new CustomEvent('track_uploaded', { 
               detail: { track_id: id } 
@@ -123,7 +116,6 @@ export const LibraryView: React.FC = () => {
         }
       }
 
-      // 5. Final success message when the entire queue finishes
       toaster.update(toastId, {
         title: "Bulk Upload Complete",
         description: `Successfully queued ${files.length} tracks for processing.`,
@@ -147,7 +139,8 @@ export const LibraryView: React.FC = () => {
   const isDetailViewActive = !!albumDetailMatch;
 
   return (
-    <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
+    // ⚡️ Removed hardcoded bg="white" and data-theme="light" to inherit the parent layout's background
+    <VStack align="stretch" h="100%" gap={8} bg="transparent">
       <input 
         type="file" 
         multiple 
@@ -158,39 +151,43 @@ export const LibraryView: React.FC = () => {
       />
       
       <VStack align="start" gap={1}>
-        <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
-          <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
+        <HStack gap={2} fontSize="sm" color="fg.muted" mb={1}>
+          <Box 
+            w="24px" h="24px" bg="blue.500" _dark={{ bg: "blue.400" }} color="white" 
+            borderRadius="md" display="flex" alignItems="center" justifyContent="center"
+          >
             <Icon as={Music} boxSize={3} strokeWidth={3} />
           </Box>
-          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "gray.900" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>Library</Text>
-          <Text color="gray.300">/</Text>
+          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>Library</Text>
+          <Text color="border">/</Text>
           
           {albumDetailMatch ? (
             <>
-              <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "gray.900" }} onClick={() => { setActiveTab('albums'); navigate('/library', { state: { activeTab: 'albums' } }); }}>Albums</Text>
-              <Text color="gray.300">/</Text>
-              <Text color="gray.900" fontWeight="600">{dynamicTitle || 'Loading...'}</Text>
+              <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => { setActiveTab('albums'); navigate('/library', { state: { activeTab: 'albums' } }); }}>Albums</Text>
+              <Text color="border">/</Text>
+              <Text color="fg" fontWeight="600">{dynamicTitle || 'Loading...'}</Text>
             </>
           ) : (
-            <Text color="gray.900" fontWeight="500">{currentTabLabel}</Text>
+            <Text color="fg" fontWeight="500">{currentTabLabel}</Text>
           )}
         </HStack>
-        {!isDetailViewActive && <Heading size="3xl" fontWeight="normal" color="gray.900" letterSpacing="tight">Music Library</Heading>}
+        {!isDetailViewActive && <Heading size="3xl" fontWeight="normal" color="fg" letterSpacing="tight">Music Library</Heading>}
       </VStack>
 
       {!isDetailViewActive && (
         <Flex justify="space-between" align="center" pb={2}>
           <HStack gap={4} overflowX="auto" css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
             
+            {/* ⚡️ Upload button dynamically swaps colors based on active mode */}
             <Button 
               title="Upload at least 5 tracks to unlock autonomous broadcasting."
-              bg="gray.900" 
-              color="white" 
+              bg="fg" 
+              color="bg" 
               borderRadius="full" 
               w="48px" 
               h="48px" 
               p={0} 
-              _hover={{ bg: "black" }} 
+              _hover={{ opacity: 0.8 }} 
               onClick={handleAddClick} 
               flexShrink={0}
             >
@@ -201,22 +198,44 @@ export const LibraryView: React.FC = () => {
               {TABS.map((tab) => {
                 const isActive = activeTab === tab.id;
                 return (
-                  <Button key={tab.id} onClick={() => setActiveTab(tab.id)} size="sm" borderRadius="full" px={5} h="36px" bg={isActive ? 'gray.900' : 'transparent'} color={isActive ? 'white' : 'gray.600'} fontWeight={isActive ? '600' : '500'} _hover={isActive ? {} : { bg: 'gray.100', color: 'gray.900' }} transition="all 0.2s">{tab.label}</Button>
+                  <Button 
+                    key={tab.id} 
+                    onClick={() => setActiveTab(tab.id)} 
+                    size="sm" 
+                    borderRadius="full" 
+                    px={5} 
+                    h="36px" 
+                    bg={isActive ? 'fg' : 'transparent'} 
+                    color={isActive ? 'bg' : 'fg.muted'} 
+                    fontWeight={isActive ? '600' : '500'} 
+                    _hover={isActive ? {} : { bg: 'gray.100', color: 'fg', _dark: { bg: 'whiteAlpha.200' } }} 
+                    transition="all 0.2s"
+                  >
+                    {tab.label}
+                  </Button>
                 );
               })}
             </HStack>
           </HStack>
 
+          {/* ⚡️ Select component completely mapped to semantic tokens */}
           <Select.Root collection={sortOptions} value={[sortBy]} onValueChange={(details) => setSortBy(details.value[0])} width="180px">
-            <Select.Trigger height="36px" bg="white" color="gray.700" fontSize="sm" border="1px solid" borderColor="gray.200" borderRadius="full" px={4} _hover={{ borderColor: "gray.300", bg: "gray.50" }}>
+            <Select.Trigger 
+              height="36px" bg="bg.panel" color="fg" fontSize="sm" 
+              border="1px solid" borderColor="border" borderRadius="full" px={4} 
+              _hover={{ borderColor: "fg.muted", bg: "gray.50", _dark: { bg: "whiteAlpha.50" } }}
+            >
               <Select.ValueText placeholder="Sort by" fontWeight="600" />
-              <Icon as={ChevronDown} color="gray.500" boxSize={4} />
+              <Icon as={ChevronDown} color="fg.muted" boxSize={4} />
             </Select.Trigger>
             <Select.Positioner zIndex={100}>
-              <Select.Content bg="white" borderRadius="xl" shadow="md" border="1px solid" borderColor="gray.200" p={1}>
+              <Select.Content bg="bg.panel" borderRadius="xl" shadow="md" border="1px solid" borderColor="border" p={1}>
                 {sortOptions.items.map((item) => (
-                  <Select.Item item={item} key={item.value} p={2} borderRadius="md" _hover={{ bg: "gray.50" }} cursor="pointer">
-                    <Select.ItemText color="gray.800" fontSize="sm" fontWeight="500">{item.label}</Select.ItemText>
+                  <Select.Item 
+                    item={item} key={item.value} p={2} borderRadius="md" cursor="pointer"
+                    _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} 
+                  >
+                    <Select.ItemText color="fg" fontSize="sm" fontWeight="500">{item.label}</Select.ItemText>
                   </Select.Item>
                 ))}
               </Select.Content>

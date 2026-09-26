@@ -40,15 +40,13 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
     fetchAlbum();
   }, [id, onAlbumLoad]);
 
-  // --- Playback Handlers ---
   const isAlbumPlaying = album?.tracks?.some((t: any) => t.id === currentTrack?.id) && isPlaying;
 
-  // Helper to attach the album cover to the tracks so the Global Player looks good!
   const getPlayableTracks = () => {
     return album.tracks.map((t: any) => ({
       ...t,
       cover_url: coverUrl,
-      album: { title: album.title } // Inject album title for the player UI
+      album: { title: album.title } 
     }));
   };
 
@@ -80,7 +78,7 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
   }
 
   if (!album) {
-    return <Flex justify="center" align="center" h="40vh"><Text color="gray.500">Album not found</Text></Flex>;
+    return <Flex justify="center" align="center" h="40vh"><Text color="fg.muted">Album not found</Text></Flex>;
   }
 
   const coverUrl = imgError ? '' : album.cover_url;
@@ -110,13 +108,15 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
     : "Unknown Artist";
 
   return (
-    <Box w="full" h="100%" overflowY="auto" pt={6} pb={20} bg="white" color="gray.900">
+    // ⚡️ Inherit global background and set default text to foreground
+    <Box w="full" h="100%" overflowY="auto" pt={6} pb={20} bg="transparent" color="fg">
       
       {/* 1. HEADER SECTION */}
       <Flex gap={8} mb={10} align="center" flexDir={{ base: "column", sm: "row" }} px={{ base: 4, md: 0 }}>
         
         <Box position="relative" w={{ base: "100%", sm: "200px" }} maxW="300px" aspectRatio={1} flexShrink={0}>
-          <Box w="100%" h="100%" borderRadius="lg" overflow="hidden" bg="gray.100" border="1px solid" borderColor="gray.200" shadow="sm">
+          {/* ⚡️ Semantic borders and dark mode fallback backgrounds */}
+          <Box w="100%" h="100%" borderRadius="lg" overflow="hidden" bg="gray.100" _dark={{ bg: "whiteAlpha.200" }} border="1px solid" borderColor="border" shadow="sm">
             {coverUrl ? (
               <Image 
                 src={coverUrl} 
@@ -126,7 +126,7 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
               />
             ) : (
               <Flex w="100%" h="100%" align="center" justify="center">
-                <Icon as={Disc} boxSize={16} color="gray.300" strokeWidth={1} />
+                <Icon as={Disc} boxSize={16} color="fg.muted" strokeWidth={1} />
               </Flex>
             )}
           </Box>
@@ -141,10 +141,12 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
             h="56px"
             bg="blue.500"
             color="white"
-            _hover={{ bg: "blue.600", transform: "scale(1.05)" }}
-            _active={{ transform: "scale(0.95)" }}
             shadow="lg"
-            border="4px solid white"
+            border="4px solid"
+            borderColor="bg" // ⚡️ Matches the page background to look "cut out" perfectly in both modes
+            _dark={{ bg: "blue.400", borderColor: "bg" }}
+            _hover={{ bg: "blue.600", transform: "scale(1.05)", _dark: { bg: "blue.500" } }}
+            _active={{ transform: "scale(0.95)" }}
             onClick={handlePlayAlbum}
             zIndex={2}
           >
@@ -154,12 +156,12 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
 
         {/* Text Metadata */}
         <VStack align="flex-start" justify="center" flex="1" gap={3}>
-          <Heading size="2xl" fontWeight="700" letterSpacing="tight" color="gray.900" lineHeight="1.1">
+          <Heading size="2xl" fontWeight="700" letterSpacing="tight" color="fg" lineHeight="1.1">
             {album.title}
           </Heading>
           
-          <HStack color="gray.500" fontSize="sm" fontWeight="500" gap={2} flexWrap="wrap">
-            <Text color="gray.900" fontWeight="600">
+          <HStack color="fg.muted" fontSize="sm" fontWeight="500" gap={2} flexWrap="wrap">
+            <Text color="fg" fontWeight="600">
               {album.artists && album.artists.length > 0 ? (
                 album.artists.map((artist: any, i: number) => (
                   <React.Fragment key={artist.id || i}>
@@ -173,7 +175,6 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
                 "Unknown Artist"
               )}
             </Text>
-            {/* ⚡️ Added Year explicitly in the stats row */}
             <Text>•</Text>
             <Text>{album.year || 'Unknown Year'}</Text>
             <Text>•</Text>
@@ -182,20 +183,23 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
             <Text>{totalMinutes} min {remainderSeconds} sec</Text>
           </HStack>
 
-          {/* ⚡️ Added Styles as Tags */}
           {uniqueTags.length > 0 && (
             <HStack flexWrap="wrap" gap={2}>
               {uniqueTags.map((tag, i) => (
-                <Box key={i} bg="gray.100" color="gray.700" px={2} py={1} borderRadius="md" fontSize="xs" fontWeight="500">
+                <Box 
+                  key={i} 
+                  bg="gray.100" color="gray.700" 
+                  _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }} 
+                  px={2} py={1} borderRadius="md" fontSize="xs" fontWeight="500"
+                >
                   {tag as string}
                 </Box>
               ))}
             </HStack>
           )}
 
-          {/* ⚡️ Cleaned up label info so we don't duplicate the year/tags */}
           {(album.publisher || album.release_country) && (
-            <Text fontSize="sm" color="gray.500" mt={1}>
+            <Text fontSize="sm" color="fg.muted" mt={1}>
               {album.release_country ? `${album.release_country} release` : 'Released'} via {album.publisher || 'Unknown Label'} {album.catalog_number ? `(${album.catalog_number})` : ''}
             </Text>
           )}
@@ -203,11 +207,12 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
       </Flex>
 
       {/* 2. TAB DIVIDER */}
-      <Box borderBottom="1px solid" borderColor="gray.200" w="full" mb={6} px={{ base: 4, md: 0 }}>
+      <Box borderBottom="1px solid" borderColor="border" w="full" mb={6} px={{ base: 4, md: 0 }}>
         <HStack gap={8}>
           <Box 
             borderBottom="2px solid" 
             borderColor="blue.500" 
+            _dark={{ borderColor: "blue.400", color: "blue.400" }}
             pb={3} 
             color="blue.600" 
             fontWeight="600" 
@@ -217,7 +222,7 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
             gap={2}
           >
             Tracks
-            <Box as="span" bg="gray.100" color="gray.500" fontSize="xs" px={1.5} py={0.5} borderRadius="full">
+            <Box as="span" bg="gray.100" color="gray.600" _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }} fontSize="xs" px={1.5} py={0.5} borderRadius="full">
               {album.tracks?.length || 0}
             </Box>
           </Box>
@@ -239,14 +244,26 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
                 key={track.id} 
                 className="group"
                 px={4} py={3}
-                borderBottom="1px solid" borderColor="gray.100"
+                borderBottom="1px solid" 
+                borderColor="border"
+                
+                // ⚡️ Playing state backgrounds adapted for dark mode
                 bg={isThisTrackPlaying ? "blue.50" : "transparent"}
                 _hover={{ bg: isThisTrackPlaying ? "blue.50" : "gray.50" }}
+                _dark={{
+                  bg: isThisTrackPlaying ? "whiteAlpha.100" : "transparent",
+                  _hover: { bg: isThisTrackPlaying ? "whiteAlpha.100" : "whiteAlpha.50" }
+                }}
+                
                 transition="background 0.2s"
                 gap={4}
                 borderRadius="md"
               >
-                <Box w="30px" textAlign="left" color={isThisTrackPlaying ? "blue.600" : "gray.400"} fontSize="sm" fontWeight="600">
+                <Box 
+                  w="30px" textAlign="left" fontSize="sm" fontWeight="600"
+                  color={isThisTrackPlaying ? "blue.600" : "fg.muted"} 
+                  _dark={{ color: isThisTrackPlaying ? "blue.300" : "fg.muted" }}
+                >
                   {!isThisTrackPlaying && <Box as="span" display="block" _groupHover={{ display: "none" }}>{index + 1}</Box>}
                   
                   <Box 
@@ -255,20 +272,26 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
                     cursor="pointer" 
                     onClick={(e) => handlePlayTrack(e, track)}
                   >
-                    <Icon as={isThisTrackActiveAndPlaying ? Pause : Play} fill="currentColor" boxSize={4} color={isThisTrackPlaying ? "blue.600" : "gray.900"} />
+                    <Icon as={isThisTrackActiveAndPlaying ? Pause : Play} fill="currentColor" boxSize={4} color={isThisTrackPlaying ? "blue.600" : "fg"} _dark={{ color: isThisTrackPlaying ? "blue.300" : "fg" }} />
                   </Box>
                 </Box>
 
                 <Box flex="1" overflow="hidden">
-                  <Text fontSize="sm" fontWeight={isThisTrackPlaying ? "600" : "500"} color={isThisTrackPlaying ? "blue.700" : "gray.900"} truncate>
+                  <Text 
+                    fontSize="sm" 
+                    fontWeight={isThisTrackPlaying ? "600" : "500"} 
+                    color={isThisTrackPlaying ? "blue.700" : "fg"} 
+                    _dark={{ color: isThisTrackPlaying ? "blue.300" : "fg" }}
+                    truncate
+                  >
                     {track.title}
                   </Text>
                   
                   {isVariousArtists && (
-                    <Box fontSize="xs" color="gray.500" truncate mt={0.5}>
+                    <Box fontSize="xs" color="fg.muted" truncate mt={0.5}>
                       {track.artists?.map((artist: any, i: number) => (
                         <React.Fragment key={artist.id || i}>
-                          <Text as="span" cursor="pointer" _hover={{ textDecoration: "underline", color: "blue.600" }} onClick={(e) => { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(artist.name)}`); }}>
+                          <Text as="span" cursor="pointer" _hover={{ textDecoration: "underline", color: "blue.500" }} onClick={(e) => { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(artist.name)}`); }}>
                             {artist.name}
                           </Text>
                           {i < track.artists.length - 1 && ", "}
@@ -278,14 +301,18 @@ export const AlbumDetailView: React.FC<AlbumDetailViewProps> = ({ id: propId, on
                   )}
                 </Box>
 
-                <HStack gap={8} color="gray.500" fontSize="xs">
+                <HStack gap={8} color="fg.muted" fontSize="xs">
                   <Text display={{ base: "none", sm: "block" }} w="40px" textAlign="right">
                     {track.bpm > 0 ? Math.round(track.bpm) : ""}
                   </Text>
                   <Text display={{ base: "none", sm: "block" }} w="40px" textAlign="right">
                     {track.musical_key ? `${track.musical_key}${track.scale === 'minor' ? 'm' : ''}` : ""}
                   </Text>
-                  <Text w="40px" textAlign="right" fontWeight="500" color={isThisTrackPlaying ? "blue.700" : "gray.700"}>
+                  <Text 
+                    w="40px" textAlign="right" fontWeight="500" 
+                    color={isThisTrackPlaying ? "blue.700" : "fg.muted"}
+                    _dark={{ color: isThisTrackPlaying ? "blue.300" : "fg.muted" }}
+                  >
                     {formatTime(track.duration)}
                   </Text>
                 </HStack>
