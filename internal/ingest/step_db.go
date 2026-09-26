@@ -137,7 +137,7 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 		}
 	}
 
-	// 5. Finalize Track Updates Safely (⚡️ THE FIX IS HERE)
+	// 5. Finalize Track Updates Safely
 	updates := map[string]any{
 		"key":                 ctx.DestKey,
 		"title":               meta.Title,

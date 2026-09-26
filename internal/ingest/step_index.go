@@ -19,8 +19,20 @@ func (s *IndexStep) Execute(ctx *ProcessingContext) error {
 		return fmt.Errorf("track context missing before indexing")
 	}
 
+	logger.Log.Debug("Refreshing track data from DB before indexing", zap.Any("track_id", ctx.Track.ID))
+
+	if err := ctx.Worker.db.DB.
+		Preload("Artists").
+		Preload("Album").
+		First(ctx.Track, ctx.Track.ID).Error; err != nil {
+
+		logger.Log.Error("Failed to refresh track for indexing", zap.Error(err))
+		return fmt.Errorf("failed to refresh track: %w", err)
+	}
+
 	logger.Log.Debug("Preparing track document for Meilisearch", zap.Any("track_id", ctx.Track.ID))
 
+	// ⚡️ 2. Now ctx.Track has the populated arrays from Discogs/iTunes
 	doc := MapTrackToMeiliDoc(ctx.Track)
 
 	pk := "id"
