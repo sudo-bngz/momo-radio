@@ -17,8 +17,6 @@ export const AlbumGridView: React.FC = () => {
   
   const [albums, setAlbums] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // ⚡️ ADD A STATE TO SHOW A SPINNER ON THE SPECIFIC ALBUM BEING LOADED
   const [loadingAlbumId, setLoadingAlbumId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -38,18 +36,14 @@ export const AlbumGridView: React.FC = () => {
   }, []);
 
   const handlePlayAlbum = async (e: React.MouseEvent, albumId: number) => {
-    e.stopPropagation(); // Prevent navigating to the album detail page
+    e.stopPropagation(); 
     setLoadingAlbumId(albumId);
 
     try {
-      // Fetch the tracks for this specific album.
-      // NOTE: Ensure your api.ts has a method to get tracks by album ID!
-      // This might be api.getAlbumTracks(albumId) or api.getTracks({ album_id: albumId })
       const response = await api.getAlbumTracks(albumId); 
       const tracks = response.data || response || [];
 
       if (tracks.length > 0) {
-        // Play the first track, and pass the entire array to form the queue/playlist
         playTrack(tracks[0], tracks);
       } else {
         toaster.create({ title: "This album is empty", type: "warning" });
@@ -71,25 +65,29 @@ export const AlbumGridView: React.FC = () => {
   });
 
   return (
-    <Box w="full" h="100%" overflowY="auto" pt={2} pb={10} animation="fade-in 0.4s ease-out"
+    <Box 
+      w="full" h="100%" overflowY="auto" pt={2} pb={10} animation="fade-in 0.4s ease-out"
+      // ⚡️ Inherit dark background natively and use dynamic border token for the scrollbar thumb
+      bg="transparent"
       css={{
         '&::-webkit-scrollbar': { width: '8px' },
-        '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-gray-200)', borderRadius: '4px' },
+        '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-border)', borderRadius: '4px' },
       }}
     >
-      <Text fontSize="sm" color="gray.500" mb={4}>
+      <Text fontSize="sm" color="fg.muted" mb={4}>
         {albums.length} albums in your collection
       </Text>
 
       {isLoading ? (
-        <Flex justify="center" align="center" h="40vh"><Spinner size="xl" color="blue.500" borderWidth="3px" /></Flex>
+        <Flex justify="center" align="center" h="40vh"><Spinner size="xl" color="blue.500" _dark={{ color: "blue.400" }} borderWidth="3px" /></Flex>
       ) : filteredAlbums.length === 0 ? (
-        <VStack justify="center" py={24} bg="gray.50" borderRadius="3xl" border="1px dashed" borderColor="gray.200">
-          <Box p={6} bg="white" borderRadius="full" mb={2} shadow="sm">
-            <Icon as={Disc3} boxSize={12} color="gray.400" />
+        // ⚡️ Semantic tokens for the Empty State
+        <VStack justify="center" py={24} bg="bg.panel" borderRadius="3xl" border="1px dashed" borderColor="border">
+          <Box p={6} bg="bg" borderRadius="full" mb={2} shadow="sm" border="1px solid" borderColor="border">
+            <Icon as={Disc3} boxSize={12} color="fg.muted" />
           </Box>
-          <Heading size="md" color="gray.800">No Albums Found</Heading>
-          <Text fontSize="sm" color="gray.500">
+          <Heading size="md" color="fg">No Albums Found</Heading>
+          <Text fontSize="sm" color="fg.muted">
             {globalSearch ? "Try adjusting your search terms." : "Upload tracks to start building your album library."}
           </Text>
         </VStack>
@@ -113,7 +111,8 @@ export const AlbumGridView: React.FC = () => {
                 onClick={() => navigate(`/library/albums/${album.id}`)}
               >
                 {/* Square Image Container */}
-                <Box position="relative" w="100%" pb="100%" mb={3} borderRadius="md" overflow="hidden" shadow="sm" bg="gray.100">
+                {/* ⚡️ _dark fallback background if cover image fails/is missing */}
+                <Box position="relative" w="100%" pb="100%" mb={3} borderRadius="md" overflow="hidden" shadow="sm" bg="gray.100" _dark={{ bg: "whiteAlpha.200" }}>
                   {coverUrl ? (
                     <Image 
                       src={coverUrl} 
@@ -124,7 +123,7 @@ export const AlbumGridView: React.FC = () => {
                     />
                   ) : (
                     <Flex position="absolute" inset={0} align="center" justify="center">
-                      <Icon as={Music} boxSize={10} color="gray.300" />
+                      <Icon as={Music} boxSize={10} color="fg.muted" />
                     </Flex>
                   )}
                   
@@ -134,17 +133,17 @@ export const AlbumGridView: React.FC = () => {
                     _groupHover={{ opacity: 1 }} transition="opacity 0.2s" 
                     align="center" justify="center"
                   >
+                    {/* ⚡️ Play button transitions to blue in dark mode for better pop */}
                     <Flex 
-                      w="48px" h="48px" bg="white" borderRadius="full" align="center" justify="center"
+                      w="48px" h="48px" bg="white" color="gray.900" _dark={{ bg: "blue.500", color: "white" }} borderRadius="full" align="center" justify="center"
                       transform="translateY(10px)" _groupHover={{ transform: "translateY(0)" }} transition="all 0.2s"
-                      shadow="lg" _hover={{ scale: 1.1 }}
-                      onClick={(e) => handlePlayAlbum(e, album.id)} // ⚡️ ATTACHED HERE
+                      shadow="lg" _hover={{ scale: 1.1, _dark: { bg: "blue.400" } }}
+                      onClick={(e) => handlePlayAlbum(e, album.id)}
                     >
-                      {/* ⚡️ SHOW SPINNER IF LOADING THIS ALBUM */}
                       {loadingAlbumId === album.id ? (
-                        <Spinner size="sm" color="blue.500" />
+                        <Spinner size="sm" color="inherit" />
                       ) : (
-                        <Icon as={Play} boxSize={5} color="gray.900" fill="currentColor" ml="2px" />
+                        <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />
                       )}
                     </Flex>
                   </Flex>
@@ -152,10 +151,11 @@ export const AlbumGridView: React.FC = () => {
 
                 {/* Metadata */}
                 <VStack align="start" gap={0}>
-                  <Text fontSize="sm" fontWeight="700" color="gray.900" truncate w="100%">
+                  {/* ⚡️ Semantic foreground tokens */}
+                  <Text fontSize="sm" fontWeight="700" color="fg" truncate w="100%">
                     {album.title}
                   </Text>
-                  <Text fontSize="xs" fontWeight="500" color="gray.500" truncate w="100%">
+                  <Text fontSize="xs" fontWeight="500" color="fg.muted" truncate w="100%">
                     {type} • {artistName}{year}
                   </Text>
                 </VStack>

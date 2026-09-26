@@ -6,7 +6,7 @@ import { GlobalPlayer } from "../features/player/GlobalPlayer";
 
 export const DashboardLayout = () => {
   return (
-    <Flex h="100vh" w="100vw" direction="column" bg="white" overflow="hidden" gap={0}>
+    <Flex h="100vh" w="100vw" direction="column" bg="bg" color="fg" overflow="hidden" gap={0}>
       <Flex flex="1" w="100%" overflow="hidden">
         <Sidebar /> 
         

@@ -32,10 +32,23 @@ export const getTrackData = (track: any) => {
   return { title, artist, cover, hasCover, bpm, scale, musicalKey, style: primaryStyle };
 };
 
+// ⚡️ FIXED: Snaps to valid Chakra weights (400, 500, 600) and maps a dark mode equivalent
 const getBpmGrayscale = (bpm: number) => {
-  if (!bpm) return "gray.400";
-  const weight = Math.min(Math.max(Math.floor(((bpm - 70) / 90) * 400) + 400, 400), 800);
-  return `gray.${weight}`;
+  if (!bpm) return { light: "gray.400", dark: "whiteAlpha.400" };
+  const weight = Math.min(Math.max(Math.round((((bpm - 70) / 90) * 400) / 100) * 100 + 400, 400), 800);
+  
+  const darkAlphaMap: Record<number, string> = {
+    400: "whiteAlpha.500",
+    500: "whiteAlpha.600",
+    600: "whiteAlpha.700",
+    700: "whiteAlpha.800",
+    800: "whiteAlpha.900"
+  };
+  
+  return { 
+    light: `gray.${weight}`, 
+    dark: darkAlphaMap[weight] || "whiteAlpha.700" 
+  };
 };
 
 export const getKeyInfo = (scale: string | undefined, musicalKey: string | undefined) => {
@@ -111,26 +124,28 @@ export const PlaylistBuilder: React.FC = () => {
   };
 
   return (
-    // ⚡️ Changed h="100vh" to h="100%" so it fits perfectly under your new TopBar without double-scrolling
-    <VStack align="stretch" w="full" h="100%" gap={8} bg="white" data-theme="light">
+    // ⚡️ Removed hardcoded bg="white" and data-theme="light" to inherit the parent layout's background
+    <VStack align="stretch" w="full" h="100%" gap={8} bg="transparent">
       
       {/* =========================================
           1. HARMONIZED HEADER
           ========================================= */}
-      <Flex justify="space-between" align="flex-end" wrap="wrap" gap={6} pb={4} borderBottom="1px solid" borderColor="gray.100">
+      <Flex justify="space-between" align="flex-end" wrap="wrap" gap={6} pb={4} borderBottom="1px solid" borderColor="border">
         
         {/* Left: Breadcrumbs & Seamless Inputs */}
         <VStack align="start" gap={1} flex="1">
-          <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
-            <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
+          <HStack gap={2} fontSize="sm" color="fg.muted" mb={1}>
+            <Box 
+              w="24px" h="24px" bg="blue.500" _dark={{ bg: "blue.400" }} color="white" 
+              borderRadius="md" display="flex" alignItems="center" justifyContent="center"
+            >
               <Icon as={ListMusic} boxSize={3} strokeWidth={3} />
             </Box>
-            <Text cursor="pointer" _hover={{ color: "blue.500" }} onClick={() => navigate('/library')}>Library</Text>
-            <Text color="gray.300">/</Text>
-            {/* Navigates back to the library view, assuming your router keeps state or defaults to playlists */}
-            <Text cursor="pointer" _hover={{ color: "blue.500" }} onClick={() => navigate(-1)}>Playlists</Text>
-            <Text color="gray.300">/</Text>
-            <Text color="gray.900" fontWeight="500">{playlistId ? 'Edit Playlist' : 'New Playlist'}</Text>
+            <Text cursor="pointer" _hover={{ color: "fg" }} onClick={() => navigate('/library')}>Library</Text>
+            <Text color="border">/</Text>
+            <Text cursor="pointer" _hover={{ color: "fg" }} onClick={() => navigate(-1)}>Playlists</Text>
+            <Text color="border">/</Text>
+            <Text color="fg" fontWeight="500">{playlistId ? 'Edit Playlist' : 'New Playlist'}</Text>
           </HStack>
 
           {/* ⚡️ Blended Inputs matching the "Music Library" typography */}
@@ -142,26 +157,28 @@ export const PlaylistBuilder: React.FC = () => {
               fontWeight="normal" 
               letterSpacing="tight" 
               placeholder="Playlist Name..." 
+              _placeholder={{ color: "fg.muted" }}
               border="none" 
               bg="transparent" 
               p={0} 
               h="auto" 
-              color="gray.900"
-              _focus={{ outline: 'none', bg: 'gray.50', px: 2, borderRadius: 'md', ml: -2 }} 
+              color="fg"
+              _focus={{ outline: 'none', bg: 'gray.50', _dark: { bg: 'whiteAlpha.100' }, px: 2, borderRadius: 'md', ml: -2 }} 
               transition="all 0.2s"
             />
             <Input 
               value={playlistDescription} 
               onChange={(e) => setPlaylistDescription(e.target.value)} 
               fontSize="md" 
-              color="gray.500" 
+              color="fg.muted" 
               placeholder="Add an optional description..."
+              _placeholder={{ color: "fg.muted", opacity: 0.6 }}
               border="none" 
               bg="transparent" 
               p={0} 
               h="auto" 
               mt={1}
-              _focus={{ outline: 'none', bg: 'gray.50', px: 2, borderRadius: 'md', ml: -2 }} 
+              _focus={{ outline: 'none', bg: 'gray.50', _dark: { bg: 'whiteAlpha.100' }, px: 2, borderRadius: 'md', ml: -2 }} 
               transition="all 0.2s"
             />
           </VStack>
@@ -169,13 +186,17 @@ export const PlaylistBuilder: React.FC = () => {
 
         {/* Right: Actions */}
         <HStack gap={4} flexShrink={0}>
-          <Badge variant="subtle" px={4} py={2} borderRadius="full" bg="gray.100" color="gray.700">
+          <Badge 
+            variant="subtle" px={4} py={2} borderRadius="full" 
+            bg="gray.100" color="gray.700" 
+            _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }}
+          >
             <HStack gap={1.5}><Clock size={14}/> <Text fontWeight="600">{totalMinutes} mins</Text></HStack>
           </Badge>
           <Button 
-            bg="blue.600" color="white" h="44px" px={6} borderRadius="xl" 
+            bg="blue.600" color="white" _dark={{ bg: "blue.500" }} h="44px" px={6} borderRadius="xl" 
             onClick={handleSaveClick} loading={isSaving} 
-            _hover={{ bg: "blue.700", transform: "translateY(-1px)", shadow: "sm" }}
+            _hover={{ bg: "blue.700", _dark: { bg: "blue.400" }, transform: "translateY(-1px)", shadow: "sm" }}
             transition="all 0.2s"
           >
             <Save size={18} style={{marginRight: '8px'}} /> Save Playlist
@@ -189,12 +210,14 @@ export const PlaylistBuilder: React.FC = () => {
       <Flex gap={6} flex="1" minH="0">
         
         {/* --- LEFT SIDE: LIBRARY SEARCH & LIST --- */}
-        <VStack w="400px" align="stretch" bg="white" borderRadius="2xl" border="1px solid" borderColor="gray.200" overflow="hidden" shadow="sm">
-          <Box p={4} borderBottom="1px solid" borderColor="gray.100" bg="gray.50">
-            <HStack bg="white" px={4} py={2} borderRadius="xl" border="1px solid" borderColor="gray.200">
-              <Search size={16} color="#A0AEC0" />
+        <VStack w="400px" align="stretch" bg="bg.panel" borderRadius="2xl" border="1px solid" borderColor="border" overflow="hidden" shadow="sm">
+          <Box p={4} borderBottom="1px solid" borderColor="border" bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}>
+            <HStack bg="bg" px={4} py={2} borderRadius="xl" border="1px solid" borderColor="border">
+              <Search size={16} color="var(--chakra-colors-fg-muted)" />
               <Input 
                 border="none" bg="transparent" placeholder="Search library..." size="sm" 
+                color="fg"
+                _placeholder={{ color: "fg.muted" }}
                 value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
                 _focus={{ outline: 'none' }} 
               />
@@ -205,38 +228,49 @@ export const PlaylistBuilder: React.FC = () => {
             {libraryTracks.map((track) => {
               const data = getTrackData(track);
               const harmonic = getKeyInfo(data.scale, data.musicalKey);
+              const bpmColors = getBpmGrayscale(data.bpm);
 
               return (
-                <HStack key={track.id || Math.random()} p={2.5} mb={1} borderRadius="xl" _hover={{ bg: "gray.50" }} className="group">
+                <HStack key={track.id || Math.random()} p={2.5} mb={1} borderRadius="xl" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} className="group">
                   {data.hasCover ? (
                     <Image src={data.cover} w={10} h={10} borderRadius="md" objectFit="cover" />
                   ) : (
-                    <Flex w={10} h={10} bg="gray.100" borderRadius="md" alignItems="center" justifyContent="center">
-                      <Music size={14} color="#A0AEC0"/>
+                    <Flex w={10} h={10} bg="gray.100" _dark={{ bg: "whiteAlpha.200" }} borderRadius="md" alignItems="center" justifyContent="center">
+                      <Music size={14} color="var(--chakra-colors-fg-muted)" />
                     </Flex>
                   )}
                   
                   <VStack align="start" gap={0} flex="1" overflow="hidden">
-                    <Text fontSize="sm" fontWeight="600" color="gray.900" truncate w="full">{data.title}</Text>
-                    <Text fontSize="11px" color="gray.500" truncate w="full">{data.artist}</Text>
+                    <Text fontSize="sm" fontWeight="600" color="fg" truncate w="full">{data.title}</Text>
+                    <Text fontSize="11px" color="fg.muted" truncate w="full">{data.artist}</Text>
                     
                     <HStack gap={2} fontSize="10px" mt={0.5}>
-                      <Text color={getBpmGrayscale(data.bpm)} fontWeight="700">{data.bpm || '--'} BPM</Text>
-                      <Box px={1.5} py={0.5} borderRadius="sm" bg={harmonic.color} color="white" fontWeight="700" textTransform="none">{harmonic.label}</Box>
-                      {data.style && <Box px={1.5} py={0.5} borderRadius="sm" bg="gray.100" color="gray.600" fontWeight="600" textTransform="capitalize">{data.style}</Box>}
+                      <Text color={bpmColors.light} _dark={{ color: bpmColors.dark }} fontWeight="700">
+                        {data.bpm || '--'} BPM
+                      </Text>
+                      <Box px={1.5} py={0.5} borderRadius="sm" bg={harmonic.color} color="white" fontWeight="700" textTransform="none">
+                        {harmonic.label}
+                      </Box>
+                      {data.style && (
+                        <Box px={1.5} py={0.5} borderRadius="sm" bg="gray.100" _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.800" }} color="gray.600" fontWeight="600" textTransform="capitalize">
+                          {data.style}
+                        </Box>
+                      )}
                     </HStack>
                   </VStack>
-                  <Button size="sm" variant="ghost" color="blue.600" onClick={() => addTrackToPlaylist(track)} opacity={0} _groupHover={{ opacity: 1 }} borderRadius="full"><Plus size={16}/></Button>
+                  <Button size="sm" variant="ghost" color="blue.600" _dark={{ color: "blue.400", _hover: { bg: "whiteAlpha.200" } }} onClick={() => addTrackToPlaylist(track)} opacity={0} _groupHover={{ opacity: 1 }} borderRadius="full">
+                    <Plus size={16}/>
+                  </Button>
                 </HStack>
               );
             })}
 
-            {isLoadingLibrary && <Text textAlign="center" fontSize="xs" color="gray.400" py={4}>Loading more tracks...</Text>}
+            {isLoadingLibrary && <Text textAlign="center" fontSize="xs" color="fg.muted" py={4}>Loading more tracks...</Text>}
           </Box>
         </VStack>
 
         {/* --- RIGHT SIDE: PLAYLIST BUILDER --- */}
-        <VStack flex="1" align="stretch" bg="gray.50" borderRadius="2xl" border="1px dashed" borderColor="gray.200" overflow="hidden">
+        <VStack flex="1" align="stretch" bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} borderRadius="2xl" border="1px dashed" borderColor="border" overflow="hidden">
           <Box flex="1" overflowY="auto" p={6}>
             <DndContext 
               sensors={sensors} 
@@ -253,7 +287,7 @@ export const PlaylistBuilder: React.FC = () => {
             </DndContext>
             
             {playlistTracks.length === 0 && (
-              <Flex h="100%" align="center" justify="center" direction="column" color="gray.400" gap={3}>
+              <Flex h="100%" align="center" justify="center" direction="column" color="fg.muted" gap={3}>
                 <ListMusic size={48} strokeWidth={1} />
                 <Text>Drag tracks here or click the + button to build your playlist.</Text>
               </Flex>

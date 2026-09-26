@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ChakraProvider, defaultSystem } from "@chakra-ui/react";
+import { ColorModeProvider } from "./components/ui/color-mode";
+
 import { DashboardLayout } from "./layouts/DashboardLayout";
 import { LoginView } from "./views/LoginView";
 import { OnboardingView } from "./components/OnboardingView";
@@ -42,66 +44,68 @@ export const App = () => {
     initializeAuth();
   }, [initializeAuth]);
 
-  // 2. RENDER (Safely handle the API Down state inside the Provider)
+  // 2. RENDER
   return (
     <ChakraProvider value={defaultSystem}>
-      {isApiDown ? (
-        // IF API IS DOWN: Completely block the router and show the error screen
-        <ApiDownScreen />
-      ) : (
-        // IF API IS UP: Render the normal application router
-        <BrowserRouter>
-          <Routes>
-            
-            {/* ⚡️ PUBLIC PATHS (No Auth Required) ⚡️ */}
-            <Route path="/s/:token" element={<PublicShareView />} />
-            <Route path="/login" element={<LoginView />} />
-            <Route path="/signup" element={<SignupView />} />
-
-            {/* Private Paths: Protected by Auth Guard */}
-            <Route element={<ProtectedRoute />}>
+      {/* ⚡️ WRAP EVERYTHING in ColorModeProvider so the router can access dark mode */}
+      <ColorModeProvider>
+        {isApiDown ? (
+          // IF API IS DOWN: Completely block the router and show the error screen
+          <ApiDownScreen />
+        ) : (
+          // IF API IS UP: Render the normal application router
+          <BrowserRouter>
+            <Routes>
               
-              {/* ONBOARDING: No sidebar, pure focus mode */}
-              <Route path="/onboarding" element={<OnboardingView />} />
+              {/* PUBLIC PATHS (No Auth Required) */}
+              <Route path="/s/:token" element={<PublicShareView />} />
+              <Route path="/login" element={<LoginView />} />
+              <Route path="/signup" element={<SignupView />} />
 
-              {/* DASHBOARD: Wrapped in Sidebar/TopNav Layout */}
-              <Route element={<DashboardLayout />}>
-                <Route path="/dashboard" element={<DashboardFeature />} />
+              {/* Private Paths: Protected by Auth Guard */}
+              <Route element={<ProtectedRoute />}>
                 
-                <Route path="/playlists" element={<PlaylistsFeature />}>
-                  <Route index element={<PlaylistList />} />
-                  <Route path="new" element={<PlaylistBuilder />} />
-                  <Route path="edit/:id" element={<PlaylistBuilder />} />
+                {/* ONBOARDING: No sidebar, pure focus mode */}
+                <Route path="/onboarding" element={<OnboardingView />} />
+
+                {/* DASHBOARD: Wrapped in Sidebar/TopNav Layout */}
+                <Route element={<DashboardLayout />}>
+                  <Route path="/dashboard" element={<DashboardFeature />} />
+                  
+                  <Route path="/playlists" element={<PlaylistsFeature />}>
+                    <Route index element={<PlaylistList />} />
+                    <Route path="new" element={<PlaylistBuilder />} />
+                    <Route path="edit/:id" element={<PlaylistBuilder />} />
+                  </Route>
+                  
+                  <Route path="/library" element={<LibraryFeature />} />
+                  <Route path="/library/*" element={<LibraryView />} />
+                  
+                  <Route path="/artists/:artistName" element={<ArtistView />} />
+                  <Route path="/tracks/:id" element={<TrackDetailView />} />
+                  
+                  <Route path="/schedule" element={<ScheduleFeature />} />
+                  
+                  <Route path="/broadcast" element={<BroadcastView />} />
+
+                  <Route path="/public-page" element={<PublicPageView />} />
+
+                  <Route path="/shared" element={<SharedListView />} />
                 </Route>
                 
-                <Route path="/library" element={<LibraryFeature />} />
-                <Route path="/library/*" element={<LibraryView />} />
-                
-                <Route path="/artists/:artistName" element={<ArtistView />} />
-                <Route path="/tracks/:id" element={<TrackDetailView />} />
-                
-                <Route path="/schedule" element={<ScheduleFeature />} />
-                
-                <Route path="/broadcast" element={<BroadcastView />} />
-
-                <Route path="/public-page" element={<PublicPageView />} />
-
-                <Route path="/shared" element={<SharedListView />} />
+                <Route path="/settings" element={<SettingsFeature />} />
               </Route>
-              
-              <Route path="/settings" element={<SettingsFeature />} />
-            </Route>
 
-            {/* Catch-all Redirect */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </BrowserRouter>
-      )}
-      
-      {/* GLOBAL OVERLAYS GO HERE (Always rendered so Modals/Toasts still work) */}
-      <Toaster />
-      <SessionExpiredModal />
-      
+              {/* Catch-all Redirect */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </BrowserRouter>
+        )}
+        
+        {/* GLOBAL OVERLAYS GO HERE (Always rendered so Modals/Toasts still work) */}
+        <Toaster />
+        <SessionExpiredModal />
+      </ColorModeProvider>
     </ChakraProvider>
   );
 };

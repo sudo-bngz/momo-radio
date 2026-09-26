@@ -15,28 +15,37 @@ export const SessionExpiredModal: React.FC = () => {
       closeOnInteractOutside={false}
       closeOnEscape={false}
     >
-      {/* ⚡️ v3 separates the Backdrop and Positioner */}
-      <Dialog.Backdrop bg="blackAlpha.400" backdropFilter="blur(8px)" />
+      <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(8px)" />
       
       <Dialog.Positioner>
-        <Dialog.Content borderRadius="xl" boxShadow="2xl" maxW="md">
+        <Dialog.Content 
+          bg="bg.panel" 
+          border="1px solid" 
+          borderColor="border" 
+          borderRadius="xl" 
+          boxShadow="2xl" 
+          maxW="md"
+        >
           
           <Dialog.Header textAlign="center" pt={8}>
             <VStack gap={4}>
-              <Icon as={AlertCircle} boxSize={12} color="orange.400" />
-              <Dialog.Title fontSize="xl" fontWeight="bold">Session Expired</Dialog.Title>
+              <Icon as={AlertCircle} boxSize={12} color="orange.500" _dark={{ color: "orange.400" }} />
+              <Dialog.Title fontSize="xl" fontWeight="bold" color="fg">Session Expired</Dialog.Title>
             </VStack>
           </Dialog.Header>
           
           <Dialog.Body pb={6}>
-            <Text textAlign="center" color="gray.600">
+            <Text textAlign="center" color="fg.muted">
               For your security, your session has timed out. Please log in again to continue managing your radio station.
             </Text>
           </Dialog.Body>
 
           <Dialog.Footer pb={8} justifyContent="center">
             <Button 
-              colorScheme="blue" 
+              bg="blue.600" 
+              color="white" 
+              _dark={{ bg: "blue.500" }}
+              _hover={{ bg: "blue.700", _dark: { bg: "blue.400" } }}
               size="lg" 
               w="full" 
               mx={4} 

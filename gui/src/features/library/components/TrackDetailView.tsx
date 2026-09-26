@@ -71,18 +71,25 @@ export const TrackDetailView: React.FC = () => {
 
   if (isLoading) {
     return (
-      <Flex h="100%" align="center" justify="center" bg="white">
-        <Spinner size="md" color="gray.400" />
+      <Flex h="100%" align="center" justify="center" bg="transparent">
+        <Spinner size="md" color="fg.muted" />
       </Flex>
     );
   }
 
   if (!track) {
     return (
-      <Flex h="100%" align="center" justify="center" direction="column" gap={3} bg="white">
-        <Icon as={Disc3} boxSize={8} color="gray.300" />
-        <Text color="gray.500" fontSize="sm">Track not found.</Text>
-        <Button onClick={() => navigate('/library')} variant="outline" size="sm">Return to Library</Button>
+      <Flex h="100%" align="center" justify="center" direction="column" gap={3} bg="transparent">
+        <Icon as={Disc3} boxSize={8} color="fg.muted" />
+        <Text color="fg.muted" fontSize="sm">Track not found.</Text>
+        <Button 
+          onClick={() => navigate('/library')} 
+          variant="outline" size="sm" 
+          color="fg" borderColor="border" 
+          _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }}
+        >
+          Return to Library
+        </Button>
       </Flex>
     );
   }
@@ -93,36 +100,40 @@ export const TrackDetailView: React.FC = () => {
   const waveformUrl = buildCdnUrl(track.waveform_key);
 
   return (
-    <VStack align="stretch" h="100%" gap={8} bg="white" data-theme="light">
+    // ⚡️ Removed bg="white" and data-theme="light", relying on global layout bg
+    <VStack align="stretch" h="100%" gap={8} bg="transparent">
       
       {/* =========================================
           1. HEADER & BREADCRUMB
           ========================================= */}
       <VStack align="start" gap={1}>
-        <HStack gap={2} fontSize="sm" color="gray.500" mb={1}>
-          <Box w="24px" h="24px" bg="blue.500" color="white" borderRadius="md" display="flex" alignItems="center" justifyContent="center">
+        <HStack gap={2} fontSize="sm" color="fg.muted" mb={1}>
+          <Box 
+            w="24px" h="24px" bg="blue.500" _dark={{ bg: "blue.400" }} color="white" 
+            borderRadius="md" display="flex" alignItems="center" justifyContent="center"
+          >
             <Icon as={Music} boxSize={3} strokeWidth={3} />
           </Box>
-          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "gray.900" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>
+          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>
             Library
           </Text>
-          <Text color="gray.300">/</Text>
-          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "gray.900" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>
+          <Text color="border">/</Text>
+          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>
             Tracks
           </Text>
-          <Text color="gray.300">/</Text>
-          <Text color="gray.900" fontWeight="600">{track.title}</Text>
+          <Text color="border">/</Text>
+          <Text color="fg" fontWeight="600">{track.title}</Text>
         </HStack>
       </VStack>
 
       <Box flex="1" overflowY="auto" pb={8} css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
         
         {/* =========================================
-            2. HERO SECTION (Light Mode, Compact)
+            2. HERO SECTION (Adaptive Mode, Compact)
             ========================================= */}
         <Box 
-          bg="gray.50" 
-          border="1px solid" borderColor="gray.200"
+          bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}
+          border="1px solid" borderColor="border"
           borderRadius="xl" p={6} mb={8}
         >
           <Flex direction={{ base: 'column-reverse', md: 'row' }} gap={6} align="stretch" justify="space-between">
@@ -144,13 +155,13 @@ export const TrackDetailView: React.FC = () => {
                 </Button>
 
                 <VStack align="start" gap={0.5} mt={0.5}>
-                  <Text fontSize="10px" fontWeight="700" textTransform="uppercase" letterSpacing="widest" color="gray.500">
+                  <Text fontSize="10px" fontWeight="700" textTransform="uppercase" letterSpacing="widest" color="fg.muted">
                     {track.album?.title || 'Single'}
                   </Text>
-                  <Heading size="xl" fontWeight="700" letterSpacing="tight" lineClamp={2} color="gray.900">
+                  <Heading size="xl" fontWeight="700" letterSpacing="tight" lineClamp={2} color="fg">
                     {track.title}
                   </Heading>
-                  <Text fontSize="md" color="gray.600" fontWeight="500">
+                  <Text fontSize="md" color="fg.muted" fontWeight="500">
                     {artistName}
                   </Text>
                 </VStack>
@@ -179,15 +190,15 @@ export const TrackDetailView: React.FC = () => {
               flexShrink={0} 
               borderRadius="md" 
               overflow="hidden" 
-              bg="white" 
-              border="1px solid" borderColor="gray.200"
+              bg="gray.100" _dark={{ bg: "whiteAlpha.100" }} 
+              border="1px solid" borderColor="border"
               boxShadow="sm"
             >
               {coverUrl ? (
                 <Image src={coverUrl} alt={track.title} w="100%" h="100%" objectFit="cover" />
               ) : (
                 <Flex w="100%" h="100%" align="center" justify="center">
-                  <Icon as={Music} boxSize={12} color="gray.300" />
+                  <Icon as={Music} boxSize={12} color="fg.muted" />
                 </Flex>
               )}
             </Box>
@@ -204,20 +215,23 @@ export const TrackDetailView: React.FC = () => {
             
             {/* Artist Mini-Profile */}
             <HStack align="center" mb={8} gap={4}>
-              <Box w="56px" h="56px" borderRadius="full" bg="gray.100" border="1px solid" borderColor="gray.200" display="flex" alignItems="center" justifyContent="center">
-                <Text fontWeight="bold" fontSize="lg" color="gray.400">{artistName.charAt(0)}</Text>
+              <Box 
+                w="56px" h="56px" borderRadius="full" display="flex" alignItems="center" justifyContent="center"
+                bg="gray.100" _dark={{ bg: "whiteAlpha.200" }} border="1px solid" borderColor="border" 
+              >
+                <Text fontWeight="bold" fontSize="lg" color="fg.muted">{artistName.charAt(0)}</Text>
               </Box>
               <VStack align="start" gap={0}>
-                <Text fontWeight="700" fontSize="md" color="gray.900">{artistName}</Text>
-                <Text fontSize="xs" color="gray.500">Artist</Text>
+                <Text fontWeight="700" fontSize="md" color="fg">{artistName}</Text>
+                <Text fontSize="xs" color="fg.muted">Artist</Text>
               </VStack>
             </HStack>
 
             {/* Genres & Styles */}
             <Box mb={8}>
               <HStack gap={2} mb={3}>
-                <Icon as={Tag} boxSize={4} color="gray.400" />
-                <Text fontSize="sm" fontWeight="600" color="gray.900">Tags & Genres</Text>
+                <Icon as={Tag} boxSize={4} color="fg.muted" />
+                <Text fontSize="sm" fontWeight="600" color="fg">Tags & Genres</Text>
               </HStack>
               <HStack gap={2} flexWrap="wrap">
                 {track.genre && track.genre.split(',').map((g: string) => (
@@ -232,12 +246,15 @@ export const TrackDetailView: React.FC = () => {
             {/* ML Tags */}
             {track.ml_characteristics && track.ml_characteristics.length > 0 && (
               <Box mb={8}>
-                <Text fontSize="xs" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="widest" mb={3}>
+                <Text fontSize="xs" fontWeight="700" color="fg.muted" textTransform="uppercase" letterSpacing="widest" mb={3}>
                   Machine Learning Characteristics
                 </Text>
                 <HStack flexWrap="wrap" gap={2}>
                   {track.ml_characteristics.map((char: string) => (
-                    <Badge key={char} bg="gray.100" color="gray.600" px={3} py={1} borderRadius="sm" fontWeight="500">
+                    <Badge 
+                      key={char} px={3} py={1} borderRadius="sm" fontWeight="500"
+                      bg="gray.100" color="gray.700" _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }}
+                    >
                       {char}
                     </Badge>
                   ))}
@@ -248,7 +265,7 @@ export const TrackDetailView: React.FC = () => {
 
           {/* RIGHT COLUMN: Acoustic Insights Sidebar */}
           <Box gridColumn={{ lg: 'span 1' }}>
-            <Text fontSize="xs" fontWeight="700" color="gray.500" textTransform="uppercase" letterSpacing="widest" mb={4}>
+            <Text fontSize="xs" fontWeight="700" color="fg.muted" textTransform="uppercase" letterSpacing="widest" mb={4}>
               Acoustic Insights
             </Text>
             
@@ -267,14 +284,14 @@ export const TrackDetailView: React.FC = () => {
   );
 };
 
-// SoundCloud-style Insight Row (Light Theme)
+// SoundCloud-style Insight Row (Adaptive Theme)
 const InsightBox = ({ icon, label, value }: { icon: any, label: string, value: string }) => (
-  <HStack p={3} bg="white" borderRadius="md" border="1px solid" borderColor="gray.200" justify="space-between">
-    <HStack color="gray.500" gap={3}>
+  <HStack p={3} bg="bg.panel" borderRadius="md" border="1px solid" borderColor="border" justify="space-between">
+    <HStack color="fg.muted" gap={3}>
       <Icon as={icon} boxSize={4} />
       <Text fontSize="xs" fontWeight="600">{label}</Text>
     </HStack>
-    <Text fontSize="sm" fontWeight="700" color="gray.900" fontFamily="mono">{value}</Text>
+    <Text fontSize="sm" fontWeight="700" color="fg" fontFamily="mono">{value}</Text>
   </HStack>
 );
 

@@ -37,9 +37,8 @@ export const SearchBar = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   
   const navigate = useNavigate();
-  const location = useLocation(); // ⚡️ Check current route
+  const location = useLocation(); 
   
-  // ⚡️ Detect if we are currently on the library page
   const isLibraryPage = location.pathname.includes('/library'); 
 
   const [previewTracks, setPreviewTracks] = useState<any[]>([]);
@@ -58,7 +57,6 @@ export const SearchBar = () => {
 
   useEffect(() => {
     const timeoutId = setTimeout(async () => {
-      // ⚡️ FIXED: If we are on the library page OR the search is empty, don't show the preview
       if (isLibraryPage || !globalSearch || !globalSearch.trim()) {
         setPreviewTracks([]);
         setShowPreview(false);
@@ -72,12 +70,10 @@ export const SearchBar = () => {
         let filterStr = "";
         let textQuery = globalSearch;
 
-        // 1. Raw Filter Mode
         if (globalSearch.toLowerCase().startsWith('filter:')) {
           filterStr = globalSearch.substring(7).trim();
           textQuery = "";
         } else {
-          // 2. Smart Dictionary Parser 
           const filterMap: Record<string, string> = {
             artist: 'artists_names', album: 'album_title', genre: 'genre', style: 'style',
             mood: 'mood', scale: 'scale', key: 'musical_key', bpm: 'bpm', duration: 'duration', year: 'year'
@@ -108,7 +104,6 @@ export const SearchBar = () => {
           }
         }
 
-        // 3. Execute isolated API fetch for the preview
         let hits: any[] = [];
         
         if (filterStr) {
@@ -127,10 +122,10 @@ export const SearchBar = () => {
       } finally {
         setIsSearching(false);
       }
-    }, 300); // 300ms debounce
+    }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [globalSearch, isLibraryPage]); // ⚡️ ADDED isLibraryPage to dependencies
+  }, [globalSearch, isLibraryPage]);
 
   const handleSuggestionClick = (query: string) => {
     setGlobalSearch(query);
@@ -152,7 +147,8 @@ export const SearchBar = () => {
     <Box position="relative" w="full" maxW="600px" ref={containerRef}>
       <InputGroup 
         w="full"
-        startElement={<Search size={18} color="var(--chakra-colors-gray-400)" />}
+        // ⚡️ Semantic CSS variable
+        startElement={<Search size={18} color="var(--chakra-colors-fg-muted)" />}
         endElement={
           <HStack gap={1}>
             {globalSearch && (
@@ -164,8 +160,8 @@ export const SearchBar = () => {
                 w="24px"
                 minW="24px"
                 borderRadius="full"
-                color="gray.400"
-                _hover={{ bg: "gray.200", color: "gray.600" }}
+                color="fg.muted"
+                _hover={{ bg: "gray.100", color: "fg", _dark: { bg: "whiteAlpha.200" } }}
                 onClick={handleClear}
               >
                 <X size={14} />
@@ -179,21 +175,22 @@ export const SearchBar = () => {
                   variant="ghost" 
                   size="sm"
                   borderRadius="full"
-                  color="gray.500"
-                  _hover={{ bg: "gray.100", color: "blue.600" }}
+                  color="fg.muted"
+                  _hover={{ bg: "gray.100", color: "blue.600", _dark: { bg: "whiteAlpha.200", color: "blue.400" } }}
                 >
                   <SlidersHorizontal size={16} />
                 </IconButton>
               </Popover.Trigger>
               
               <Popover.Positioner zIndex={50}>
-                <Popover.Content w="340px" shadow="xl" border="1px solid" borderColor="gray.200" borderRadius="xl" bg="white">
+                {/* ⚡️ Semantic panel background */}
+                <Popover.Content w="340px" shadow="xl" border="1px solid" borderColor="border" borderRadius="xl" bg="bg.panel">
                   <Popover.Arrow />
                   <Popover.Body p={4}>
                     <VStack align="stretch" gap={4}>
                       
                       <Box>
-                        <HStack mb={2} color="blue.600">
+                        <HStack mb={2} color="blue.600" _dark={{ color: "blue.400" }}>
                           <Zap size={14} />
                           <Text fontSize="xs" fontWeight="700" textTransform="uppercase">Quick Filters</Text>
                         </HStack>
@@ -205,12 +202,12 @@ export const SearchBar = () => {
                         </HStack>
                       </Box>
 
-                      <Box borderTop="1px solid" borderColor="gray.100" pt={3}>
-                        <Text fontSize="xs" fontWeight="700" color="gray.500" mb={2} textTransform="uppercase">Smart Syntax</Text>
-                        <VStack align="stretch" gap={2} fontSize="xs" color="gray.600">
-                          <Text><Text as="span" fontWeight="bold" color="gray.900">[field]: [value]</Text> — Search specific attributes</Text>
-                          <Text><Text as="span" fontWeight="bold" color="gray.900">[field] {'>'} [number]</Text> — Use math for bpm, duration, year</Text>
-                          <Box bg="gray.50" p={2} borderRadius="md" fontFamily="monospace" fontSize="2xs">
+                      <Box borderTop="1px solid" borderColor="border" pt={3}>
+                        <Text fontSize="xs" fontWeight="700" color="fg.muted" mb={2} textTransform="uppercase">Smart Syntax</Text>
+                        <VStack align="stretch" gap={2} fontSize="xs" color="fg.muted">
+                          <Text><Text as="span" fontWeight="bold" color="fg">[field]: [value]</Text> — Search specific attributes</Text>
+                          <Text><Text as="span" fontWeight="bold" color="fg">[field] {'>'} [number]</Text> — Use math for bpm, duration, year</Text>
+                          <Box bg="gray.50" _dark={{ bg: "whiteAlpha.100" }} p={2} borderRadius="md" fontFamily="monospace" fontSize="2xs">
                             Try: bpm &gt; 125<br/>
                             Try: duration &lt; 300<br/>
                             Try: style != House
@@ -226,25 +223,32 @@ export const SearchBar = () => {
           </HStack>
         }
       >
+        {/* ⚡️ Semantic input styles */}
         <Input
           ref={inputRef}
           value={globalSearch || ''}
           onChange={(e) => {
             setGlobalSearch(e.target.value);
-            // ⚡️ Only show preview if NOT on library page
             if (!isLibraryPage && !showPreview) setShowPreview(true);
           }}
           onFocus={() => {
-            // ⚡️ Only show preview if NOT on library page
             if (!isLibraryPage && globalSearch) setShowPreview(true);
           }}
           placeholder="Search tracks, or type 'bpm > 120'..." 
           bg="gray.50"
+          _dark={{ bg: "whiteAlpha.50" }}
+          color="fg"
           border="1px solid"
-          borderColor="gray.200"
+          borderColor="transparent"
           borderRadius="full"
           pl={10} 
-          _focus={{ bg: "white", borderColor: "blue.500", boxShadow: "0 0 0 1px var(--chakra-colors-blue-500)" }}
+          _placeholder={{ color: "fg.muted" }}
+          _focus={{ 
+            bg: "bg", 
+            borderColor: "blue.500", 
+            boxShadow: "0 0 0 1px var(--chakra-colors-blue-500)",
+            _dark: { borderColor: "blue.400", boxShadow: "0 0 0 1px var(--chakra-colors-blue-400)" } 
+          }}
         />
       </InputGroup>
 
@@ -255,22 +259,22 @@ export const SearchBar = () => {
           top="calc(100% + 8px)"
           left={0}
           right={0}
-          bg="white"
+          bg="bg.panel"
           shadow="xl"
           borderRadius="xl"
           border="1px solid"
-          borderColor="gray.100"
+          borderColor="border"
           zIndex={100}
           overflow="hidden"
           py={2}
         >
           {isSearching ? (
             <VStack py={6} justify="center">
-              <Spinner size="sm" color="blue.500" />
+              <Spinner size="sm" color="blue.500" _dark={{ color: "blue.400" }} />
             </VStack>
           ) : previewTracks.length === 0 ? (
             <Box py={4} px={4}>
-              <Text fontSize="sm" color="gray.500" textAlign="center">No tracks found</Text>
+              <Text fontSize="sm" color="fg.muted" textAlign="center">No tracks found</Text>
             </Box>
           ) : (
             <VStack gap={0} align="stretch">
@@ -281,7 +285,6 @@ export const SearchBar = () => {
                   : (track.artist || 'Unknown Artist');
                 const displayKey = track.musical_key ? `${track.musical_key} ${track.scale || ''}`.trim() : '';
 
-                // ⚡️ ADDED: Extract and deduplicate up to 2 tags for the preview
                 const rawTags = [...ensureArray(track.genre), ...ensureArray(track.style)];
                 const displayTags = Array.from(new Set(rawTags.map(t => t.trim()))).filter(Boolean).slice(0, 2);
 
@@ -290,7 +293,7 @@ export const SearchBar = () => {
                     key={track.id}
                     px={4}
                     py={2}
-                    _hover={{ bg: "gray.50" }}
+                    _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }}
                     cursor="pointer"
                     onClick={() => handleResultClick(displayTitle)}
                     gap={4}
@@ -299,6 +302,7 @@ export const SearchBar = () => {
                       w="40px"
                       h="40px"
                       bg="gray.100"
+                      _dark={{ bg: "whiteAlpha.200" }}
                       borderRadius="md"
                       justify="center"
                       align="center"
@@ -308,19 +312,18 @@ export const SearchBar = () => {
                       {track.cover_url ? (
                         <img src={track.cover_url} alt={displayTitle} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
-                        <Music size={20} color="var(--chakra-colors-gray-400)" />
+                        <Music size={20} color="var(--chakra-colors-fg-muted)" />
                       )}
                     </Flex>
 
                     <VStack align="start" gap={0} flex={1} overflow="hidden">
-                      <Text fontSize="sm" fontWeight="600" color="gray.900" truncate w="full">
+                      <Text fontSize="sm" fontWeight="600" color="fg" truncate w="full">
                         {displayTitle}
                       </Text>
                       <HStack gap={2} w="full" overflow="hidden">
-                        <Text fontSize="xs" color="gray.500" truncate maxW="120px">
+                        <Text fontSize="xs" color="fg.muted" truncate maxW="120px">
                           {displayArtist}
                         </Text>
-                        {/* ⚡️ ADDED: Render tags horizontally next to the artist name */}
                         {displayTags.length > 0 && (
                           <HStack gap={1} flexShrink={0}>
                             {displayTags.map((tag, idx) => (
@@ -344,16 +347,20 @@ export const SearchBar = () => {
 
                     <HStack gap={2}>
                       {displayKey && (
-                        <Badge variant="outline" color="gray.700" borderColor="gray.300" fontSize="xs" px={2} py={0.5} borderRadius="md" textTransform="none">
+                        <Badge variant="outline" color="fg.muted" borderColor="border" fontSize="xs" px={2} py={0.5} borderRadius="md" textTransform="none">
                           {displayKey}
                         </Badge>
                       )}
                       {track.bpm && (
-                        <Badge bg="gray.100" color="gray.700" fontSize="xs" px={2} py={0.5} borderRadius="md" border="none">
+                        <Badge 
+                          bg="gray.100" color="gray.700" 
+                          _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }}
+                          fontSize="xs" px={2} py={0.5} borderRadius="md" border="none"
+                        >
                           {Math.round(track.bpm)}
                         </Badge>
                       )}
-                      <Text fontSize="xs" color="gray.400" minW="32px" textAlign="right">
+                      <Text fontSize="xs" color="fg.muted" minW="32px" textAlign="right">
                         {formatDuration(track.duration)}
                       </Text>
                     </HStack>

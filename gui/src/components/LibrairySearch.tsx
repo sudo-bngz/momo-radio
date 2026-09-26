@@ -105,7 +105,7 @@ export const LibrarySearch: React.FC<LibrarySearchProps> = ({ onSelectTrack }) =
         left={4} 
         top="50%" 
         transform="translateY(-50%)" 
-        color="gray.400" 
+        color="fg.muted" 
         boxSize={4} 
         zIndex={2} 
       />
@@ -123,14 +123,22 @@ export const LibrarySearch: React.FC<LibrarySearchProps> = ({ onSelectTrack }) =
         onFocus={() => setIsOpen(true)}
         borderRadius="full"
         bg="gray.50"
+        _dark={{ bg: "whiteAlpha.100" }}
+        color="fg"
         border="1px solid"
         borderColor="transparent"
-        _focus={{ bg: "white", shadow: "sm", borderColor: "gray.200" }}
+        _focus={{ 
+          bg: "bg", 
+          shadow: "sm", 
+          borderColor: "blue.500", 
+          _dark: { bg: "bg", borderColor: "blue.400" } 
+        }}
+        _placeholder={{ color: "fg.muted" }}
         transition="all 0.2s"
       />
       {loading && (
         <Flex position="absolute" right={4} top="0" h="100%" align="center" zIndex={2}>
-          <Spinner size="xs" color="gray.400" />
+          <Spinner size="xs" color="fg.muted" />
         </Flex>
       )}
 
@@ -141,18 +149,18 @@ export const LibrarySearch: React.FC<LibrarySearchProps> = ({ onSelectTrack }) =
           top="calc(100% + 8px)"
           left={0}
           right={0}
-          bg="white"
+          bg="bg.panel"
           borderRadius="xl"
           shadow="xl"
           border="1px solid"
-          borderColor="gray.100"
+          borderColor="border"
           zIndex={1000}
           maxH="400px"
           overflowY="auto"
           py={2}
         >
           {results.length === 0 && !loading ? (
-            <Text p={4} fontSize="sm" color="gray.500" textAlign="center">
+            <Text p={4} fontSize="sm" color="fg.muted" textAlign="center">
               No matching tracks found for "{query}"
             </Text>
           ) : (
@@ -167,7 +175,7 @@ export const LibrarySearch: React.FC<LibrarySearchProps> = ({ onSelectTrack }) =
                   gap={4}
                   align="center"
                   cursor="pointer"
-                  _hover={{ bg: "gray.50" }}
+                  _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }}
                   transition="background 0.2s"
                   onClick={() => {
                     onSelectTrack?.(track);
@@ -183,20 +191,24 @@ export const LibrarySearch: React.FC<LibrarySearchProps> = ({ onSelectTrack }) =
                       borderRadius="md"
                       objectFit="cover"
                       bg="gray.100"
+                      _dark={{ bg: "whiteAlpha.200" }}
                       flexShrink={0}
                     />
                   ) : (
-                    <Flex boxSize="40px" borderRadius="md" bg="gray.100" align="center" justify="center" flexShrink={0}>
-                      <Icon as={Music} color="gray.400" boxSize={5} />
+                    <Flex 
+                      boxSize="40px" borderRadius="md" bg="gray.100" _dark={{ bg: "whiteAlpha.200" }} 
+                      align="center" justify="center" flexShrink={0}
+                    >
+                      <Icon as={Music} color="fg.muted" boxSize={5} />
                     </Flex>
                   )}
 
                   {/* Track Details */}
                   <Box flex="1" minW={0}>
-                    <Text fontSize="sm" fontWeight="600" color="gray.800" truncate>
+                    <Text fontSize="sm" fontWeight="600" color="fg" truncate>
                       {track.title}
                     </Text>
-                    <Text fontSize="xs" color="gray.500" truncate mt={0.5}>
+                    <Text fontSize="xs" color="fg.muted" truncate mt={0.5}>
                       {parseString(track.artists_names, 'Unknown Artist')}
                       {track.album_title && typeof track.album_title !== 'undefined' && parseString(track.album_title) !== ''
                         ? ` • ${parseString(track.album_title)}` 
@@ -207,16 +219,26 @@ export const LibrarySearch: React.FC<LibrarySearchProps> = ({ onSelectTrack }) =
                   {/* Acoustic Metadata */}
                   <Flex align="center" gap={2} flexShrink={0}>
                     {track.scale && (
-                      <Box px={2} py={0.5} bg="indigo.50" color="indigo.600" border="1px solid" borderColor="indigo.100" borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono">
+                      <Box 
+                        px={2} py={0.5} 
+                        bg="indigo.50" color="indigo.600" border="1px solid" borderColor="indigo.100" 
+                        _dark={{ bg: "indigo.900", color: "indigo.200", borderColor: "indigo.800" }}
+                        borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono"
+                      >
                         {track.scale}
                       </Box>
                     )}
                     {track.bpm && (
-                      <Box px={2} py={0.5} bg="gray.100" color="gray.700" borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono">
+                      <Box 
+                        px={2} py={0.5} 
+                        bg="gray.100" color="gray.700" 
+                        _dark={{ bg: "whiteAlpha.200", color: "whiteAlpha.900" }}
+                        borderRadius="md" fontSize="xs" fontWeight="bold" fontFamily="mono"
+                      >
                         {Math.round(track.bpm)}
                       </Box>
                     )}
-                    <Text fontSize="xs" color="gray.400" w="40px" textAlign="right" display={{ base: "none", sm: "block" }}>
+                    <Text fontSize="xs" color="fg.muted" w="40px" textAlign="right" display={{ base: "none", sm: "block" }}>
                       {formatDuration(track.duration)}
                     </Text>
                   </Flex>

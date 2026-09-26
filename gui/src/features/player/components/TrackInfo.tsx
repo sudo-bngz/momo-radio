@@ -1,4 +1,4 @@
-import { Box, Flex, VStack, HStack, Text, Icon } from '@chakra-ui/react'; // ⚡️ Added HStack
+import { Box, Flex, VStack, HStack, Text, Icon } from '@chakra-ui/react';
 import { Music } from 'lucide-react';
 import { usePlayer } from '../../../context/PlayerContext';
 
@@ -21,10 +21,11 @@ export const TrackInfo = () => {
         w="48px" 
         h="48px" 
         bg="gray.100" 
+        _dark={{ bg: "whiteAlpha.200" }}
         borderRadius="md" 
         overflow="hidden" 
         border="1px solid" 
-        borderColor="gray.200"
+        borderColor="border"
         flexShrink={0}
       >
         {coverURL ? (
@@ -34,15 +35,15 @@ export const TrackInfo = () => {
             style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
           />
         ) : (
-          <Icon as={Music} boxSize={5} color="gray.400" />
+          <Icon as={Music} boxSize={5} color="fg.muted" />
         )}
       </Flex>
 
       <VStack align="start" gap={0} minW="0">
-        <Text fontSize="sm" fontWeight="600" color="gray.900" lineClamp={1}>
+        <Text fontSize="sm" fontWeight="600" color="fg" lineClamp={1}>
           {currentTrack.title}
         </Text>
-        <Text fontSize="xs" color="gray.500" lineClamp={1}>
+        <Text fontSize="xs" color="fg.muted" lineClamp={1}>
           {currentTrack.artist}
         </Text>
       </VStack>

@@ -53,16 +53,16 @@ export const SignupView = () => {
   };
 
   return (
-    <Flex minH="100vh" align="center" justify="center" bg="gray.50">
-      <Box w="full" maxW="md" p={8} bg="white" rounded="xl" shadow="sm">
+    <Flex minH="100vh" align="center" justify="center" bg="bg">
+      <Box w="full" maxW="md" p={8} bg="bg.panel" rounded="xl" shadow="sm" border="1px solid" borderColor="border">
         <VStack gap={6} align="stretch" as="form" onSubmit={handleSignUp}>
           <Box textAlign="center">
-            <Text fontWeight="bold" color="blue.600" mb={2}>🌈 Momo Radio</Text>
-            <Heading size="lg" mb={2}>Create an account</Heading>
-            <Text color="gray.500">Get started with Momo Radio</Text>
+            <Text fontWeight="bold" color="blue.600" _dark={{ color: "blue.400" }} mb={2}>🌈 Momo Radio</Text>
+            <Heading size="lg" mb={2} color="fg">Create an account</Heading>
+            <Text color="fg.muted">Get started with Momo Radio</Text>
           </Box>
 
-          {error && <Text color="red.500" fontSize="sm">{error}</Text>}
+          {error && <Text color="red.500" _dark={{ color: "red.400" }} fontSize="sm">{error}</Text>}
 
           {/* ⚡️ THE GOOGLE SIGNUP BLOCK */}
           <Box>
@@ -71,10 +71,10 @@ export const SignupView = () => {
               w="full" 
               size="lg" 
               onClick={() => handleSocialLogin('google')}
-              bg="white"
-              borderColor="gray.200"
-              color="black"
-              _hover={{ bg: 'gray.50' }}
+              bg="bg.panel"
+              borderColor="border"
+              color="fg"
+              _hover={{ bg: 'gray.50', _dark: { bg: 'whiteAlpha.100' } }}
             >
               <Image src={googleLogo} alt="Google" boxSize="20px" mr={3} />
               Sign up with Google
@@ -83,14 +83,14 @@ export const SignupView = () => {
 
           {/* ⚡️ "or" Separator */}
           <Box position="relative" padding="5">
-            <Separator borderColor="gray.200" />
-            <AbsoluteCenter bg="white" px="4">
-              <Text color="gray.500" fontSize="sm">or</Text>
+            <Separator borderColor="border" />
+            <AbsoluteCenter bg="bg.panel" px="4">
+              <Text color="fg.muted" fontSize="sm">or</Text>
             </AbsoluteCenter>
           </Box>
 
           <Box>
-            <Text fontSize="sm" fontWeight="medium" mb={2}>Email</Text>
+            <Text fontSize="sm" fontWeight="medium" mb={2} color="fg">Email</Text>
             <Input 
               type="email" 
               placeholder="name@company.com"
@@ -98,11 +98,16 @@ export const SignupView = () => {
               onChange={(e) => setEmail(e.target.value)} 
               required 
               size="lg"
+              bg="bg"
+              color="fg"
+              borderColor="border"
+              _placeholder={{ color: "fg.muted" }}
+              _focus={{ borderColor: "blue.500", ring: "1px", ringColor: "blue.500", _dark: { borderColor: "blue.400", ringColor: "blue.400" } }}
             />
           </Box>
 
           <Box>
-            <Text fontSize="sm" fontWeight="medium" mb={2}>Password</Text>
+            <Text fontSize="sm" fontWeight="medium" mb={2} color="fg">Password</Text>
             <Input 
               type="password" 
               placeholder="Minimum 8 characters"
@@ -110,17 +115,30 @@ export const SignupView = () => {
               onChange={(e) => setPassword(e.target.value)} 
               required 
               size="lg"
+              bg="bg"
+              color="fg"
+              borderColor="border"
+              _placeholder={{ color: "fg.muted" }}
+              _focus={{ borderColor: "blue.500", ring: "1px", ringColor: "blue.500", _dark: { borderColor: "blue.400", ringColor: "blue.400" } }}
             />
           </Box>
 
-          <Button type="submit" colorScheme="blue" loading={isLoading} size="lg">
+          <Button 
+            type="submit" 
+            size="lg"
+            bg="blue.600" color="white" _dark={{ bg: "blue.500" }}
+            _hover={{ bg: "blue.700", _dark: { bg: "blue.400" } }}
+            loading={isLoading} 
+          >
             Create my free account
           </Button>
 
-          <Text textAlign="center" fontSize="sm" color="gray.600">
+          <Text textAlign="center" fontSize="sm" color="fg.muted">
             Already have an account?{' '}
-            <Link to="/login" style={{ color: '#3182ce', fontWeight: 500 }}>
-              Log in
+            <Link to="/login">
+              <Text as="span" color="blue.600" _dark={{ color: "blue.400" }} fontWeight="500" _hover={{ textDecoration: 'underline' }}>
+                Log in
+              </Text>
             </Link>
           </Text>
         </VStack>
