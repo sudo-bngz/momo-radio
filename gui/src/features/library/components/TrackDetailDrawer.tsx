@@ -408,7 +408,9 @@ export const TrackDetailDrawer: React.FC<TrackDetailDrawerProps> = ({ isOpen, on
                   
                   <FormRow label="Format"><Text fontSize="sm" fontWeight="600" color="gray.900" textTransform="uppercase">{fullTrack?.format || '-'}</Text></FormRow>
                   <FormRow label="File Size"><Text fontSize="sm" fontWeight="600" color="gray.900">{formatBytes(fullTrack?.file_size)}</Text></FormRow>
-                  <FormRow label="Bitrate"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.bitrate ? `${Math.round(fullTrack.bitrate / 1000)} kbps` : '-'}</Text></FormRow>
+                  
+                  {/* ⚡️ FIX: Removed the division by 1000 so it renders the DB value properly */}
+                  <FormRow label="Bitrate"><Text fontSize="sm" fontWeight="600" color="gray.900">{fullTrack?.bitrate ? `${fullTrack.bitrate} kbps` : '-'}</Text></FormRow>
                 </VStack>
               </Box>
 

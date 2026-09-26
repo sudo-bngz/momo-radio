@@ -23,4 +23,7 @@ type Track struct {
 	CatalogNumber     string   `json:"catalog_number"`
 	CoverURL          string   `json:"cover_url"`
 	AttachedPicture   []byte   `json:"attached_picture"`
+	Format            string   `json:"format"`
+	FileSize          int      `json:"filesize"`
+	Bitrate           int      `json:"bitrate"`
 }

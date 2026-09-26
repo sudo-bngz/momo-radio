@@ -2,7 +2,9 @@ package ingest
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -64,7 +66,35 @@ func (s *AnalysisStep) Execute(ctx *ProcessingContext) error {
 		)
 	}
 
-	// 3. Deterministic Acoustic Fingerprinting (Chromaprint / AcoustID)
+	// 3. Extract Physical File Properties (Size, Format, Bitrate)
+	ext := strings.ToLower(filepath.Ext(ctx.Payload.FileKey))
+	if ext != "" {
+		meta.Format = strings.TrimPrefix(ext, ".")
+	}
+
+	if fileInfo, statErr := os.Stat(ctx.RawPath); statErr == nil {
+		meta.FileSize = int(fileInfo.Size())
+	}
+
+	if meta.Duration > 0 && meta.FileSize > 0 {
+		// (Bytes * 8) = Bits. Bits / Duration = bps. bps / 1000 = kbps.
+		meta.Bitrate = int((float64(meta.FileSize) * 8.0) / meta.Duration / 1000.0)
+	}
+
+	// Safely inject physical properties directly into the DB model if it's already instantiated
+	if ctx.Track != nil {
+		if meta.Format != "" {
+			ctx.Track.Format = meta.Format
+		}
+		if meta.FileSize > 0 {
+			ctx.Track.FileSize = meta.FileSize
+		}
+		if meta.Bitrate > 0 {
+			ctx.Track.Bitrate = meta.Bitrate
+		}
+	}
+
+	// 4. Deterministic Acoustic Fingerprinting (Chromaprint / AcoustID)
 	ctx.Worker.updateStatus(ctx.Ctx, ctx.Payload.TrackIDStr(), "fingerprinting", 50)
 
 	mbid, err := audio.GetMusicBrainzID(ctx.RawPath, ctx.Worker.cfg.Services.AcoustIDKey)

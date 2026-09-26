@@ -137,12 +137,20 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 		}
 	}
 
+	// ⚡️ Determine format securely (fallback to mp3 if the step_audio analysis missed it)
+	finalFormat := "mp3"
+	if meta.Format != "" {
+		finalFormat = meta.Format
+	}
+
 	// 5. Finalize Track Updates Safely
 	updates := map[string]any{
 		"key":                 ctx.DestKey,
 		"title":               meta.Title,
 		"album_id":            albumID,
-		"format":              "mp3",
+		"format":              finalFormat,
+		"file_size":           meta.FileSize,
+		"bitrate":             meta.Bitrate,
 		"bpm":                 meta.BPM,
 		"duration":            meta.Duration,
 		"musical_key":         meta.MusicalKey,
@@ -164,7 +172,7 @@ func (s *DatabaseSaveStep) Execute(ctx *ProcessingContext) error {
 	if cleanStyle := NormalizeTags(meta.Style); cleanStyle != "" {
 		updates["style"] = cleanStyle
 	}
-	if meta.Mood != "" { // Assuming meta.Mood exists on your metadata struct
+	if meta.Mood != "" {
 		updates["mood"] = meta.Mood
 	}
 
