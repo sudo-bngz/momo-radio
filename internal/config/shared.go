@@ -78,6 +78,8 @@ type Config struct {
 		DiscogsToken string `mapstructure:"discogs_token"`
 		ContactEmail string `mapstructure:"contact_email"`
 		AcoustIDKey  string `mapstructure:"acoustid_key"`
+		WaveformPPS  int    `mapstructure:"waveform_pps"`
+		WaveformBits int    `mapstructure:"waveform_bits"`
 	} `mapstructure:"services"`
 	Worker struct {
 		Concurrency             int            `mapstructure:"concurrency"`
@@ -177,6 +179,8 @@ func Load() *Config {
 	viper.BindEnv("services.discogs_token")
 	viper.BindEnv("services.contact_email")
 	viper.BindEnv("services.acoustid_key")
+	viper.BindEnv("services.waveform_pps")
+	viper.BindEnv("services.waveform_bits")
 
 	viper.BindEnv("worker.concurrency")
 	viper.BindEnv("worker.sweeper_interval")
@@ -248,6 +252,9 @@ func Load() *Config {
 	viper.SetDefault("worker.sweeper_interval", "@every 10m")
 
 	viper.SetDefault("meilisearch.host", "http://localhost:7700")
+
+	viper.SetDefault("services.waveform_pps", 20)
+	viper.SetDefault("services.waveform_bits", 8)
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
