@@ -1,3 +1,27 @@
+## [0.10.0] - 2026-09-24
+
+### 🚀 Features
+
+- *(api)* Implement concurrent bulk uploading and processing pipeline
+
+### 🐛 Bug Fixes
+
+- *(auth)* Implement SmartKeyfunc to securely support both HMAC and ES256/RS256 JWT tokens
+- *(stats)* Resolve playback seek drift by separating heartbeat and update timestamps
+- *(ingest)* Prevent database save step from overwriting manual genre tags with empty strings
+- *(ingest)* Prevent ID3 tag erasure during acoustic analysis pipeline
+
+### 🚜 Refactor
+
+- *(gui)* Extract and redesign Public Page editor as a top-level navigation feature
+- *(ingest)* Replace standard log package with structured Zap logging
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Prepare v0.9.1
+- *(log)* Migrate audio and radio subsystems to structured Zap logging
+- *(log)* Handling no track in random selector
+- *(log)* Integrate structured Zap logging across CDN, geographical, and core utilities
 ## [0.9.1] - 2026-09-15
 
 ### 🚀 Features
