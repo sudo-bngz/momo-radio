@@ -1,13 +1,16 @@
 package ingest
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/hibiken/asynq"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"momo-radio/internal/logger"
 	"momo-radio/internal/models"
@@ -23,13 +26,23 @@ func (s *SetupStep) Name() string { return "initializing" }
 
 func (s *SetupStep) Execute(ctx *ProcessingContext) error {
 	var track models.Track
+
 	if err := ctx.Worker.db.DB.First(&track, ctx.Payload.TrackID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Log.Warn("Track not found in DB. It was likely deleted by the user. Aborting task cleanly.",
+				zap.Any("track_id", ctx.Payload.TrackID),
+			)
+			// Returning asynq.SkipRetry tells the queue manager to delete this task immediately without retrying
+			return fmt.Errorf("track %d deleted, skipping processing: %w", ctx.Payload.TrackID, asynq.SkipRetry)
+		}
+
 		logger.Log.Error("Failed to fetch track during setup",
 			zap.Any("track_id", ctx.Payload.TrackID),
 			zap.Error(err),
 		)
 		return err
 	}
+
 	ctx.Track = &track
 	ctx.OrgID = track.OrganizationID.String()
 
