@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hibiken/asynq"
+	"github.com/meilisearch/meilisearch-go" // ⚡️ ADDED Meilisearch import
 	"go.uber.org/zap"
 
 	"momo-radio/internal/logger"
@@ -221,5 +222,36 @@ func (w *Worker) HandleTrackEnrichTask(ctx context.Context, t *asynq.Task) error
 	}
 
 	logger.Log.Info("Successfully completed Cascading Enrichment", zap.Any("track_id", track.ID))
+
+	// -------------------------------------------------------------------------
+	// FINAL PHASE: INSTANTLY SYNC TO MEILISEARCH
+	// -------------------------------------------------------------------------
+
+	// Re-fetch the final track with the new genres/styles and the updated Album
+	var enrichedTrack models.Track
+	if err := w.db.DB.Preload("Artists").Preload("Album").First(&enrichedTrack, track.ID).Error; err != nil {
+		logger.Log.Error("Failed to fetch enriched track for search update", zap.Error(err))
+		return err
+	}
+
+	// Map it to our schema (Ensure you have MapTrackToMeiliDoc available in this package)
+	doc := MapTrackToMeiliDoc(&enrichedTrack)
+
+	// Overwrite the document in Meilisearch
+	pk := "id"
+	_, err = w.meili.Index("tracks").AddDocuments([]map[string]any{doc}, &meilisearch.DocumentOptions{
+		PrimaryKey: &pk,
+	})
+
+	if err != nil {
+		logger.Log.Error("Failed to update Meilisearch after enrichment",
+			zap.Error(err),
+			zap.Any("track_id", track.ID),
+		)
+		return err
+	}
+
+	logger.Log.Info("Successfully updated Meilisearch with enriched metadata", zap.Any("track_id", track.ID))
+
 	return nil
 }
