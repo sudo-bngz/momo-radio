@@ -4,13 +4,20 @@ import type { Track } from '../../../types';
 
 export type SortOption = 'newest' | 'alphabetical' | 'duration';
 
+const isAdvancedSearch = (query: string) => {
+  if (!query) return false;
+  if (query.toLowerCase().startsWith('filter:')) return true;
+  const filterKeys = ['artist', 'album', 'genre', 'style', 'mood', 'scale', 'key', 'bpm', 'duration', 'year'];
+  return new RegExp(`\\b(${filterKeys.join('|')})\\s*(:|>=|<=|>|<|=|!=)`, 'i').test(query);
+};
+
 export const useLibrary = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
-  const [globalTotal, setGlobalTotal] = useState(0); // From /stats (1271)
-  const [searchTotal, setSearchTotal] = useState(0); // From /tracks meta (helps us know when to stop)
+  const [globalTotal, setGlobalTotal] = useState(0); 
+  const [searchTotal, setSearchTotal] = useState(0); 
   
-  const [isLoading, setIsLoading] = useState(true); // Initial load state
-  const [isFetchingMore, setIsFetchingMore] = useState(false); // Infinite scroll state
+  const [isLoading, setIsLoading] = useState(true); 
+  const [isFetchingMore, setIsFetchingMore] = useState(false); 
   
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -30,6 +37,12 @@ export const useLibrary = () => {
   useEffect(() => {
     let isMounted = true;
     const fetchInitial = async () => {
+      // ⚡️ RACE CONDITION FIX: If this is an advanced filter, abort the Postgres fetch
+      if (isAdvancedSearch(searchQuery)) {
+        if (isMounted) setIsLoading(false);
+        return; 
+      }
+
       setIsLoading(true);
       try {
         const response = await api.getTracks({
@@ -58,18 +71,19 @@ export const useLibrary = () => {
 
   // 3. Load More (Infinite Scroll)
   const loadMore = useCallback(async () => {
-    // Prevent fetching if already fetching, or if we have all the tracks
+    // ⚡️ Abort infinite scroll via Postgres if viewing Meilisearch results
+    if (isAdvancedSearch(searchQuery)) return;
+
     if (isFetchingMore || isLoading || tracks.length >= searchTotal) return;
 
     setIsFetchingMore(true);
     try {
       const response = await api.getTracks({
         limit: 100,
-        offset: tracks.length, // Start from where we left off
+        offset: tracks.length, 
         search: searchQuery,
         sort: sortBy
       });
-      // Append new tracks to the existing list
       setTracks(prev => [...prev, ...(response.data || [])]);
     } catch (error) {
       console.error("Failed to fetch more tracks", error);
@@ -85,12 +99,12 @@ export const useLibrary = () => {
     setTracks,
     globalTotal,
     isLoading,
-    isFetchingMore, // Exported to show a spinner at the bottom
+    isFetchingMore, 
     searchQuery,
     setSearchQuery,
     setSortBy,
     sortBy,
-    loadMore,       // Exported to trigger on scroll
-    hasMore         // Exported to know when to stop
+    loadMore,       
+    hasMore         
   };
 };
