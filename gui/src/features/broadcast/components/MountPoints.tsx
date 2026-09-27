@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, Flex, Heading, Text, Table, Badge, Button, Icon, HStack, Spinner, Center 
+  Box, Flex, Heading, Text, Table, Badge, Button, Icon, HStack, Spinner, Center, VStack 
 } from '@chakra-ui/react';
 import { Copy, Check, Settings, Trash2, Play, Square } from 'lucide-react';
 
@@ -109,7 +109,7 @@ export const MountPoints: React.FC = () => {
   }
 
   return (
-    <Box w="100%" bg="bg.panel" p={6} borderRadius="2xl" border="1px solid" borderColor="border" shadow="sm">
+    <Box w="100%" bg="bg.panel" p={{ base: 4, md: 6 }} borderRadius="2xl" border="1px solid" borderColor="border" shadow="sm">
       <style>
         {`
           @keyframes pulseRed {
@@ -120,19 +120,12 @@ export const MountPoints: React.FC = () => {
         `}
       </style>
 
+      {/* CONFIRMATION OVERLAY */}
       {showStopConfirm && (
         <Box 
-          position="fixed" 
-          top={0} 
-          left={0} 
-          right={0} 
-          bottom={0} 
-          zIndex={9999} 
-          display="flex" 
-          alignItems="center" 
-          justifyContent="center" 
-          bg="blackAlpha.600" 
-          backdropFilter="blur(2px)"
+          position="fixed" top={0} left={0} right={0} bottom={0} 
+          zIndex={9999} display="flex" alignItems="center" justifyContent="center" 
+          bg="blackAlpha.600" backdropFilter="blur(2px)"
         >
           <Box bg="bg.panel" p={6} borderRadius="2xl" shadow="2xl" maxW="400px" w="90%" border="1px solid" borderColor="border">
             <Heading size="md" color="fg" mb={3}>Stop Broadcast?</Heading>
@@ -144,9 +137,7 @@ export const MountPoints: React.FC = () => {
                 Cancel
               </Button>
               <Button 
-                bg="red.500" 
-                color="white" 
-                _dark={{ bg: "red.600" }}
+                bg="red.500" color="white" _dark={{ bg: "red.600" }}
                 _hover={{ bg: "red.600", _dark: { bg: "red.500" } }} 
                 size="sm" 
                 onClick={() => {
@@ -161,6 +152,7 @@ export const MountPoints: React.FC = () => {
         </Box>
       )}
 
+      {/* HEADER */}
       <Flex justify="space-between" align="center" mb={6}>
         <Box>
           <Heading size="sm" fontWeight="bold" color="fg" mb={1}>Audio Streams</Heading>
@@ -168,7 +160,115 @@ export const MountPoints: React.FC = () => {
         </Box>
       </Flex>
 
-      <Box overflowX="auto" border="1px solid" borderColor="border" borderRadius="xl">
+      {/* ⚡️ MOBILE LAYOUT (Card UI) */}
+      <VStack display={{ base: "flex", md: "none" }} w="100%" gap={4} align="stretch">
+        {mounts.length === 0 ? (
+          <Text textAlign="center" py={8} color="fg.muted">No streams configured.</Text>
+        ) : (
+          mounts.map((mount) => {
+            const isRowLive = isLive && mount.is_default;
+            const streamId = `live-${mount.id}`;
+            const isThisStreamActive = String(currentTrack?.id) === streamId;
+            const isThisStreamPlaying = isThisStreamActive && isPlaying;
+
+            return (
+              <Flex
+                key={mount.id}
+                border="1px solid"
+                borderColor="border"
+                borderRadius="xl"
+                p={4}
+                align="center"
+                justify="space-between"
+                bg={isRowLive ? "red.50" : "transparent"}
+                _dark={{ bg: isRowLive ? "red.900/20" : "transparent" }}
+              >
+                <HStack gap={4} flex="1" minW={0}>
+                  {/* Play Button - Fixed the duplicate _dark attribute here */}
+                  <Flex
+                    align="center" justify="center"
+                    w="48px" h="48px" borderRadius="lg"
+                    bg={isThisStreamActive ? "red.100" : "gray.50"}
+                    color={isThisStreamActive ? "red.600" : "red.500"}
+                    _dark={{ 
+                      bg: isThisStreamActive ? "red.900/40" : "whiteAlpha.50",
+                      color: isThisStreamActive ? "red.300" : "red.400"
+                    }}
+                    onClick={() => handlePlayStop(mount)}
+                    cursor="pointer"
+                    flexShrink={0}
+                  >
+                    <Icon as={isThisStreamPlaying ? Square : Play} boxSize={6} fill={isThisStreamPlaying ? "currentColor" : "none"} />
+                  </Flex>
+
+                  {/* Metadata */}
+                  <VStack align="start" gap={1} flex="1" minW={0}>
+                    <HStack gap={2} w="100%">
+                      <Text fontSize="lg" fontWeight="700" color="fg" lineClamp={1}>{mount.slug}</Text>
+                      {mount.is_default && (
+                        <Badge color="blue.600" bg="blue.50" _dark={{ bg: "blue.900", color: "blue.200" }} fontSize="10px" px={2} py={0.5} borderRadius="md">
+                          Default
+                        </Badge>
+                      )}
+                    </HStack>
+                    <HStack gap={2}>
+                      {mount.is_default ? (
+                        <HStack gap={1.5}>
+                          <Box
+                            w="6px" h="6px" borderRadius="full"
+                            bg={isLive ? "red.500" : "gray.400"}
+                            _dark={{ bg: isLive ? "red.400" : "whiteAlpha.400" }}
+                            boxShadow={isLive ? "0 0 6px rgba(229, 62, 62, 0.6)" : "none"}
+                            animation={isLive ? "pulseRed 2s ease-in-out infinite" : "none"}
+                          />
+                          <Text fontSize="10px" fontWeight="700" letterSpacing="wide" color={isLive ? "red.500" : "fg.muted"} _dark={{ color: isLive ? "red.400" : "fg.muted" }}>
+                            {isLive ? "LIVE" : "STANDBY"}
+                          </Text>
+                        </HStack>
+                      ) : (
+                        <Text fontSize="10px" color="fg.muted">-</Text>
+                      )}
+                      <Badge color="fg.muted" bg="transparent" border="1px solid" borderColor="border" fontSize="10px" px={1.5} py={0} borderRadius="sm">
+                        {mount.bitrate} kbps
+                      </Badge>
+                    </HStack>
+                  </VStack>
+                </HStack>
+
+                {/* Actions */}
+                <HStack gap={2} ml={2} flexShrink={0}>
+                  {mount.is_default && (
+                    <Button
+                      size="sm"
+                      bg={isLive ? "red.50" : "fg"}
+                      color={isLive ? "red.600" : "bg"}
+                      border={isLive ? "1px solid" : "none"}
+                      borderColor="red.200"
+                      _dark={{
+                        bg: isLive ? "red.900/40" : "fg",
+                        color: isLive ? "red.300" : "bg",
+                        borderColor: "red.800"
+                      }}
+                      onClick={() => isLive ? setShowStopConfirm(true) : handleBroadcastToggle()}
+                      disabled={isToggling}
+                      minW="64px"
+                      borderRadius="lg"
+                    >
+                      {isToggling ? <Spinner size="xs" /> : isLive ? "Stop" : "Start"}
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" color="fg.muted" px={2} onClick={() => setEditingMount(mount)}>
+                    <Icon as={Settings} boxSize={5} />
+                  </Button>
+                </HStack>
+              </Flex>
+            );
+          })
+        )}
+      </VStack>
+
+      {/* ⚡️ DESKTOP LAYOUT (Table UI) */}
+      <Box display={{ base: "none", md: "block" }} overflowX="hidden" border="1px solid" borderColor="border" borderRadius="xl">
         <Table.Root variant="line" size="md">
           <Table.Header bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}>
             <Table.Row>
@@ -258,11 +358,8 @@ export const MountPoints: React.FC = () => {
                       {mount.is_default ? (
                         <HStack gap={2}>
                           <Box 
-                            w="8px" 
-                            h="8px" 
-                            borderRadius="full" 
-                            bg={isLive ? "red.500" : "gray.300"} 
-                            _dark={{ bg: isLive ? "red.400" : "whiteAlpha.400" }}
+                            w="8px" h="8px" borderRadius="full" 
+                            bg={isLive ? "red.500" : "gray.300"} _dark={{ bg: isLive ? "red.400" : "whiteAlpha.400" }}
                             boxShadow={isLive ? "0 0 8px rgba(229, 62, 62, 0.6)" : "none"}
                             animation={isLive ? "pulseRed 2s ease-in-out infinite" : "none"}
                           />
@@ -291,7 +388,6 @@ export const MountPoints: React.FC = () => {
                               color={isLive ? "red.600" : "bg"}
                               border={isLive ? "1px solid" : "none"}
                               borderColor="red.200"
-    
                               _dark={{ 
                                 bg: isLive ? "red.900/40" : "fg", 
                                 color: isLive ? "red.300" : "bg",
@@ -310,28 +406,21 @@ export const MountPoints: React.FC = () => {
                         )}
 
                         <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          color="fg.muted" 
+                          size="sm" variant="ghost" color="fg.muted" 
                           _hover={{ bg: "gray.100", color: "fg", _dark: { bg: "whiteAlpha.200" } }} 
                           onClick={() => copyToClipboard(mount.hls_url, mount.id)}
                         >
                           <Icon as={copiedId === mount.id ? Check : Copy} boxSize={4} color={copiedId === mount.id ? "green.500" : "inherit"} _dark={{ color: copiedId === mount.id ? "green.400" : "inherit" }} />
                         </Button>
                         <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          color="fg.muted" 
+                          size="sm" variant="ghost" color="fg.muted" 
                           _hover={{ bg: "gray.100", color: "fg", _dark: { bg: "whiteAlpha.200" } }} 
                           onClick={() => setEditingMount(mount)} 
                         >
                           <Icon as={Settings} boxSize={4} />
                         </Button>
                         <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          color="red.500" 
-                          _dark={{ color: "red.400" }}
+                          size="sm" variant="ghost" color="red.500" _dark={{ color: "red.400" }}
                           _hover={{ bg: "red.50", color: "red.600", _dark: { bg: "red.900/40", color: "red.300" } }} 
                           disabled={mount.is_default}
                           onClick={() => setEditingMount(mount)} 

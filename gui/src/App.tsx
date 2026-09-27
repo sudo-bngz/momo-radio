@@ -47,7 +47,6 @@ export const App = () => {
 
   // 2. RENDER
   return (
-    // ⚡️ FIXED: Injected your custom system here
     <ChakraProvider value={system}>
       <ColorModeProvider>
         {isApiDown ? (

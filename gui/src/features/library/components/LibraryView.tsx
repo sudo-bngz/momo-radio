@@ -230,7 +230,6 @@ export const LibraryView: React.FC = () => {
 
           <Box flex="1" minW={{ base: 2, md: 4 }} display={{ base: "none", md: "block" }} />
 
-          {/* ⚡️ HIDDEN ON MOBILE: Sort Dropdown now only shows on tablet (md) and up */}
           <Box flexShrink={0} display={{ base: "none", md: "block" }}>
             <Select.Root 
               collection={sortOptions} 
