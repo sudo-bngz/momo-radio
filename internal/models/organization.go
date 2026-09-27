@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -80,6 +81,8 @@ type OrganizationSettings struct {
 	// StorageSettings.tsx (If tenants can bring their own S3/B2, otherwise keep this in your core config)
 	CustomStorageEnabled bool   `json:"custom_storage_enabled"`
 	StorageBucket        string `json:"storage_bucket"`
+
+	DashboardLayout datatypes.JSON `json:"dashboard_layout" gorm:"type:jsonb;default:'[]'"`
 
 	UpdatedAt time.Time `json:"updated_at"`
 }

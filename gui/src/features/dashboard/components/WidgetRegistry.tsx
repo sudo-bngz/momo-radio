@@ -1,5 +1,5 @@
 import { Box, VStack, HStack, Text, Grid, Icon, Badge, Button, Flex } from '@chakra-ui/react';
-import { Radio, Disc, ListMusic, Clock, Music, HardDrive, Server, Globe, Activity } from 'lucide-react';
+import { Radio, Disc, ListMusic, Clock, Music, HardDrive, Server, Globe, Activity, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { useDashboard } from '../hook/useDashboard';
@@ -20,36 +20,39 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
           title="Live Broadcast" 
           icon={Radio} 
           rightElement={
-            <Badge colorScheme="red" variant="solid" px={2} py={0.5} borderRadius="sm" fontSize="2xs" animation="pulse-fast 2s infinite">
+            <Badge bg="red.500" color="white" px={2} py={0.5} borderRadius="sm" fontSize="2xs" animation="pulse-fast 2s infinite">
               ON AIR
             </Badge>
           }
         >
           <HStack gap={4} align="center">
-            <Box boxSize="80px" borderRadius="md" bg="gray.100" border="1px solid" borderColor="gray.200" overflow="hidden" flexShrink={0}>
+            <Box 
+              boxSize="80px" borderRadius="md" bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} 
+              border="1px solid" borderColor="border" overflow="hidden" flexShrink={0}
+            >
               {nowPlaying?.cover_url ? (
                 <img src={nowPlaying.cover_url} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 <Flex w="100%" h="100%" align="center" justify="center">
-                  <Icon as={Disc} color="gray.300" boxSize="32px" />
+                  <Icon as={Disc} color="gray.300" _dark={{ color: "gray.500" }} boxSize="32px" />
                 </Flex>
               )}
             </Box>
 
             <VStack align="start" gap={1} flex="1">
-              <Text fontSize="md" fontWeight="bold" color="gray.900" truncate w="full">
+              <Text fontSize="md" fontWeight="bold" color="fg" truncate w="full">
                 {nowPlaying?.title || "Waiting for stream..."}
               </Text>
-              <Text fontSize="sm" color="gray.500" truncate w="full">
+              <Text fontSize="sm" color="fg.muted" truncate w="full">
                 {getArtistName(nowPlaying?.artist)}
               </Text>
               
               <HStack gap={4} mt={1}>
-                <HStack gap={1.5} color="gray.500" fontSize="xs">
+                <HStack gap={1.5} color="fg.muted" fontSize="xs">
                   <Icon as={ListMusic} boxSize="12px" />
                   <Text>{nowPlaying?.playlist_name || "General Rotation"}</Text>
                 </HStack>
-                <HStack gap={1.5} color="blue.500" fontSize="xs">
+                <HStack gap={1.5} color="blue.500" _dark={{ color: "blue.400" }} fontSize="xs">
                   <Icon as={Clock} boxSize="12px" />
                   <LiveCountdown endsAt={nowPlaying?.ends_at} />
                 </HStack>
@@ -59,7 +62,7 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
         </DashboardCard>
       );
 
-    case 'stats':
+    case 'system-stats':
       return (
         <DashboardCard title="System Metrics" icon={Activity}>
           <Grid templateColumns="repeat(2, 1fr)" gap={3}>
@@ -77,34 +80,40 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
           title="Recently Played" 
           icon={Clock} 
           rightElement={
-            <Button variant="ghost" size="xs" color="blue.500" onClick={() => navigate('/library')}>
+            <Button variant="ghost" size="xs" color="blue.500" _dark={{ color: "blue.400" }} onClick={() => navigate('/library')}>
               View All
             </Button>
           }
         >
           <VStack align="stretch" gap={1}>
             {recentTracks?.slice(0, 5).map((track: any, index: number) => (
-              <HStack key={track.id || index} justify="space-between" p={2} borderRadius="md" _hover={{ bg: "gray.50" }} transition="all 0.2s">
+              <HStack 
+                key={track.id || index} justify="space-between" p={2} borderRadius="md" 
+                _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} transition="all 0.2s"
+              >
                 <HStack gap={3} overflow="hidden">
-                  <Box boxSize="32px" borderRadius="sm" overflow="hidden" bg="gray.100" flexShrink={0}>
+                  <Box 
+                    boxSize="32px" borderRadius="sm" overflow="hidden" flexShrink={0}
+                    bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}
+                  >
                     {track.cover_url ? (
                       <img src={track.cover_url} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <Flex w="100%" h="100%" align="center" justify="center">
-                        <Icon as={Music} color="gray.400" boxSize="14px" />
+                        <Icon as={Music} color="gray.300" _dark={{ color: "gray.500" }} boxSize="14px" />
                       </Flex>
                     )}
                   </Box>
                   <VStack align="start" gap={0} minW="0">
-                    <Text fontSize="sm" fontWeight="500" color="gray.800" truncate w="full">
+                    <Text fontSize="sm" fontWeight="500" color="fg" truncate w="full">
                       {track.title || 'Unknown Track'}
                     </Text>
-                    <Text fontSize="xs" color="gray.500" truncate w="full">
+                    <Text fontSize="xs" color="fg.muted" truncate w="full">
                       {getArtistName(track.artist)}
                     </Text>
                   </VStack>
                 </HStack>
-                <Text color="gray.400" fontSize="xs" whiteSpace="nowrap">
+                <Text color="fg.muted" fontSize="xs" whiteSpace="nowrap">
                   {timeAgo(track.created_at || track.played_at)}
                 </Text>
               </HStack>
@@ -124,7 +133,51 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
         </DashboardCard>
       );
 
+    case 'public-page':
+      const publicUrl = `${publicDomain}/public/${activeOrgId}`;
+      return (
+        <DashboardCard 
+          title="Public Page" 
+          icon={Globe}
+          rightElement={
+            // ⚡️ FIXED: Using asChild to forward styles to the native anchor tag
+            <Button 
+              asChild
+              variant="ghost" 
+              size="xs" 
+              color="purple.500" 
+              _dark={{ color: "purple.400" }}
+              display="flex"
+              alignItems="center"
+              gap={1}
+            >
+              <a href={publicUrl} target="_blank" rel="noopener noreferrer">
+                Visit <Icon as={ExternalLink} boxSize={3.5} />
+              </a>
+            </Button>
+          }
+        >
+          <VStack h="100%" justify="center" align="stretch" gap={4}>
+            <Box p={5} bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} borderRadius="lg" border="1px solid" borderColor="border" textAlign="center">
+              <Flex 
+                w="48px" h="48px" bg="purple.100" color="purple.500" 
+                _dark={{ bg: "purple.900/40", color: "purple.300" }} 
+                borderRadius="full" align="center" justify="center" mx="auto" mb={3}
+              >
+                <Icon as={Globe} boxSize={6} />
+              </Flex>
+              <Text fontSize="sm" fontWeight="600" color="fg">Your Web Radio is Live</Text>
+              <Text fontSize="xs" color="fg.muted" mb={4}>Share this link with your listeners to tune in directly from their browser.</Text>
+              
+              <Box textAlign="left">
+                <EndpointRow label="Direct URL" url={publicUrl} />
+              </Box>
+            </Box>
+          </VStack>
+        </DashboardCard>
+      );
+
     default:
-      return <Box p={4} bg="gray.50" borderRadius="md">Unknown Widget Type</Box>;
+      return <Box p={4} bg="bg.panel" borderRadius="md" border="1px solid" borderColor="border">Unknown Widget Type</Box>;
   }
 };

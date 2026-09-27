@@ -4,27 +4,28 @@ import { Copy, Check } from 'lucide-react';
 
 // --- Reusable Card Wrapper ---
 export const DashboardCard = ({ title, icon, rightElement, children }: { title: string, icon: any, rightElement?: React.ReactNode, children: React.ReactNode }) => (
-  // ⚡️ Semantic tokens for the main card structure
-  <Box bg="bg.panel" borderRadius="xl" borderWidth="1px" borderColor="border" overflow="hidden" boxShadow="sm">
-    <Flex px={4} py={3} borderBottomWidth="1px" borderColor="border" align="center" justify="space-between" bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}>
+  <Flex 
+    direction="column" 
+    h="100%" w="100%" 
+    bg="bg.panel" borderRadius="xl" borderWidth="1px" borderColor="border" overflow="hidden" boxShadow="sm"
+  >
+    {/* ⚡️ Added flexShrink={0} so the header never squishes */}
+    <Flex flexShrink={0} px={4} py={3} borderBottomWidth="1px" borderColor="border" align="center" justify="space-between" bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}>
       <HStack gap={2}>
         <Icon as={icon} color="fg.muted" boxSize="16px" />
         <Text fontWeight="600" color="fg" fontSize="sm">{title}</Text>
       </HStack>
       {rightElement}
     </Flex>
-    <Box p={4}>
+    <Box p={4} flex="1" overflowY="auto">
       {children}
     </Box>
-  </Box>
+  </Flex>
 );
 
 // --- Compact Stat Block ---
 export const CompactStat = ({ icon, label, value, color }: { icon: any, label: string, value: string, color: string }) => (
-  // ⚡️ Semantic tokens for the container
   <HStack p={3} bg="bg.panel" borderRadius="lg" borderWidth="1px" borderColor="border" gap={3}>
-    
-    {/* ⚡️ Explicit _dark support for dynamically passed color strings (e.g. "blue", "green") */}
     <Box 
       p={2} 
       bg={`${color}.50`} 
@@ -34,7 +35,6 @@ export const CompactStat = ({ icon, label, value, color }: { icon: any, label: s
     >
       <Icon as={icon} boxSize="16px" />
     </Box>
-    
     <VStack align="start" gap={0}>
       <Text fontSize="2xs" color="fg.muted" fontWeight="600" textTransform="uppercase" letterSpacing="wider">{label}</Text>
       <Text fontSize="md" fontWeight="bold" color="fg" lineHeight="1.2">{value}</Text>
@@ -56,7 +56,6 @@ export const EndpointRow = ({ label, url }: { label: string, url: string }) => {
     <Box>
       <Text fontSize="xs" fontWeight="600" color="fg.muted" mb={1}>{label}</Text>
       <Box position="relative" w="full">
-        {/* ⚡️ Input adapts natively to dark mode */}
         <Input 
           value={url} 
           readOnly 
@@ -92,7 +91,7 @@ export const EndpointRow = ({ label, url }: { label: string, url: string }) => {
   );
 };
 
-// --- Helpers (No changes needed here as they return raw text) ---
+// --- Helpers ---
 export const getArtistName = (artistData: any): string => {
   if (!artistData) return "Unknown Artist";
   if (typeof artistData === 'string') return artistData;

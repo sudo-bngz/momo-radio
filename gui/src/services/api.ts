@@ -44,6 +44,7 @@ export interface OrganizationSettings {
   ffmpeg_sample_rate: string;
   custom_storage_enabled: boolean;
   storage_bucket: string;
+  dashboard_layout: any[];
 }
 
 export interface UserProfile {

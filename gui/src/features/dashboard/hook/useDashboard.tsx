@@ -35,6 +35,7 @@ export const useDashboard = (orgId?: string) => {
     };
   }, []);
 
+  // 2. Listen to Server-Sent Events (SSE) for Live Broadcast updates
   useEffect(() => {
     if (!orgId) return;
 
@@ -54,7 +55,7 @@ export const useDashboard = (orgId?: string) => {
     return () => eventSource.close();
   }, [orgId]);
 
-  // 3. Local clock to drive the waveform elapsed time
+  // 3. Local clock to drive the waveform elapsed time and live countdown
   useEffect(() => {
     const timer = setInterval(() => setCurrentTimeMs(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -65,7 +66,7 @@ export const useDashboard = (orgId?: string) => {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
 
-  // Calculate live progression for the player
+  // Calculate live progression for the player/widget
   const calculateLiveState = () => {
     if (!nowPlaying?.starts_at) {
       return { elapsed_ms: 0, timeRemaining: "--:--" };
