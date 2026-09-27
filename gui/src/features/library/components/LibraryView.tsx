@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Box, VStack, HStack, Heading, Text, Button, Icon, Select, createListCollection, Flex 
 } from '@chakra-ui/react';
-import { Plus, Music, ChevronDown } from 'lucide-react';
+import { Plus, Music, ChevronDown, LayoutGrid } from 'lucide-react';
 import { useNavigate, useMatch, useLocation } from 'react-router-dom'; 
 import axios from 'axios';
 
@@ -25,7 +25,7 @@ const TABS: { id: LibraryTab; label: string }[] = [
 
 const sortOptions = createListCollection({
   items: [
-    { label: "Newest First", value: "newest" },
+    { label: "Recently saved", value: "newest" },
     { label: "A-Z", value: "alphabetical" },
     { label: "Duration", value: "duration" },
   ],
@@ -139,7 +139,7 @@ export const LibraryView: React.FC = () => {
   const isDetailViewActive = !!albumDetailMatch;
 
   return (
-    <VStack align="stretch" h="100%" gap={8} bg="transparent">
+    <VStack align="stretch" h="100%" gap={{ base: 4, md: 8 }} bg="transparent">
       <input 
         type="file" 
         multiple 
@@ -149,36 +149,67 @@ export const LibraryView: React.FC = () => {
         style={{ display: 'none' }} 
       />
       
-      <VStack align="start" gap={1}>
-        <HStack gap={2} fontSize="sm" color="fg.muted" mb={1}>
-          <Box 
-            w="24px" h="24px" bg="blue.500" _dark={{ bg: "blue.400" }} color="white" 
-            borderRadius="md" display="flex" alignItems="center" justifyContent="center"
-          >
-            <Icon as={Music} boxSize={3} strokeWidth={3} />
-          </Box>
-          <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>Library</Text>
-          <Text color="border">/</Text>
+      {/* HEADER ROW */}
+      <Flex justify="space-between" align={{ base: "center", md: "flex-end" }}>
+        <VStack align="start" gap={1}>
           
-          {albumDetailMatch ? (
-            <>
-              <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => { setActiveTab('albums'); navigate('/library', { state: { activeTab: 'albums' } }); }}>Albums</Text>
-              <Text color="border">/</Text>
-              <Text color="fg" fontWeight="600">{dynamicTitle || 'Loading...'}</Text>
-            </>
-          ) : (
-            <Text color="fg" fontWeight="500">{currentTabLabel}</Text>
-          )}
-        </HStack>
-        {!isDetailViewActive && <Heading size="3xl" fontWeight="normal" color="fg" letterSpacing="tight">Music Library</Heading>}
-      </VStack>
+          {/* BREADCRUMB: Hidden on mobile */}
+          <HStack gap={2} fontSize="sm" color="fg.muted" mb={1} display={{ base: "none", md: "flex" }}>
+            <Box 
+              w="24px" h="24px" bg="blue.500" _dark={{ bg: "blue.400" }} color="white" 
+              borderRadius="md" display="flex" alignItems="center" justifyContent="center"
+            >
+              <Icon as={Music} boxSize={3} strokeWidth={3} />
+            </Box>
+            <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => navigate('/library', { state: { activeTab: 'tracks' } })}>Library</Text>
+            <Text color="border">/</Text>
+            
+            {albumDetailMatch ? (
+              <>
+                <Text cursor="pointer" _hover={{ textDecoration: "underline", color: "fg" }} onClick={() => { setActiveTab('albums'); navigate('/library', { state: { activeTab: 'albums' } }); }}>Albums</Text>
+                <Text color="border">/</Text>
+                <Text color="fg" fontWeight="600">{dynamicTitle || 'Loading...'}</Text>
+              </>
+            ) : (
+              <Text color="fg" fontWeight="500">{currentTabLabel}</Text>
+            )}
+          </HStack>
 
+          {!isDetailViewActive && (
+            <Heading size={{ base: "2xl", md: "3xl" }} fontWeight="normal" color="fg" letterSpacing="tight">
+              Music Library
+            </Heading>
+          )}
+        </VStack>
+
+        {/* MOBILE ONLY: Add Button aligned to the right */}
+        {!isDetailViewActive && (
+          <Button 
+            display={{ base: "flex", md: "none" }}
+            title="Upload tracks"
+            bg="fg" 
+            color="bg" 
+            borderRadius="full" 
+            w="36px"
+            h="36px" 
+            p={0} 
+            _hover={{ opacity: 0.8 }} 
+            onClick={handleAddClick} 
+            flexShrink={0} 
+          >
+            <Icon as={Plus} boxSize={5} />
+          </Button>
+        )}
+      </Flex>
+
+      {/* CONTROLS STACK */}
       {!isDetailViewActive && (
         <Flex 
           w="100%" 
           align="center" 
           pb={2} 
           gap={3} 
+          justify="flex-start" 
           overflowX="auto" 
           css={{ 
             '&::-webkit-scrollbar': { display: 'none' }, 
@@ -186,9 +217,10 @@ export const LibraryView: React.FC = () => {
             msOverflowStyle: 'none' 
           }}
         >
-          {/* Upload Button */}
+          {/* DESKTOP ONLY: Add Button inline with the tabs */}
           <Button 
-            title="Upload at least 5 tracks to unlock autonomous broadcasting."
+            display={{ base: "none", md: "flex" }}
+            title="Upload tracks"
             bg="fg" 
             color="bg" 
             borderRadius="full" 
@@ -202,6 +234,7 @@ export const LibraryView: React.FC = () => {
             <Icon as={Plus} boxSize={6} />
           </Button>
 
+          {/* TABS */}
           <HStack gap={2} flexShrink={0}>
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
@@ -230,6 +263,7 @@ export const LibraryView: React.FC = () => {
 
           <Box flex="1" minW={{ base: 2, md: 4 }} display={{ base: "none", md: "block" }} />
 
+          {/* SORT DROPDOWN (Desktop Only) */}
           <Box flexShrink={0} display={{ base: "none", md: "block" }}>
             <Select.Root 
               collection={sortOptions} 
@@ -259,6 +293,58 @@ export const LibraryView: React.FC = () => {
               </Select.Positioner>
             </Select.Root>
           </Box>
+        </Flex>
+      )}
+
+      {/* ⚡️ MOBILE ONLY: YouTube Music style filter row */}
+      {!isDetailViewActive && (
+        <Flex 
+          display={{ base: "flex", md: "none" }} 
+          w="100%" 
+          justify="space-between" 
+          align="center"
+          px={1}
+          mb={-2}
+        >
+          <Select.Root 
+            collection={sortOptions} 
+            value={[sortBy]} 
+            onValueChange={(details) => setSortBy(details.value[0])} 
+            width="auto"
+          >
+            {/* ⚡️ FIXED: Replaced variant="unstyled" with manual styling */}
+            <Select.Trigger 
+              bg="transparent"
+              border="none"
+              p={0}
+              m={0}
+              display="flex"
+              alignItems="center"
+              gap={1}
+              color="fg" 
+              _hover={{ opacity: 0.8 }}
+              _focus={{ outline: "none" }}
+              cursor="pointer"
+            >
+              <Select.ValueText placeholder="Sort by" fontWeight="700" fontSize="lg" />
+              <Icon as={ChevronDown} boxSize={5} strokeWidth={2.5} />
+            </Select.Trigger>
+            <Select.Positioner zIndex={100}>
+              <Select.Content bg="bg.panel" borderRadius="xl" shadow="md" border="1px solid" borderColor="border" p={1}>
+                {sortOptions.items.map((item) => (
+                  <Select.Item 
+                    item={item} key={item.value} p={2} borderRadius="md" cursor="pointer"
+                    _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} 
+                  >
+                    <Select.ItemText color="fg" fontSize="sm" fontWeight="500">{item.label}</Select.ItemText>
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Positioner>
+          </Select.Root>
+
+          {/* Grid Layout Toggle Icon */}
+          <Icon as={LayoutGrid} boxSize={5} color="fg" cursor="pointer" _hover={{ opacity: 0.8 }} />
         </Flex>
       )}
 
