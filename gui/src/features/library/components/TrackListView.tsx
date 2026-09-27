@@ -118,31 +118,35 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
   return (
     <VStack align="stretch" h="100%" gap={0} position="relative">
       <Box flex="1" overflowY="auto" onScroll={handleScroll}
-        // ⚡️ Custom scrollbar now inherits the global border token
         css={{
           '&::-webkit-scrollbar': { width: '8px' },
           '&::-webkit-scrollbar-thumb': { background: 'var(--chakra-colors-border)', borderRadius: '4px' },
         }}
       >
-        {/* ⚡️ All raw CSS fully semanticized for dark mode */}
         <Table.Root css={{
           "& th": { borderBottom: "1px solid var(--chakra-colors-border)", py: 4, fontWeight: "500", color: "var(--chakra-colors-fg-muted)" },
           "& td": { py: 3, borderBottom: "1px solid var(--chakra-colors-border)", color: "var(--chakra-colors-fg)", transition: "background 0.2s" }
         }}>
-          {/* ⚡️ bg="bg" so the sticky header adapts instead of staying white */}
-          <Table.Header position="sticky" top={0} bg="bg" zIndex={1}>
-            <Table.Row>
-              <Table.ColumnHeader w="50px"></Table.ColumnHeader>
-              <Table.ColumnHeader w="64px">Artwork</Table.ColumnHeader>
-              <Table.ColumnHeader>Track ({globalTotal})</Table.ColumnHeader>
-              <Table.ColumnHeader>Artist</Table.ColumnHeader>
-              <Table.ColumnHeader>Album</Table.ColumnHeader>
-              <Table.ColumnHeader>Genre & Style</Table.ColumnHeader>
-              <Table.ColumnHeader>BPM</Table.ColumnHeader>
-              <Table.ColumnHeader textAlign="right">Time</Table.ColumnHeader>
-              <Table.ColumnHeader w="50px"></Table.ColumnHeader>
-            </Table.Row>
-          </Table.Header>
+
+        <Table.Header 
+          position="sticky" 
+          top={0} 
+          bg="bg" 
+          zIndex={1} 
+          display={{ base: "none", md: "table-header-group" }}
+        >
+          <Table.Row>
+            <Table.ColumnHeader w={{ base: "40px", md: "50px" }}></Table.ColumnHeader>
+            <Table.ColumnHeader w={{ base: "48px", md: "64px" }}>Artwork</Table.ColumnHeader>
+            <Table.ColumnHeader>Track ({globalTotal})</Table.ColumnHeader>
+            <Table.ColumnHeader>Artist</Table.ColumnHeader>
+            <Table.ColumnHeader>Album</Table.ColumnHeader>
+            <Table.ColumnHeader>Genre & Style</Table.ColumnHeader>
+            <Table.ColumnHeader>BPM</Table.ColumnHeader>
+            <Table.ColumnHeader textAlign="right">Time</Table.ColumnHeader>
+            <Table.ColumnHeader w={{ base: "40px", md: "50px" }}></Table.ColumnHeader>
+          </Table.Row>
+        </Table.Header>
           
           <Table.Body>
             {isLoading || uniqueTracks.length === 0 ? (
@@ -178,7 +182,6 @@ export const TrackListView: React.FC<TrackListViewProps> = ({ sortBy }) => {
       <Dialog.Root open={!!trackToDelete} onOpenChange={(e) => { if (!e.open) setTrackToDelete(null); }}>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          {/* ⚡️ Ensure Dialog Content maps to the panel background explicitly */}
           <Dialog.Content bg="bg.panel" color="fg">
             <Dialog.Header>
               <Dialog.Title color="fg">Delete Track</Dialog.Title>

@@ -55,7 +55,6 @@ export const WaveSurferPlayer = ({
       media: audioRef?.current || undefined, 
       waveColor: waveColor,    
       progressColor: progressColor,
-      // ⚡️ Updated cursor to use Chakra's semantic CSS variable
       cursorColor: 'var(--chakra-colors-border)',
       cursorWidth: 1,
       height: 40,
@@ -139,6 +138,10 @@ export const WaveSurferPlayer = ({
       ref={containerRef} 
       w="100%" 
       h="100%" 
+      // ⚡️ Defends against canvas overflow breaking the flex layout
+      overflow="hidden"
+      // ⚡️ Prevents the page from scrolling while scrubbing on tablet touch screens
+      touchAction="none"
       onClick={(e) => e.stopPropagation()} 
     />
   );

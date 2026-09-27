@@ -8,11 +8,13 @@ export const DashboardLayout = () => {
   return (
     <Flex h="100vh" w="100vw" direction="column" bg="bg" color="fg" overflow="hidden" gap={0}>
       <Flex flex="1" w="100%" overflow="hidden">
-        <Sidebar /> 
+        <Box display={{ base: "none", md: "block" }}>
+          <Sidebar /> 
+        </Box>
         
         <Flex direction="column" flex="1" overflow="hidden" position="relative">
           <TopNav />
-          <Box flex="1" px={8} pt={8} pb={0} overflowY="auto">
+          <Box flex="1" px={{ base: 4, md: 8 }} pt={{ base: 4, md: 8 }} pb={0} overflowY="auto">
             <Outlet />
           </Box>
         </Flex>

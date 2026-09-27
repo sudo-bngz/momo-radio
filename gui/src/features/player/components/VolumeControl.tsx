@@ -1,12 +1,18 @@
 import { Box, HStack, Slider, Icon } from '@chakra-ui/react';
 import { Volume2 } from 'lucide-react';
-import { usePlayer } from '../../../context/PlayerContext'; // Update path if needed
+import { usePlayer } from '../../../context/PlayerContext';
 
 export const VolumeControl = () => {
   const { volume, setVolume } = usePlayer();
 
   return (
-    <HStack gap={6} justify="flex-end" ml={4} w="200px">
+    <HStack 
+      display={{ base: "none", md: "flex" }}
+      gap={{ base: 2, lg: 6 }} 
+      justify="flex-end" 
+      ml={{ base: 0, md: 4 }} 
+      w={{ md: "120px", lg: "200px" }}
+    >
       
       {/* Volume Icon + Slider */}
       <HStack gap={3} flex="1">
@@ -19,17 +25,15 @@ export const VolumeControl = () => {
             max={100} 
             step={1}
             size="sm" 
-            width="70%" 
-            // UX FIX 1: Hand cursor on the whole slider area
+            // ⚡️ Fixed from 70% to 100% so it naturally fills the responsive flex box
+            width="100%" 
             cursor="pointer"
           >
-            {/* Control Wrapper (Required in Chakra v3/Ark) */}
             <Slider.Control>
               <Slider.Track bg="gray.200" _dark={{ bg: "whiteAlpha.200" }} h="4px" borderRadius="full">
                 <Slider.Range bg="blue.600" _dark={{ bg: "blue.400" }} />
               </Slider.Track>
               
-              {/* UX FIX 2: The "Little Circle" Thumb */}
               <Slider.Thumb 
                 index={0} 
                 boxSize={3} 
@@ -38,8 +42,6 @@ export const VolumeControl = () => {
                 border="1px solid" 
                 borderColor="border"
                 _dark={{ bg: "white", borderColor: "transparent" }}
-                
-                // Interaction Styles
                 _focus={{ transform: "scale(1.2)", boxShadow: "0 0 0 3px rgba(66, 153, 225, 0.4)" }} 
                 _hover={{ transform: "scale(1.1)" }}
                 transition="transform 0.1s"

@@ -6,7 +6,8 @@ export const PlaybackControls = () => {
   const { isPlaying, togglePlayPause, playNext, playPrevious } = usePlayer();
 
   return (
-    <HStack gap={0} ml={6}>
+    <HStack gap={1} ml={{ base: 0, md: 6 }}>
+      
       <IconButton
         aria-label="Previous"
         variant="ghost"
@@ -15,6 +16,7 @@ export const PlaybackControls = () => {
         bg="transparent" 
         _hover={{ bg: "gray.50", color: "fg", _dark: { bg: "whiteAlpha.100", color: "fg" } }}
         size="md"
+        display={{ base: "none", md: "inline-flex" }}
       >
         <Icon as={SkipBack} boxSize={4} fill="currentColor" />
       </IconButton>
@@ -23,7 +25,8 @@ export const PlaybackControls = () => {
         as="button" 
         onClick={togglePlayPause} 
         align="center" justify="center" 
-        w="42px" h="42px"
+        w={{ base: "38px", md: "42px" }} 
+        h={{ base: "38px", md: "42px" }}
         bg="bg" 
         color="fg"
         _dark={{ bg: "whiteAlpha.200" }}
@@ -33,11 +36,12 @@ export const PlaybackControls = () => {
         _hover={{ transform: "scale(1.05)", bg: "gray.50", _dark: { bg: "whiteAlpha.300" } }} 
         _active={{ transform: "scale(0.95)" }}
         transition="all 0.2s"
+        flexShrink={0}
       >
         {isPlaying ? (
-          <Icon as={Pause} boxSize={5} fill="currentColor" />
+          <Icon as={Pause} boxSize={{ base: 4, md: 5 }} fill="currentColor" />
         ) : (
-          <Icon as={Play} boxSize={5} fill="currentColor" ml="2px" />
+          <Icon as={Play} boxSize={{ base: 4, md: 5 }} fill="currentColor" ml="2px" />
         )}
       </Flex>
 
@@ -49,9 +53,11 @@ export const PlaybackControls = () => {
         _hover={{ bg: "gray.50", color: "fg", _dark: { bg: "whiteAlpha.100", color: "fg" } }}
         size="md"
         bg="transparent" 
+        display="inline-flex"
       >
         <Icon as={SkipForward} boxSize={4} fill="currentColor" />
       </IconButton>
+      
     </HStack>
   );
 };
