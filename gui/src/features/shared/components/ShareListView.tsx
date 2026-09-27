@@ -65,10 +65,9 @@ export const SharedListView: React.FC = () => {
   };
 
   return (
-    // ⚡️ Removed bg="white" and data-theme="light" to inherit layout's active theme natively
     <VStack align="stretch" h="100%" gap={8} bg="transparent">
       
-      {/* 1. Header & Breadcrumb (Matches LibraryView) */}
+      {/* 1. Header & Breadcrumb */}
       <VStack align="start" gap={1}>
         <HStack gap={2} fontSize="sm" color="fg.muted" mb={1}>
           <Box 
@@ -116,7 +115,8 @@ export const SharedListView: React.FC = () => {
                 },
               }}
             >
-              <Table.Header position="sticky" top={0} bg="bg" zIndex={1}>
+              {/* ⚡️ HIDDEN ON MOBILE: Same breakpoint strategy as the TrackLibrary */}
+              <Table.Header position="sticky" top={0} bg="bg" zIndex={1} display={{ base: "none", md: "table-header-group" }}>
                 <Table.Row>
                   <Table.ColumnHeader w="64px">Artwork</Table.ColumnHeader>
                   <Table.ColumnHeader>Name ({shares.length})</Table.ColumnHeader>
@@ -138,7 +138,7 @@ export const SharedListView: React.FC = () => {
                   return (
                     <Table.Row key={share.id} className="group" _hover={{ bg: 'gray.50', _dark: { bg: 'whiteAlpha.50' } }}>
                       {/* Artwork */}
-                      <Table.Cell px={2}>
+                      <Table.Cell px={{ base: 0, md: 2 }}>
                         <Box
                           w="36px"
                           h="36px"
@@ -161,29 +161,43 @@ export const SharedListView: React.FC = () => {
                         </Box>
                       </Table.Cell>
 
-                      {/* Track Title */}
+                      {/* Track Title + Mobile Artist Stack */}
                       <Table.Cell fontWeight="500" color="fg">
-                        <HStack gap={2}>
-                          <Text>{track?.title || 'Unknown Track'}</Text>
-                          {share.allow_download && (
-                            <Badge size="sm" colorPalette="teal" variant="subtle" borderRadius="md" px={2}>
-                              Downloadable
-                            </Badge>
-                          )}
-                        </HStack>
+                        <VStack align="start" gap={0} ml={{ base: 2, md: 0 }}>
+                          <HStack gap={2}>
+                            <Text lineClamp={1}>{track?.title || 'Unknown Track'}</Text>
+                            {share.allow_download && (
+                              <Badge size="xs" colorPalette="teal" variant="subtle" borderRadius="md" px={2} display={{ base: "none", sm: "inline-flex" }}>
+                                Downloadable
+                              </Badge>
+                            )}
+                          </HStack>
+                          
+                          {/* ⚡️ ONLY ON MOBILE: Show artist directly under the title */}
+                          <Box display={{ base: "block", md: "none" }} mt={0.5}>
+                            <Text fontSize="xs" color="fg.muted" lineClamp={1}>
+                              {artistName}
+                              {/* ⚡️ Inject compact expiration logic here on mobile so they don't lose the info */}
+                              {share.expires_at && (
+                                <Text as="span" color={isExpired ? 'red.500' : 'inherit'}>
+                                  {' • '}{isExpired ? 'Expired' : new Date(share.expires_at).toLocaleDateString()}
+                                </Text>
+                              )}
+                            </Text>
+                          </Box>
+                        </VStack>
                       </Table.Cell>
 
-                      {/* Artist */}
-                      <Table.Cell color="fg.muted">{artistName}</Table.Cell>
+                      {/* ⚡️ HIDDEN ON MOBILE: Desktop standard columns */}
+                      <Table.Cell display={{ base: "none", md: "table-cell" }} color="fg.muted">
+                        <Text lineClamp={1}>{artistName}</Text>
+                      </Table.Cell>
 
-                      {/* Play Count */}
-                      <Table.Cell color="fg.muted">{share.play_count}</Table.Cell>
+                      <Table.Cell display={{ base: "none", md: "table-cell" }} color="fg.muted">{share.play_count}</Table.Cell>
 
-                      {/* Download Count */}
-                      <Table.Cell color="fg.muted">{share.allow_download ? share.download_count : '-'}</Table.Cell>
+                      <Table.Cell display={{ base: "none", md: "table-cell" }} color="fg.muted">{share.allow_download ? share.download_count : '-'}</Table.Cell>
 
-                      {/* Expiration */}
-                      <Table.Cell>
+                      <Table.Cell display={{ base: "none", md: "table-cell" }}>
                         {share.expires_at ? (
                           <Badge size="sm" colorPalette={isExpired ? 'red' : 'gray'} variant="subtle" borderRadius="md" px={2}>
                             {isExpired ? 'Expired' : new Date(share.expires_at).toLocaleDateString()}
@@ -194,35 +208,37 @@ export const SharedListView: React.FC = () => {
                       </Table.Cell>
 
                       {/* Actions */}
-                      <Table.Cell textAlign="right">
+                      <Table.Cell textAlign="right" px={{ base: 0, md: 2 }}>
                         <HStack justify="flex-end" gap={1}>
                           <Button
-                            size="xs"
+                            size="sm" // ⚡️ Slightly larger hit targets for mobile
                             variant="ghost"
                             color="fg.muted"
                             borderRadius="md"
                             _hover={{ bg: "gray.100", color: "fg", _dark: { bg: "whiteAlpha.200" } }}
                             onClick={() => handleCopyLink(share.token)}
                             title="Copy Share Link"
+                            px={{ base: 2, md: 3 }}
                           >
-                            <Icon as={Copy} boxSize={3.5} mr={1} />
-                            Copy
+                            <Icon as={Copy} boxSize={{ base: 4, md: 3.5 }} mr={{ base: 0, md: 1 }} />
+                            <Box display={{ base: "none", md: "block" }}>Copy</Box>
                           </Button>
 
                           <Button
-                            size="xs"
+                            size="sm"
                             variant="ghost"
                             color="fg.muted"
                             borderRadius="md"
                             _hover={{ bg: "gray.100", color: "fg", _dark: { bg: "whiteAlpha.200" } }}
                             onClick={() => window.open(`/s/${share.token}`, '_blank')}
                             title="Open Public Page"
+                            px={2}
                           >
-                            <Icon as={ExternalLink} boxSize={3.5} />
+                            <Icon as={ExternalLink} boxSize={{ base: 4, md: 3.5 }} />
                           </Button>
 
                           <Button
-                            size="xs"
+                            size="sm"
                             variant="ghost"
                             color="red.500"
                             _dark={{ color: "red.400" }}
@@ -230,8 +246,9 @@ export const SharedListView: React.FC = () => {
                             _hover={{ bg: "red.50", _dark: { bg: "whiteAlpha.200" } }}
                             onClick={() => handleDeleteShare(share.id)}
                             title="Revoke Share Link"
+                            px={2}
                           >
-                            <Icon as={Trash2} boxSize={3.5} />
+                            <Icon as={Trash2} boxSize={{ base: 4, md: 3.5 }} />
                           </Button>
                         </HStack>
                       </Table.Cell>
