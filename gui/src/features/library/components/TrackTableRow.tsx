@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, HStack, Text, Table, Badge, Icon, Button, Spinner, VStack, Menu } from '@chakra-ui/react';
-import { Play, Pause, Music, RefreshCw, Trash2, AlertCircle, Share2, MoreVertical } from 'lucide-react';
+import { Play, Pause, Music, RefreshCw, Trash2, AlertCircle, Share2, MoreVertical, Info, User, Disc } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // --- Formatting Helpers ---
@@ -67,6 +67,7 @@ export const TrackTableRow: React.FC<Props> = ({
   const albumName = typeof rawAlbum === 'object' ? rawAlbum?.title : rawAlbum;
   const albumId = track.album_id || (typeof rawAlbum === 'object' ? rawAlbum?.id : null);
 
+  // ⚡️ Restored bpmStyle calculation
   const bpmStyle = getBpmStyle(track.bpm ? Math.round(track.bpm) : 0);
 
   const renderArtists = (isMobile: boolean) => (
@@ -81,9 +82,14 @@ export const TrackTableRow: React.FC<Props> = ({
                 fontSize={isMobile ? "xs" : "md"}
                 color={isFailed ? "red.500" : (isThisTrackPlaying && !isMobile ? "blue.500" : "fg.muted")} 
                 _dark={{ color: isFailed ? "red.400" : (isThisTrackPlaying && !isMobile ? "blue.400" : "fg.muted") }}
-                cursor={isPending ? "not-allowed" : "pointer"}
-                _hover={isPending ? {} : { textDecoration: "underline", color: isFailed ? "red.700" : "blue.600", _dark: { color: isFailed ? "red.300" : "blue.300" } }} 
-                onClick={(e) => { if(!isPending) { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(cleanArtist)}`); } }}
+                cursor={isPending || isMobile ? "default" : "pointer"}
+                _hover={isPending || isMobile ? {} : { textDecoration: "underline", color: isFailed ? "red.700" : "blue.600", _dark: { color: isFailed ? "red.300" : "blue.300" } }} 
+                onClick={(e) => { 
+                  if(!isPending && !isMobile) { 
+                    e.stopPropagation(); 
+                    navigate(`/artists/${encodeURIComponent(cleanArtist)}`); 
+                  } 
+                }}
               >
                 {cleanArtist}
               </Text>
@@ -103,11 +109,19 @@ export const TrackTableRow: React.FC<Props> = ({
       bg={isFailed ? "red.50" : (isPending ? "gray.50" : (isThisTrackPlaying ? "blue.50" : "transparent"))}
       _dark={{ bg: isFailed ? "red.900" : (isPending ? "whiteAlpha.50" : (isThisTrackPlaying ? "whiteAlpha.100" : "transparent")) }}
       opacity={isPending ? 0.6 : 1} 
-      cursor={isPending ? "not-allowed" : "default"}
+      cursor={isPending ? "not-allowed" : { base: "pointer", md: "default" }}
       _hover={isPending ? {} : { bg: isFailed ? "red.100" : "gray.50", _dark: { bg: isFailed ? "red.800" : "whiteAlpha.50" } }}
-      onDoubleClick={() => { if (isPlayable && window.innerWidth >= 768) playTrack(track, tracks); }}
+      onClick={() => { 
+        if (isPlayable && window.innerWidth < 768) {
+          isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks);
+        }
+      }}
+      onDoubleClick={() => { 
+        if (isPlayable && window.innerWidth >= 768) {
+          playTrack(track, tracks); 
+        }
+      }}
     >
-      {/* ⚡️ HIDDEN ON MOBILE: Desktop Play Button */}
       <Table.Cell px={{ base: 1, md: 0 }} display={{ base: "none", md: "table-cell" }}>
         {isPending ? (
             <Box w="36px" h="36px" display="flex" alignItems="center" justifyContent="center">
@@ -133,27 +147,18 @@ export const TrackTableRow: React.FC<Props> = ({
         )}
       </Table.Cell>
 
-      {/* ⚡️ TAP-TO-PLAY ARTWORK (Mobile only click handler) */}
       <Table.Cell px={{ base: 0, md: 2 }}>
         <Box 
           w="36px" h="36px" borderRadius="md" overflow="hidden" flexShrink={0}
           bg="gray.50" border="1px solid" borderColor={isFailed ? "red.200" : "border"} 
           _dark={{ bg: "whiteAlpha.100", borderColor: isFailed ? "red.800" : "whiteAlpha.200" }}
           display="flex" alignItems="center" justifyContent="center" position="relative"
-          cursor={{ base: isPlayable ? "pointer" : "default", md: "default" }}
-          onClick={(e) => {
-            if (window.innerWidth < 768 && isPlayable) {
-              e.stopPropagation();
-              isThisTrackPlaying ? togglePlayPause() : playTrack(track, tracks);
-            }
-          }}
         >
           {track.cover_url ? (
             <img src={track.cover_url} alt={track.title} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
             <Icon as={Music} color={isFailed ? "red.300" : "fg.muted"} _dark={{ color: isFailed ? "red.500" : "whiteAlpha.400" }} boxSize={4} />
           )}
-          {/* Mobile Play/Pause Overlay indicator */}
           {isThisTrackPlaying && (
             <Box position="absolute" inset={0} bg="blackAlpha.600" display={{ base: "flex", md: "none" }} alignItems="center" justifyContent="center">
               <Icon as={isThisTrackActiveAndPlaying ? Pause : Play} color="white" boxSize={4} ml={isThisTrackActiveAndPlaying ? 0 : "2px"} />
@@ -172,11 +177,11 @@ export const TrackTableRow: React.FC<Props> = ({
           <HStack gap={2}>
             <Text
               lineClamp={1}
-              cursor={isPending ? "not-allowed" : "pointer"}
+              cursor={isPending || window.innerWidth < 768 ? "default" : "pointer"}
               transition="color 0.2s"
-              _hover={isPending ? {} : { textDecoration: "underline", color: isFailed ? "red.700" : "blue.600", _dark: { color: isFailed ? "red.300" : "blue.400" } }}
+              _hover={isPending || window.innerWidth < 768 ? {} : { textDecoration: "underline", color: isFailed ? "red.700" : "blue.600", _dark: { color: isFailed ? "red.300" : "blue.400" } }}
               onClick={(e) => {
-                if (!isPending) {
+                if (!isPending && window.innerWidth >= 768) {
                   e.stopPropagation();
                   setSelectedTrack(track); 
                 }
@@ -223,12 +228,12 @@ export const TrackTableRow: React.FC<Props> = ({
       <Table.Cell display={{ base: "none", xl: "table-cell" }}>
         <HStack gap={1} flexWrap="wrap">
           {ensureArray(track.genre).map((cleanTag, index) => (
-            <Badge key={`g-${index}`} size="sm" colorPalette={isFailed ? "red" : getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"} _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }} onClick={(e) => { if (!isPending) handleAttributeClick(e, 'genre', cleanTag.trim()); }}>
+            <Badge key={`g-${index}`} size="sm" colorPalette={isFailed ? "red" : getColorForGenre(cleanTag)} variant="subtle" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"} _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }} onClick={(e) => { if (!isPending) { e.stopPropagation(); handleAttributeClick(e, 'genre', cleanTag.trim()); } }}>
               {cleanTag.trim()}
             </Badge>
           ))}
           {ensureArray(track.style).map((cleanTag, index) => (
-            <Badge key={`s-${index}`} size="sm" colorPalette={isFailed ? "red" : getColorForGenre(cleanTag)} variant="outline" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"} _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }} onClick={(e) => { if (!isPending) handleAttributeClick(e, 'style', cleanTag.trim()); }}>
+            <Badge key={`s-${index}`} size="sm" colorPalette={isFailed ? "red" : getColorForGenre(cleanTag)} variant="outline" borderRadius="md" px={2} cursor={isPending ? "not-allowed" : "pointer"} _hover={isPending ? {} : { opacity: 0.8, transform: "scale(1.05)" }} onClick={(e) => { if (!isPending) { e.stopPropagation(); handleAttributeClick(e, 'style', cleanTag.trim()); } }}>
               {cleanTag.trim()}
             </Badge>
           ))}
@@ -247,7 +252,6 @@ export const TrackTableRow: React.FC<Props> = ({
 
       <Table.Cell px={{ base: 0, md: 2 }} textAlign="right">
         {!isPending && !isFailed && (
-          // ⚡️ REPLACED MULTIPLE ICONS WITH A 3-DOT MENU
           <Menu.Root positioning={{ placement: "bottom-end" }}>
             <Menu.Trigger asChild>
               <Button
@@ -262,17 +266,30 @@ export const TrackTableRow: React.FC<Props> = ({
             </Menu.Trigger>
             
             <Menu.Positioner zIndex={50}>
-              <Menu.Content bg="bg.panel" border="1px solid" borderColor="border" borderRadius="md" shadow="lg" minW="160px" onClick={(e) => e.stopPropagation()}>
-                <Menu.Item 
-                  value="share" cursor="pointer" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }}
-                  onClick={(e) => { e.stopPropagation(); setShareTrack(track); }}
-                >
+              <Menu.Content bg="bg.panel" border="1px solid" borderColor="border" borderRadius="md" shadow="lg" minW="200px" onClick={(e) => e.stopPropagation()}>
+                
+                <Menu.Item value="details" cursor="pointer" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} onClick={(e) => { e.stopPropagation(); setSelectedTrack(track); }}>
+                  <Icon as={Info} boxSize={4} mr={2} /> Track Details
+                </Menu.Item>
+                
+                {track.artist && ensureArray(track.artist).length > 0 && (
+                  <Menu.Item value="artist" cursor="pointer" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} onClick={(e) => { e.stopPropagation(); navigate(`/artists/${encodeURIComponent(ensureArray(track.artist)[0].trim())}`); }}>
+                    <Icon as={User} boxSize={4} mr={2} /> Go to Artist
+                  </Menu.Item>
+                )}
+
+                {albumId && (
+                  <Menu.Item value="album" cursor="pointer" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} onClick={(e) => { e.stopPropagation(); navigate(`/library/albums/${albumId}`); }}>
+                    <Icon as={Disc} boxSize={4} mr={2} /> Go to Album
+                  </Menu.Item>
+                )}
+
+                <Box h="1px" bg="border" my={1} />
+                
+                <Menu.Item value="share" cursor="pointer" _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} onClick={(e) => { e.stopPropagation(); setShareTrack(track); }}>
                   <Icon as={Share2} boxSize={4} mr={2} /> Share Track
                 </Menu.Item>
-                <Menu.Item 
-                  value="delete" cursor="pointer" color="red.500" _dark={{ color: "red.400" }} _hover={{ bg: "red.50", _dark: { bg: "red.900/30" } }}
-                  onClick={(e) => { e.stopPropagation(); handleDelete(e, track); }}
-                >
+                <Menu.Item value="delete" cursor="pointer" color="red.500" _dark={{ color: "red.400" }} _hover={{ bg: "red.50", _dark: { bg: "red.900/30" } }} onClick={(e) => { e.stopPropagation(); handleDelete(e, track); }}>
                   <Icon as={Trash2} boxSize={4} mr={2} /> Delete Track
                 </Menu.Item>
               </Menu.Content>

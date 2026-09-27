@@ -139,7 +139,6 @@ export const LibraryView: React.FC = () => {
   const isDetailViewActive = !!albumDetailMatch;
 
   return (
-    // ⚡️ Removed hardcoded bg="white" and data-theme="light" to inherit the parent layout's background
     <VStack align="stretch" h="100%" gap={8} bg="transparent">
       <input 
         type="file" 
@@ -175,72 +174,92 @@ export const LibraryView: React.FC = () => {
       </VStack>
 
       {!isDetailViewActive && (
-        <Flex justify="space-between" align="center" pb={2}>
-          <HStack gap={4} overflowX="auto" css={{ '&::-webkit-scrollbar': { display: 'none' } }}>
-            
-            {/* ⚡️ Upload button dynamically swaps colors based on active mode */}
-            <Button 
-              title="Upload at least 5 tracks to unlock autonomous broadcasting."
-              bg="fg" 
-              color="bg" 
-              borderRadius="full" 
-              w="48px" 
-              h="48px" 
-              p={0} 
-              _hover={{ opacity: 0.8 }} 
-              onClick={handleAddClick} 
-              flexShrink={0}
-            >
-              <Icon as={Plus} boxSize={6} />
-            </Button>
+        <Flex 
+          w="100%" 
+          align="center" 
+          pb={2} 
+          gap={3} 
+          overflowX="auto" 
+          css={{ 
+            '&::-webkit-scrollbar': { display: 'none' }, 
+            scrollbarWidth: 'none', 
+            msOverflowStyle: 'none' 
+          }}
+        >
+          {/* Upload Button */}
+          <Button 
+            title="Upload at least 5 tracks to unlock autonomous broadcasting."
+            bg="fg" 
+            color="bg" 
+            borderRadius="full" 
+            w="48px" 
+            h="48px" 
+            p={0} 
+            _hover={{ opacity: 0.8 }} 
+            onClick={handleAddClick} 
+            flexShrink={0} 
+          >
+            <Icon as={Plus} boxSize={6} />
+          </Button>
 
-            <HStack gap={2}>
-              {TABS.map((tab) => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <Button 
-                    key={tab.id} 
-                    onClick={() => setActiveTab(tab.id)} 
-                    size="sm" 
-                    borderRadius="full" 
-                    px={5} 
-                    h="36px" 
-                    bg={isActive ? 'fg' : 'transparent'} 
-                    color={isActive ? 'bg' : 'fg.muted'} 
-                    fontWeight={isActive ? '600' : '500'} 
-                    _hover={isActive ? {} : { bg: 'gray.100', color: 'fg', _dark: { bg: 'whiteAlpha.200' } }} 
-                    transition="all 0.2s"
-                  >
-                    {tab.label}
-                  </Button>
-                );
-              })}
-            </HStack>
+          <HStack gap={2} flexShrink={0}>
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <Button 
+                  key={tab.id} 
+                  onClick={() => setActiveTab(tab.id)} 
+                  size="sm" 
+                  borderRadius="full" 
+                  px={5} 
+                  h="36px" 
+                  bg={isActive ? 'fg' : 'bg.panel'} 
+                  color={isActive ? 'bg' : 'fg.muted'} 
+                  fontWeight={isActive ? '600' : '500'} 
+                  border="1px solid"
+                  borderColor={isActive ? "transparent" : "border"}
+                  _hover={isActive ? {} : { bg: 'gray.100', color: 'fg', _dark: { bg: 'whiteAlpha.100' } }} 
+                  transition="all 0.2s"
+                  flexShrink={0} 
+                >
+                  {tab.label}
+                </Button>
+              );
+            })}
           </HStack>
 
-          {/* ⚡️ Select component completely mapped to semantic tokens */}
-          <Select.Root collection={sortOptions} value={[sortBy]} onValueChange={(details) => setSortBy(details.value[0])} width="180px">
-            <Select.Trigger 
-              height="36px" bg="bg.panel" color="fg" fontSize="sm" 
-              border="1px solid" borderColor="border" borderRadius="full" px={4} 
-              _hover={{ borderColor: "fg.muted", bg: "gray.50", _dark: { bg: "whiteAlpha.50" } }}
+          <Box flex="1" minW={{ base: 2, md: 4 }} display={{ base: "none", md: "block" }} />
+
+          {/* ⚡️ HIDDEN ON MOBILE: Sort Dropdown now only shows on tablet (md) and up */}
+          <Box flexShrink={0} display={{ base: "none", md: "block" }}>
+            <Select.Root 
+              collection={sortOptions} 
+              value={[sortBy]} 
+              onValueChange={(details) => setSortBy(details.value[0])} 
+              width="180px"
             >
-              <Select.ValueText placeholder="Sort by" fontWeight="600" />
-              <Icon as={ChevronDown} color="fg.muted" boxSize={4} />
-            </Select.Trigger>
-            <Select.Positioner zIndex={100}>
-              <Select.Content bg="bg.panel" borderRadius="xl" shadow="md" border="1px solid" borderColor="border" p={1}>
-                {sortOptions.items.map((item) => (
-                  <Select.Item 
-                    item={item} key={item.value} p={2} borderRadius="md" cursor="pointer"
-                    _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} 
-                  >
-                    <Select.ItemText color="fg" fontSize="sm" fontWeight="500">{item.label}</Select.ItemText>
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Positioner>
-          </Select.Root>
+              <Select.Trigger 
+                height="36px" bg="bg.panel" color="fg" fontSize="sm" 
+                border="1px solid" borderColor="border" borderRadius="full" px={4} 
+                _hover={{ borderColor: "fg.muted", bg: "gray.50", _dark: { bg: "whiteAlpha.50" } }}
+              >
+                <Select.ValueText placeholder="Sort by" fontWeight="600" />
+                <Icon as={ChevronDown} color="fg.muted" boxSize={4} />
+              </Select.Trigger>
+              <Select.Positioner zIndex={100}>
+                <Select.Content bg="bg.panel" borderRadius="xl" shadow="md" border="1px solid" borderColor="border" p={1}>
+                  {sortOptions.items.map((item) => (
+                    <Select.Item 
+                      item={item} key={item.value} p={2} borderRadius="md" cursor="pointer"
+                      _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} 
+                    >
+                      <Select.ItemText color="fg" fontSize="sm" fontWeight="500">{item.label}</Select.ItemText>
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Positioner>
+            </Select.Root>
+          </Box>
         </Flex>
       )}
 
