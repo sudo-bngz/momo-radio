@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -36,6 +37,10 @@ func main() {
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
+
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		logger.Log.Fatal("Failed to connect to Redis", zap.Error(err))
+	}
 
 	// 4. Initialize Search Engine
 	meili := search.InitMeilisearch(cfg)

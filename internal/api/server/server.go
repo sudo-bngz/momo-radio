@@ -156,7 +156,8 @@ func (s *Server) setupRoutes() {
 
 	internal := s.router.Group("/api/internal")
 	{
-		internal.POST("/auth-publish", handlers.AuthStreamPublish(s.db.DB))
+		internal.POST("/auth-publish", handlers.AuthStreamPublish(s.db.DB, s.redis))
+		internal.POST("/:org_id/metadata", broadcastHandler.UpdateMetadataWebhook)
 	}
 
 	v1 := s.router.Group("/api/v1")
@@ -183,6 +184,7 @@ func (s *Server) setupRoutes() {
 
 		v1.POST("/webhooks/supabase", authHandler.HandleSupabaseWebhook)
 		v1.POST("/webhooks/stripe", billingHandler.HandleWebhook)
+		v1.POST("/broadcast/webhook", broadcastHandler.MediaMTXWebhook)
 
 		protected := v1.Group("/")
 		{
@@ -228,6 +230,8 @@ func (s *Server) setupRoutes() {
 
 			protected.GET("/mounts", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "dj", "viewer"), handlers.GetMountPoints(s.db.DB, cdn))
 			protected.GET("/broadcast/state", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), broadcastHandler.GetStreamState)
+			protected.GET("/broadcast/stream", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), broadcastHandler.StreamStateSSE)
+
 			protected.POST("/broadcast/toggle", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor"), broadcastHandler.ToggleStream)
 
 			protected.GET("/public-page", middleware.RequireSupabaseAuth(logger.Log, s.db.DB, jwks, s.cfg.Supabase.JWTSecret, "owner", "admin", "editor", "viewer"), pageHandler.GetSettings)

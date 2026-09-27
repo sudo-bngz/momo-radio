@@ -166,7 +166,6 @@ func (e *Engine) runTenantPipeline(ctx context.Context, orgID uuid.UUID) {
 	state, err := e.state.GetCurrentState(orgID)
 	var resumeTrackID uint
 
-	// ⚡️ FIXED: Use LastHeartbeat instead of UpdatedAt to match your business logic model
 	if err == nil && time.Since(state.LastHeartbeat) < 10*time.Minute {
 		logger.Log.Info("RECOVERED STATE: Resuming track",
 			zap.String("org_id", orgID.String()),

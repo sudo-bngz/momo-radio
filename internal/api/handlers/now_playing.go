@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -8,6 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+
+	"momo-radio/internal/logger"
 )
 
 // StreamNowPlaying handles Server-Sent Events (SSE) to push live track updates to listeners.
@@ -20,42 +24,52 @@ func StreamNowPlaying(rdb *redis.Client) gin.HandlerFunc {
 		}
 
 		key := fmt.Sprintf("radio:%s:now_playing", orgIDStr)
+		logger.Log.Info("SSE client connecting", zap.String("org_id", orgIDStr), zap.String("redis_key", key))
 
-		// 1. Set required headers for Server-Sent Events
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
-		// Browsers need CORS headers here if the player lives on a different domain
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Flush()
 
-		// 2. Fetch the current track instantly so the UI doesn't have to wait for the next song
-		currentData, err := rdb.Get(c.Request.Context(), key).Result()
+		ctx, cancel := context.WithCancel(c.Request.Context())
+		defer cancel()
+
+		// 1. Fetch current track instantly
+		currentData, err := rdb.Get(ctx, key).Result()
 		if err == nil && currentData != "" {
+			logger.Log.Info("SSE initial cache hit", zap.String("payload", currentData))
 			c.SSEvent("message", currentData)
 			c.Writer.Flush()
+		} else {
+			logger.Log.Info("SSE initial cache miss or error", zap.Error(err))
 		}
 
-		// 3. Subscribe to the Pub/Sub channel for live pushes
-		pubsub := rdb.Subscribe(c.Request.Context(), key)
+		// 2. Subscribe to track changes
+		pubsub := rdb.Subscribe(ctx, key)
 		defer pubsub.Close()
 		ch := pubsub.Channel()
 
-		// 4. Stream Loop: Listen for Redis events or Client disconnects
+		logger.Log.Info("SSE subscribed to Redis channel", zap.String("channel", key))
+
+		// 3. Stream Loop
 		clientGone := c.Writer.CloseNotify()
-		ticker := time.NewTicker(30 * time.Second) // Keep-alive ping for proxies/load-balancers
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-clientGone:
-				// The user closed the browser tab; terminate the goroutine cleanly.
+				logger.Log.Info("SSE client disconnected (browser closed)", zap.String("org_id", orgIDStr))
+				return
+			case <-ctx.Done():
+				logger.Log.Info("SSE request context cancelled", zap.String("org_id", orgIDStr))
 				return
 			case msg := <-ch:
-				// A new track started! Push it to the browser.
+				logger.Log.Info("SSE received Redis pub/sub message", zap.String("channel", msg.Channel), zap.String("payload", msg.Payload))
 				c.SSEvent("message", msg.Payload)
 				c.Writer.Flush()
 			case <-ticker.C:
-				// Send a comment to prevent the connection from timing out
 				c.Writer.Write([]byte(":\n\n"))
 				c.Writer.Flush()
 			}

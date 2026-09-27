@@ -394,6 +394,10 @@ export const api = {
     return response.data.mount_points;
   },
 
+  getBroadcastSseUrl: (orgId: string) => {
+    return `/api/v1/broadcast/stream?org_id=${orgId}`;
+  },
+
   createMountPoint: async (data: { name: string; slug: string; bitrate: number; is_default: boolean }): Promise<MountPoint> => {
     const response = await apiClient.post('/mounts', data);
     return response.data;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Box, HStack, Text, Flex, Icon, Spinner, IconButton, Drawer } from '@chakra-ui/react';
 import { Avatar, Menu } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { useAuthStore } from '../store/useAuthStore';
 import { useDashboard } from '../features/dashboard/hook/useDashboard';
-import { api } from '../services/api';
+import { useBroadcastStore } from '../store/useBroadcast';
 import { SearchBar } from './SearchBar'; 
 import Sidebar from './Sidebar';
 
@@ -19,26 +19,14 @@ const scrollAnimation = keyframes`
 export const TopNav: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-  const { nowPlaying, isLoading } = useDashboard(); 
+  const activeOrgId = useAuthStore((state: any) => state.activeOrganizationId);
+  const { nowPlaying, isLoading: isDashboardLoading } = useDashboard(activeOrgId); 
   
   const navigate = useNavigate();
-  const [isLive, setIsLive] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  useEffect(() => {
-    const checkBroadcastState = async () => {
-      try {
-        const res = await api.getBroadcastState();
-        setIsLive(res.state === 'online');
-      } catch (error) {
-        setIsLive(false);
-      }
-    };
-
-    checkBroadcastState();
-    const interval = setInterval(checkBroadcastState, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  // Pull live state instantly from our new SSE Broadcast store
+  const isLive = useBroadcastStore((state) => state.isLive);
 
   if (!user) return null;
 
@@ -55,13 +43,16 @@ export const TopNav: React.FC = () => {
     }
   }
 
-  const trackText = nowPlaying?.title 
-    ? `${safeArtistName} - ${nowPlaying.title}` 
-    : "AutoDJ is active";
+  // ⚡️ Improved display logic: Prevents showing "Offline" when the stream is booting up
+  let trackText = "Offline";
+  if (nowPlaying?.title && nowPlaying.title !== "Silence") {
+    trackText = `${safeArtistName} - ${nowPlaying.title}`;
+  } else if (isLive) {
+    trackText = "Live Broadcast";
+  }
 
   return (
     <>
-      {/* Mobile Sidebar Drawer */}
       <Drawer.Root 
         open={isDrawerOpen} 
         onOpenChange={(e) => setIsDrawerOpen(e.open)} 
@@ -83,11 +74,9 @@ export const TopNav: React.FC = () => {
         </Drawer.Positioner>
       </Drawer.Root>
 
-      {/* Main Top Navigation */}
       <Box w="100%" px={{ base: 4, md: 8 }} py={{ base: 3, md: 4 }} zIndex={50} bg="transparent">
         <Flex justify="space-between" align="center" gap={{ base: 2, sm: 4 }}>
           
-          {/* Left: Mobile Hamburger & Search Bar */}
           <HStack gap={2} flex="1" maxW="600px">
             <IconButton
               aria-label="Open navigation menu"
@@ -106,10 +95,8 @@ export const TopNav: React.FC = () => {
             </Box>
           </HStack>
 
-          {/* Right: Live Status & Profile Menu */}
           <HStack gap={{ base: 2, md: 4 }}>
             
-            {/* Live Widget (Desktop / Large Screens only) */}
             <HStack 
               gap={0} 
               bg="bg.panel" 
@@ -133,19 +120,18 @@ export const TopNav: React.FC = () => {
               
               <HStack gap={3} mr={4} w="160px" overflow="hidden">
                 <Icon as={Music} boxSize={3.5} color={isLive ? "fg.muted" : "border"} flexShrink={0} />
-                {isLoading && isLive ? (
+                {isDashboardLoading && isLive ? (
                   <Spinner size="xs" color="fg.muted" />
                 ) : (
                   <Box flex="1" overflow="hidden" h="20px" display="flex" alignItems="center">
-                    <Text fontSize="xs" fontWeight="600" color={isLive ? "fg" : "fg.muted"} whiteSpace="nowrap" display="inline-block" animation={isLive ? `${scrollAnimation} 12s linear infinite` : "none"}>
-                      {isLive ? trackText : "Offline"}
+                    <Text fontSize="xs" fontWeight="600" color={isLive ? "fg" : "fg.muted"} whiteSpace="nowrap" display="inline-block" animation={isLive && trackText.length > 25 ? `${scrollAnimation} 12s linear infinite` : "none"}>
+                      {trackText}
                     </Text>
                   </Box>
                 )}
               </HStack>
             </HStack>
 
-            {/* User Profile Menu */}
             <Menu.Root positioning={{ placement: "bottom-end" }}>
               <Menu.Trigger asChild>
                 <HStack 
