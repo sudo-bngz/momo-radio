@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, HStack, Text, Flex, Icon, Spinner, IconButton, Drawer } from '@chakra-ui/react';
 import { Avatar, Menu } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
@@ -20,13 +20,25 @@ export const TopNav: React.FC = () => {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const activeOrgId = useAuthStore((state: any) => state.activeOrganizationId);
+  
   const { nowPlaying, isLoading: isDashboardLoading } = useDashboard(activeOrgId); 
   
   const navigate = useNavigate();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-
-  // Pull live state instantly from our new SSE Broadcast store
+  
   const isLive = useBroadcastStore((state) => state.isLive);
+  const connectStreamState = useBroadcastStore((state) => state.connectStreamState);
+  const disconnectStreamState = useBroadcastStore((state) => state.disconnectStreamState);
+
+  // ⚡️ FIX 1: Open the broadcast state SSE connection the moment the component mounts
+  useEffect(() => {
+    if (activeOrgId) {
+      connectStreamState(activeOrgId);
+    }
+    return () => {
+      disconnectStreamState();
+    };
+  }, [activeOrgId, connectStreamState, disconnectStreamState]);
 
   if (!user) return null;
 
@@ -38,12 +50,17 @@ export const TopNav: React.FC = () => {
   if (nowPlaying?.artist) {
     if (typeof nowPlaying.artist === 'string') {
       safeArtistName = nowPlaying.artist;
+    } else if (Array.isArray(nowPlaying.artist)) {
+      // Cast to any[] to fix the 'never' type error
+      safeArtistName = (nowPlaying.artist as any[])
+        .map((a: any) => (typeof a === 'string' ? a : (a?.name || "Unknown Artist")))
+        .filter(Boolean)
+        .join(', ');
     } else if (typeof nowPlaying.artist === 'object') {
       safeArtistName = (nowPlaying.artist as any).name || "Unknown Artist";
     }
   }
 
-  // ⚡️ Improved display logic: Prevents showing "Offline" when the stream is booting up
   let trackText = "Offline";
   if (nowPlaying?.title && nowPlaying.title !== "Silence") {
     trackText = `${safeArtistName} - ${nowPlaying.title}`;
@@ -124,7 +141,14 @@ export const TopNav: React.FC = () => {
                   <Spinner size="xs" color="fg.muted" />
                 ) : (
                   <Box flex="1" overflow="hidden" h="20px" display="flex" alignItems="center">
-                    <Text fontSize="xs" fontWeight="600" color={isLive ? "fg" : "fg.muted"} whiteSpace="nowrap" display="inline-block" animation={isLive && trackText.length > 25 ? `${scrollAnimation} 12s linear infinite` : "none"}>
+                    <Text 
+                      fontSize="xs" 
+                      fontWeight="600" 
+                      color={isLive ? "fg" : "fg.muted"} 
+                      whiteSpace="nowrap" 
+                      display="inline-block" 
+                      animation={isLive && trackText.length > 25 ? `${scrollAnimation} 12s linear infinite` : "none"}
+                    >
                       {trackText}
                     </Text>
                   </Box>

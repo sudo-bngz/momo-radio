@@ -4,24 +4,52 @@ import { useNavigate } from 'react-router-dom';
 
 import { useDashboard } from '../hook/useDashboard';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useBroadcastStore } from '../../../store/useBroadcast';
 import { DashboardCard, CompactStat, EndpointRow, getArtistName, timeAgo, LiveCountdown } from './DashboardWidgets';
 
 export const WidgetRegistry = ({ type }: { type: string }) => {
-  const { stats, recentTracks, nowPlaying } = useDashboard();
-  const navigate = useNavigate();
   const activeOrgId = useAuthStore((state: any) => state.activeOrganizationId);
+  
+  // ⚡️ FIXED: Pass activeOrgId to useDashboard to ensure it targets the correct SSE stream
+  const { stats, recentTracks, nowPlaying } = useDashboard(activeOrgId); 
+  const isLive = useBroadcastStore((state: any) => state.isLive);
+  
+  const navigate = useNavigate();
 
-  const publicDomain = window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://momo.radio';
+  const publicDomain = window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://momoradio.fm';
 
   switch (type) {
-    case 'live-broadcast':
+    case 'live-broadcast': {
+      // ⚡️ FIXED: Safe artist parsing logic identical to TopNav to handle arrays
+      let safeArtistName = "Unknown Artist";
+      if (nowPlaying?.artist) {
+        if (typeof nowPlaying.artist === 'string') {
+          safeArtistName = nowPlaying.artist;
+        } else if (Array.isArray(nowPlaying.artist)) {
+          safeArtistName = (nowPlaying.artist as any[])
+            .map((a: any) => (typeof a === 'string' ? a : (a?.name || "Unknown Artist")))
+            .filter(Boolean)
+            .join(', ');
+        } else if (typeof nowPlaying.artist === 'object') {
+          safeArtistName = (nowPlaying.artist as any).name || "Unknown Artist";
+        }
+      }
+
       return (
         <DashboardCard 
           title="Live Broadcast" 
           icon={Radio} 
           rightElement={
-            <Badge bg="red.500" color="white" px={2} py={0.5} borderRadius="sm" fontSize="2xs" animation="pulse-fast 2s infinite">
-              ON AIR
+            <Badge 
+              bg={isLive ? "red.500" : "gray.500"} 
+              color="white" 
+              px={2} 
+              py={0.5} 
+              borderRadius="sm" 
+              fontSize="2xs" 
+              animation={isLive ? "pulse-fast 2s infinite" : "none"}
+            >
+              {isLive ? "ON AIR" : "OFF AIR"}
             </Badge>
           }
         >
@@ -30,7 +58,7 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
               boxSize="80px" borderRadius="md" bg="gray.50" _dark={{ bg: "whiteAlpha.50" }} 
               border="1px solid" borderColor="border" overflow="hidden" flexShrink={0}
             >
-              {nowPlaying?.cover_url ? (
+              {isLive && nowPlaying?.cover_url ? (
                 <img src={nowPlaying.cover_url} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 <Flex w="100%" h="100%" align="center" justify="center">
@@ -40,27 +68,30 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
             </Box>
 
             <VStack align="start" gap={1} flex="1">
-              <Text fontSize="md" fontWeight="bold" color="fg" truncate w="full">
-                {nowPlaying?.title || "Waiting for stream..."}
+              <Text fontSize="md" fontWeight="bold" color={isLive ? "fg" : "fg.muted"} truncate w="full">
+                {isLive ? (nowPlaying?.title || "Waiting for stream...") : "Offline"}
               </Text>
               <Text fontSize="sm" color="fg.muted" truncate w="full">
-                {getArtistName(nowPlaying?.artist)}
+                {isLive ? safeArtistName : "-"}
               </Text>
               
-              <HStack gap={4} mt={1}>
-                <HStack gap={1.5} color="fg.muted" fontSize="xs">
-                  <Icon as={ListMusic} boxSize="12px" />
-                  <Text>{nowPlaying?.playlist_name || "General Rotation"}</Text>
+              {isLive && (
+                <HStack gap={4} mt={1}>
+                  <HStack gap={1.5} color="fg.muted" fontSize="xs">
+                    <Icon as={ListMusic} boxSize="12px" />
+                    <Text>{nowPlaying?.playlist_name || "General Rotation"}</Text>
+                  </HStack>
+                  <HStack gap={1.5} color="blue.500" _dark={{ color: "blue.400" }} fontSize="xs">
+                    <Icon as={Clock} boxSize="12px" />
+                    <LiveCountdown endsAt={nowPlaying?.ends_at} />
+                  </HStack>
                 </HStack>
-                <HStack gap={1.5} color="blue.500" _dark={{ color: "blue.400" }} fontSize="xs">
-                  <Icon as={Clock} boxSize="12px" />
-                  <LiveCountdown endsAt={nowPlaying?.ends_at} />
-                </HStack>
-              </HStack>
+              )}
             </VStack>
           </HStack>
         </DashboardCard>
       );
+    }
 
     case 'system-stats':
       return (
@@ -140,7 +171,6 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
           title="Public Page" 
           icon={Globe}
           rightElement={
-            // ⚡️ FIXED: Using asChild to forward styles to the native anchor tag
             <Button 
               asChild
               variant="ghost" 

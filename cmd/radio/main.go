@@ -37,7 +37,7 @@ func main() {
 		DB:       cfg.Redis.DB,
 	})
 
-	logger.Log.Info("🚀 Starting Momo Radio Supervisor...")
+	logger.Log.Info("Starting Momo Radio Supervisor...")
 
 	engine := radio.New(cfg, store, db, rdb)
 

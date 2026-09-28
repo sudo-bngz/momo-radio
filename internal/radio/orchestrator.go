@@ -163,34 +163,58 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 }
 
 func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName string) {
+	// 1. Defensively load Artists and Album if the selector forgot to Preload them
+	needsPreload := len(t.Artists) == 0 || t.Album.ID == 0
+
+	if needsPreload {
+		var fullTrack models.Track
+		err := e.db.DB.Preload("Artists").Preload("Album").
+			Where("id = ? AND organization_id = ?", t.ID, orgID).
+			First(&fullTrack).Error
+
+		if err != nil {
+			logger.Log.Error("Failed to lazy-load track relations", zap.Uint("track_id", t.ID), zap.Error(err))
+		} else {
+			t = &fullTrack // Re-assign the local pointer to the fully loaded track
+			logger.Log.Debug("Lazy-loaded track metadata", zap.Int("artist_count", len(t.Artists)))
+		}
+	}
+
+	// 2. Parse Artists
 	var artistNames []string
 	for _, a := range t.Artists {
-		artistNames = append(artistNames, a.Name)
+		if a.Name != "" {
+			artistNames = append(artistNames, a.Name)
+		}
 	}
+
 	artistStr := "Unknown Artist"
 	if len(artistNames) > 0 {
 		artistStr = strings.Join(artistNames, ", ")
 	}
 
-	// Calculate exact milliseconds
 	now := time.Now().UTC()
 	durationMs := int64(t.Duration * 1000)
 	endsAt := now.Add(time.Duration(durationMs) * time.Millisecond)
 
-	// Build the cover URL if you store relative paths in the DB.
-	coverURL := t.Album.CoverURL
-	if coverURL != "" && !strings.HasPrefix(coverURL, "http") {
-		baseURL := strings.TrimRight(e.cfg.CDN.Assets, "/")
-		coverURL = fmt.Sprintf("%s/%s", baseURL, coverURL)
+	// 3. Build Cover URL using your CDN Builder
+	coverURL := ""
+	if t.Album.CoverKey != "" {
+		if strings.HasPrefix(t.Album.CoverKey, "http") {
+			coverURL = t.Album.CoverKey
+		} else {
+			coverURL = e.cdn.BuildAssetURL(t.Album.CoverKey, orgID.String())
+		}
 	}
 
+	// 4. Construct JSON Payload
 	trackData := CurrentTrack{
 		TrackID:      t.ID,
 		Title:        t.Title,
 		Artist:       artistStr,
 		PlaylistName: showName,
 		DurationMs:   durationMs,
-		ElapsedMs:    0, // Always 0 at the exact moment the track starts
+		ElapsedMs:    0,
 		StartsAt:     now.Format(time.RFC3339),
 		EndsAt:       endsAt.Format(time.RFC3339),
 		WaveformKey:  t.WaveformKey,
@@ -203,6 +227,7 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 		return
 	}
 
+	// 5. Publish to Redis
 	ctx := context.Background()
 	key := fmt.Sprintf("radio:%s:now_playing", orgID.String())
 
@@ -212,7 +237,11 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 	if err := e.rdb.Publish(ctx, key, data).Err(); err != nil {
 		logger.Log.Error("Failed to publish now_playing to Redis pubsub", zap.Error(err))
 	} else {
-		logger.Log.Debug("Pushed now_playing update to Redis", zap.Uint("track_id", t.ID))
+		logger.Log.Debug("Pushed now_playing update to Redis",
+			zap.Uint("track_id", t.ID),
+			zap.String("artist", artistStr),
+			zap.String("cover", coverURL),
+		)
 	}
 }
 

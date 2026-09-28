@@ -17,6 +17,7 @@ import (
 	"momo-radio/internal/models"
 	"momo-radio/internal/scheduler"
 	"momo-radio/internal/storage"
+	"momo-radio/internal/utils"
 )
 
 type Engine struct {
@@ -28,7 +29,8 @@ type Engine struct {
 	cache         *CacheManager
 	state         *StateManager
 	scheduler     *scheduler.Manager
-	activeStreams sync.Map // Key: uuid.UUID, Value: context.CancelFunc
+	cdn           *utils.CDNBuilder
+	activeStreams sync.Map
 }
 
 type s3Adapter struct {
@@ -45,6 +47,7 @@ func (a *s3Adapter) DownloadFile(key string) (io.ReadCloser, error) {
 
 func New(cfg *config.Config, store *storage.Client, db *database.Client, rdb *redis.Client) *Engine {
 	adapter := &s3Adapter{store: store}
+	cdnBuilder := utils.NewCDNBuilder(cfg, store)
 
 	return &Engine{
 		cfg:       cfg,
@@ -55,6 +58,7 @@ func New(cfg *config.Config, store *storage.Client, db *database.Client, rdb *re
 		cache:     NewCacheManager(adapter, cfg.Server.TempDir),
 		state:     NewStateManager(db.DB),
 		scheduler: scheduler.NewManager(db.DB, cfg.Server.Timezone),
+		cdn:       cdnBuilder,
 	}
 }
 
@@ -74,7 +78,7 @@ func (e *Engine) StartSupervisor(ctx context.Context) {
 	defer pubsub.Close()
 
 	ch := pubsub.Channel()
-	logger.Log.Info("🎧 Radio Supervisor is listening for commands", zap.String("channel", "radio.control"))
+	logger.Log.Info("Radio Supervisor is listening for commands", zap.String("channel", "radio.control"))
 
 	for msg := range ch {
 		var payload struct {

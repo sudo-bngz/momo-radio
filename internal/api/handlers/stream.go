@@ -282,41 +282,51 @@ func (h *BroadcastHandler) GetStreamState(c *gin.Context) {
 }
 
 func (h *BroadcastHandler) StreamStateSSE(c *gin.Context) {
-	orgID, ok := getOrgID(c)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	orgIDStr := c.Query("org_id")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid org_id query parameter is required"})
 		return
 	}
-
-	orgIDStr := fmt.Sprintf("%s", orgID)
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 	c.Writer.Flush()
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	channelKey := fmt.Sprintf("org:%s:stream_events", orgIDStr)
+	channelKey := fmt.Sprintf("org:%s:stream_events", orgID.String())
 	pubsub := h.rdb.Subscribe(ctx, channelKey)
 	defer pubsub.Close()
 	ch := pubsub.Channel()
 
+	// Initial status directly from the database on connect
 	var state models.StreamState
 	h.db.Select("broadcast_mode").Where("organization_id = ?", orgID).First(&state)
 	isLive := state.BroadcastMode == "online" || state.BroadcastMode == "live"
 
 	initialMsg, _ := json.Marshal(map[string]bool{"is_live": isLive})
-	fmt.Fprintf(c.Writer, "data: %s\n\n", initialMsg)
+	c.SSEvent("message", string(initialMsg))
 	c.Writer.Flush()
+
+	clientGone := c.Writer.CloseNotify()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
+		case <-clientGone:
+			return
 		case <-ctx.Done():
 			return
 		case msg := <-ch:
-			fmt.Fprintf(c.Writer, "data: %s\n\n", msg.Payload)
+			c.SSEvent("message", msg.Payload)
+			c.Writer.Flush()
+		case <-ticker.C:
+			c.Writer.Write([]byte(":\n\n"))
 			c.Writer.Flush()
 		}
 	}
