@@ -9,18 +9,14 @@ import { DashboardCard, CompactStat, EndpointRow, getArtistName, timeAgo, LiveCo
 
 export const WidgetRegistry = ({ type }: { type: string }) => {
   const activeOrgId = useAuthStore((state: any) => state.activeOrganizationId);
-  
-  // ⚡️ FIXED: Pass activeOrgId to useDashboard to ensure it targets the correct SSE stream
   const { stats, recentTracks, nowPlaying } = useDashboard(activeOrgId); 
   const isLive = useBroadcastStore((state: any) => state.isLive);
-  
   const navigate = useNavigate();
 
   const publicDomain = window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://momoradio.fm';
 
   switch (type) {
     case 'live-broadcast': {
-      // ⚡️ FIXED: Safe artist parsing logic identical to TopNav to handle arrays
       let safeArtistName = "Unknown Artist";
       if (nowPlaying?.artist) {
         if (typeof nowPlaying.artist === 'string') {
@@ -117,38 +113,46 @@ export const WidgetRegistry = ({ type }: { type: string }) => {
           }
         >
           <VStack align="stretch" gap={1}>
-            {recentTracks?.slice(0, 5).map((track: any, index: number) => (
-              <HStack 
-                key={track.id || index} justify="space-between" p={2} borderRadius="md" 
-                _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} transition="all 0.2s"
-              >
-                <HStack gap={3} overflow="hidden">
-                  <Box 
-                    boxSize="32px" borderRadius="sm" overflow="hidden" flexShrink={0}
-                    bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}
-                  >
-                    {track.cover_url ? (
-                      <img src={track.cover_url} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <Flex w="100%" h="100%" align="center" justify="center">
-                        <Icon as={Music} color="gray.300" _dark={{ color: "gray.500" }} boxSize="14px" />
-                      </Flex>
-                    )}
-                  </Box>
-                  <VStack align="start" gap={0} minW="0">
-                    <Text fontSize="sm" fontWeight="500" color="fg" truncate w="full">
-                      {track.title || 'Unknown Track'}
-                    </Text>
-                    <Text fontSize="xs" color="fg.muted" truncate w="full">
-                      {getArtistName(track.artist)}
-                    </Text>
-                  </VStack>
+            {recentTracks?.slice(0, 5).map((track: any, index: number) => {
+              // ⚡️ FIXED: Handle both raw DB payloads and pre-formatted Redis string payloads
+              const artistName = typeof track.artist === 'string' ? track.artist : getArtistName(track.artist);
+              
+              // ⚡️ FIXED: Use starts_at from Redis payload to ensure timeAgo calculates correctly
+              const playedTime = track.starts_at || track.played_at || track.created_at;
+
+              return (
+                <HStack 
+                  key={track.track_id || track.id || index} justify="space-between" p={2} borderRadius="md" 
+                  _hover={{ bg: "gray.50", _dark: { bg: "whiteAlpha.100" } }} transition="all 0.2s"
+                >
+                  <HStack gap={3} overflow="hidden">
+                    <Box 
+                      boxSize="32px" borderRadius="sm" overflow="hidden" flexShrink={0}
+                      bg="gray.50" _dark={{ bg: "whiteAlpha.50" }}
+                    >
+                      {track.cover_url ? (
+                        <img src={track.cover_url} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <Flex w="100%" h="100%" align="center" justify="center">
+                          <Icon as={Music} color="gray.300" _dark={{ color: "gray.500" }} boxSize="14px" />
+                        </Flex>
+                      )}
+                    </Box>
+                    <VStack align="start" gap={0} minW="0">
+                      <Text fontSize="sm" fontWeight="500" color="fg" truncate w="full">
+                        {track.title || 'Unknown Track'}
+                      </Text>
+                      <Text fontSize="xs" color="fg.muted" truncate w="full">
+                        {artistName}
+                      </Text>
+                    </VStack>
+                  </HStack>
+                  <Text color="fg.muted" fontSize="xs" whiteSpace="nowrap">
+                    {timeAgo(playedTime)}
+                  </Text>
                 </HStack>
-                <Text color="fg.muted" fontSize="xs" whiteSpace="nowrap">
-                  {timeAgo(track.created_at || track.played_at)}
-                </Text>
-              </HStack>
-            ))}
+              );
+            })}
           </VStack>
         </DashboardCard>
       );

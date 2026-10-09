@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 // DirectURLProvider perfectly matches your storage.Client signature
 type DirectURLProvider interface {
 	GetDirectPublicURL(bucket, key string) string
+	GeneratePresignedUrl(ctx context.Context, key string, contentType string, expiry time.Duration) (string, error)
 }
 
 type CDNBuilder struct {
@@ -71,6 +73,16 @@ func (b *CDNBuilder) GetHLSStreamURL(orgID uuid.UUID, mountSlug string) string {
 func (b *CDNBuilder) BuildAssetURL(key, orgID string) string {
 	directURL := b.store.GetDirectPublicURL(b.cfg.Storage.BucketAssets, key)
 	return b.build(b.cfg.CDN.Assets, directURL, key, orgID)
+}
+
+// BuildTrackStreamURL handles the routing logic for serving audio bytes directly to the browser.
+// If CDN is disabled, it safely falls back to a 2-hour presigned URL.
+func (b *CDNBuilder) BuildTrackStreamURL(ctx context.Context, key, orgID string) (string, error) {
+	if b.cfg.CDN.Enabled {
+		return b.BuildAssetURL(key, orgID), nil
+	}
+
+	return b.store.GeneratePresignedUrl(ctx, key, "", 2*time.Hour)
 }
 
 // Internal private logic for static assets

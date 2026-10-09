@@ -26,7 +26,6 @@ export const GlobalPlayer = () => {
 
   const isOffScreen = !isPlayerVisible || !currentTrack;
   
-  // Use Context timing for Live, standard audioRef for Library
   const currentTimeDisplay = isLiveStream ? liveElapsed : (audioRef.current?.currentTime || 0);
   const durationDisplay = isLiveStream ? liveDuration : (audioRef.current?.duration || 0);
 
@@ -49,22 +48,17 @@ export const GlobalPlayer = () => {
         `}
       </style>
 
-      {/* 1. THE VISUAL PLAYER */}
       <Box 
         position="fixed" bottom={0} left={0} right={0} h="76px" 
         bg="bg.panel" borderTop="1px solid" borderColor="border"
         zIndex={9999} 
-        // ⚡️ Reduce padding on mobile
         px={{ base: 4, md: 6 }}
         transform={isOffScreen ? "translateY(100%)" : "translateY(0)"}
         transition="transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
       >
-        {/* ⚡️ Reduce gap on mobile so things fit tightly */}
         <Flex h="full" align="center" gap={{ base: 2, md: 6 }} justify="space-between">
           
-          {/* Left: Track Info (With Live Override) */}
           <Box 
-            // ⚡️ On mobile, take up remaining space (flex: 1), but don't force a minimum width
             flex={{ base: 1, md: "none" }} 
             minW={{ base: 0, md: "220px" }} 
             maxW={{ base: "none", md: "300px" }}
@@ -72,19 +66,11 @@ export const GlobalPlayer = () => {
           >
             {isLiveStream && liveMeta ? (
               <HStack gap={3}>
-                
                 {liveMeta.cover_url ? (
-                  <Image 
-                    src={liveMeta.cover_url} 
-                    boxSize="48px" 
-                    borderRadius="md" 
-                    objectFit="cover" 
-                    flexShrink={0}
-                  />
+                  <Image src={liveMeta.cover_url} boxSize="48px" borderRadius="md" objectFit="cover" flexShrink={0} />
                 ) : (
                   <Box boxSize="48px" bg="gray.100" _dark={{ bg: "whiteAlpha.200" }} borderRadius="md" flexShrink={0} />
                 )}
-
                 <Box overflow="hidden">
                   <HStack gap={2} mb={0.5}>
                     <Badge color="red.600" bg="red.50" _dark={{ color: "red.300", bg: "red.900" }} fontSize="10px" px={1.5} borderRadius="sm" flexShrink={0}>
@@ -104,19 +90,17 @@ export const GlobalPlayer = () => {
             )}
           </Box>
 
-          {/* Controls: Play/Pause/Prev/Next */}
           <HStack gap={3} flexShrink={0}>
             <PlaybackControls />
           </HStack>
 
-          {/* Center: Waveform (Library) OR Live Progress */}
-          {/* ⚡️ HIDDEN ON MOBILE: We only want the mini-player on small screens */}
+          {/* ⚡️ FIXED: minW="0" on HStack and Box ensures flexbox shrinks the massive canvas appropriately */}
           <HStack flex="1" gap={4} ml={4} minW="0" display={{ base: "none", md: "flex" }}>
-            <Text fontSize="xs" color="fg.muted" fontVariantNumeric="tabular-nums" w="35px" textAlign="right">
+            <Text flexShrink={0} fontSize="xs" color="fg.muted" fontVariantNumeric="tabular-nums" w="35px" textAlign="right">
               {formatTime(currentTimeDisplay)}
             </Text>
             
-            <Box flex="1" h="40px" display="flex" alignItems="center">
+            <Box flex="1" h="40px" minW="0" display="flex" alignItems="center" overflow="hidden" position="relative">
               {isLiveStream ? (
                 liveMeta?.waveform_url ? (
                   <WaveSurferPlayer 
@@ -126,18 +110,13 @@ export const GlobalPlayer = () => {
                     isPlaying={isPlaying}
                     waveformUrl={liveMeta.waveform_url} 
                     orgId={activeOrgId || ''}
-                    liveProgress={progress} 
+                    // ⚡️ FIXED: Pass raw time values for smooth 60fps interpolation
+                    liveElapsed={liveElapsed} 
+                    liveDuration={liveDuration}
                   />
                 ) : (
                   <Box w="100%" h="6px" bg="gray.200" _dark={{ bg: "whiteAlpha.200" }} borderRadius="full" overflow="hidden" position="relative">
-                    <Box 
-                      h="100%" 
-                      bg="red.500" 
-                      _dark={{ bg: "red.400" }}
-                      w={`${progress}%`} 
-                      transition={progress === 0 ? "none" : "width 1s linear"} 
-                      borderRadius="full" 
-                    />
+                    <Box h="100%" bg="red.500" _dark={{ bg: "red.400" }} w={`${progress}%`} transition={progress === 0 ? "none" : "width 1s linear"} borderRadius="full" />
                   </Box>
                 )
               ) : (
@@ -154,26 +133,18 @@ export const GlobalPlayer = () => {
               )}
             </Box>
             
-            <Text fontSize="xs" color="fg.muted" fontVariantNumeric="tabular-nums" w="35px">
+            <Text flexShrink={0} fontSize="xs" color="fg.muted" fontVariantNumeric="tabular-nums" w="35px">
               {formatTime(durationDisplay)}
             </Text>
           </HStack>
 
-          {/* Right: Volume */}
-          {/* ⚡️ HIDDEN ON MOBILE: Physical volume buttons are used on phones */}
           <Box flexShrink={0} display={{ base: "none", md: "block" }}>
             <VolumeControl />
           </Box>
         </Flex>
       </Box>
 
-      {/* 2. THE INVISIBLE SPACER */}
-      <Box 
-        w="100%" 
-        h={!isOffScreen ? "76px" : "0px"} 
-        transition="height 0.4s cubic-bezier(0.4, 0, 0.2, 1)" 
-        flexShrink={0}
-      />
+      <Box w="100%" h={!isOffScreen ? "76px" : "0px"} transition="height 0.4s cubic-bezier(0.4, 0, 0.2, 1)" flexShrink={0} />
     </>
   );
 };

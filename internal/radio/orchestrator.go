@@ -163,7 +163,7 @@ func (e *Engine) pickNextFromPlaylist(orgID uuid.UUID, playlistID uint, lastTrac
 }
 
 func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName string) {
-	// 1. Defensively load Artists and Album if the selector forgot to Preload them
+	// 1. Defensively load Artists and Album
 	needsPreload := len(t.Artists) == 0 || t.Album.ID == 0
 
 	if needsPreload {
@@ -175,8 +175,7 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 		if err != nil {
 			logger.Log.Error("Failed to lazy-load track relations", zap.Uint("track_id", t.ID), zap.Error(err))
 		} else {
-			t = &fullTrack // Re-assign the local pointer to the fully loaded track
-			logger.Log.Debug("Lazy-loaded track metadata", zap.Int("artist_count", len(t.Artists)))
+			t = &fullTrack
 		}
 	}
 
@@ -227,20 +226,34 @@ func (e *Engine) updateNowPlaying(orgID uuid.UUID, t *models.Track, showName str
 		return
 	}
 
-	// 5. Publish to Redis
+	// 5. Publish to Redis & Maintain Recently Played List
 	ctx := context.Background()
-	key := fmt.Sprintf("radio:%s:now_playing", orgID.String())
+	nowPlayingKey := fmt.Sprintf("radio:%s:now_playing", orgID.String())
+	recentKey := fmt.Sprintf("radio:%s:recent_tracks", orgID.String())
 
-	if err := e.rdb.Set(ctx, key, data, 24*time.Hour).Err(); err != nil {
+	// Fetch the outgoing track and push it to the history list
+	oldData, err := e.rdb.Get(ctx, nowPlayingKey).Result()
+	if err == nil && oldData != "" {
+		var oldTrack CurrentTrack
+		if json.Unmarshal([]byte(oldData), &oldTrack) == nil {
+			// Prevent duplicate back-to-back entries and ignore "Silence"
+			if oldTrack.TrackID != t.ID && oldTrack.Title != "Silence" {
+				e.rdb.LPush(ctx, recentKey, oldData)
+				e.rdb.LTrim(ctx, recentKey, 0, 9) // Keep only the last 10 tracks
+			}
+		}
+	}
+
+	// Set the new Now Playing
+	if err := e.rdb.Set(ctx, nowPlayingKey, data, 24*time.Hour).Err(); err != nil {
 		logger.Log.Error("Failed to set now_playing in Redis", zap.Error(err))
 	}
-	if err := e.rdb.Publish(ctx, key, data).Err(); err != nil {
+	if err := e.rdb.Publish(ctx, nowPlayingKey, data).Err(); err != nil {
 		logger.Log.Error("Failed to publish now_playing to Redis pubsub", zap.Error(err))
 	} else {
 		logger.Log.Debug("Pushed now_playing update to Redis",
 			zap.Uint("track_id", t.ID),
 			zap.String("artist", artistStr),
-			zap.String("cover", coverURL),
 		)
 	}
 }

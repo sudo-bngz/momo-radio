@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -39,12 +38,13 @@ type TrackHandler struct {
 	cdn         *utils.CDNBuilder
 	meili       meilisearch.ServiceManager
 	asynqClient *asynq.Client
+	cfg         *config.Config
 }
 
 func NewTrackHandler(
 	db *gorm.DB,
 	st *storage.Client,
-	c *config.Config,
+	cfg *config.Config,
 	redisClient *redis.Client,
 	cdn *utils.CDNBuilder,
 	meili meilisearch.ServiceManager,
@@ -53,7 +53,7 @@ func NewTrackHandler(
 	return &TrackHandler{
 		db:          db,
 		storage:     st,
-		config:      c,
+		config:      cfg,
 		redis:       redisClient,
 		cdn:         cdn,
 		meili:       meili,
@@ -434,31 +434,17 @@ func (h *TrackHandler) StreamTrack(c *gin.Context) {
 		return
 	}
 
-	obj, err := h.storage.DownloadFile(track.Key)
-	if err != nil {
-		slog.Error("Failed to download audio file from storage",
-			"track_id", trackID,
-			"key", track.Key,
-			"error", err,
-		)
-
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": fmt.Sprintf("Audio file missing from storage: %v", err),
-		})
-		return
-	}
-	defer obj.Body.Close()
-
-	if seeker, ok := obj.Body.(io.ReadSeeker); ok {
-		http.ServeContent(c.Writer, c.Request, track.Title, obj.LastModified, seeker)
+	// 1. Delegate the URL generation and CDN/S3 routing to the utility
+	targetURL, err := h.cdn.BuildTrackStreamURL(c.Request.Context(), track.Key, orgID.String())
+	if err != nil || targetURL == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resolve track URL"})
 		return
 	}
 
-	extraHeaders := map[string]string{
-		"Cache-Control": "public, max-age=31536000",
-		"Accept-Ranges": "none",
-	}
-	c.DataFromReader(http.StatusOK, obj.ContentLength, obj.ContentType, obj.Body, extraHeaders)
+	// 2. Redirect the client directly to the storage bucket or CDN.
+	// HTTP 307 (Temporary Redirect) ensures the browser preserves the GET request,
+	// prevents your Go server from proxying the audio, and natively supports byte-range seeking.
+	c.Redirect(http.StatusTemporaryRedirect, targetURL)
 }
 
 func (h *TrackHandler) TrackStatusStream(c *gin.Context) {
