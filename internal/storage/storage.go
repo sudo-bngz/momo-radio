@@ -107,11 +107,22 @@ func (c *Client) UploadAssetFile(key string, body io.ReadSeeker, contentType, ca
 	return c.backend.Put(c.bucketAssets, key, body, contentType, cacheControl)
 }
 
-func (c *Client) GeneratePresignedUrl(ctx context.Context, key, contentType string, expiry time.Duration) (string, error) {
+// 1. Used by your CDNBuilder to STREAM audio tracks (GET) from the Assets bucket
+func (c *Client) GeneratePresignedUrl(ctx context.Context, bucket string, key string, contentType string, expiry time.Duration) (string, error) {
 	if presigner, ok := c.backend.(PresignableProvider); ok {
-		return presigner.GeneratePresignedPutURL(ctx, c.bucketIngest, key, contentType, expiry)
+		// Uses GET for streaming
+		return presigner.GeneratePresignedGetURL(ctx, bucket, key, expiry)
 	}
-	return "", fmt.Errorf("current storage provider does not support presigned URLs")
+	return "", fmt.Errorf("current storage provider does not support presigned GET URLs")
+}
+
+// 2. Used by your frontend to UPLOAD files (PUT) to the Ingest bucket
+func (c *Client) GeneratePresignedUploadUrl(ctx context.Context, bucket string, key string, contentType string, expiry time.Duration) (string, error) {
+	if presigner, ok := c.backend.(PresignableProvider); ok {
+		// Uses PUT for uploading
+		return presigner.GeneratePresignedPutURL(ctx, bucket, key, contentType, expiry)
+	}
+	return "", fmt.Errorf("current storage provider does not support presigned PUT URLs")
 }
 
 // --- Master Vault Methods ---

@@ -120,10 +120,20 @@ func (h *TrackHandler) HandlePresign(c *gin.Context) {
 		safeFilename := strings.ReplaceAll(filepath.Base(fileReq.Filename), " ", "_")
 		fileKey := fmt.Sprintf("incoming/%s/%d_%s", orgID.String(), time.Now().Unix(), safeFilename)
 
-		// Generate the URL directly to Backblaze (Valid for 1 hour for bulk uploads)
-		url, err := h.storage.GeneratePresignedUrl(c.Request.Context(), fileKey, fileReq.ContentType, time.Hour)
+		// ⚡️ FIXED: Use the new Upload generator and explicitly pass the Ingest Bucket
+		url, err := h.storage.GeneratePresignedUploadUrl(
+			c.Request.Context(),
+			h.cfg.Storage.BucketIngest,
+			fileKey,
+			fileReq.ContentType,
+			time.Hour,
+		)
+
 		if err != nil {
-			slog.Error("Failed to generate presigned URL", "filename", fileReq.Filename, "error", err)
+			logger.Log.Error("Failed to generate presigned upload URL",
+				zap.String("filename", fileReq.Filename),
+				zap.Error(err),
+			)
 			continue // Skip this file but continue processing the rest
 		}
 
@@ -434,10 +444,10 @@ func (h *TrackHandler) StreamTrack(c *gin.Context) {
 		return
 	}
 
-	// 1. Delegate the URL generation and CDN/S3 routing to the utility
 	targetURL, err := h.cdn.BuildTrackStreamURL(c.Request.Context(), track.Key, orgID.String())
 	if err != nil || targetURL == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resolve track URL"})
+		logger.Log.Error("Failed to resolve track URL", zap.Error(err), zap.String("track_key", track.Key))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to resolve track URL: %v", err)})
 		return
 	}
 

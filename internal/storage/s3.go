@@ -111,3 +111,19 @@ func (s *S3Provider) GeneratePresignedPutURL(ctx context.Context, bucket, key, c
 
 	return url, nil
 }
+
+func (s *S3Provider) GeneratePresignedGetURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
+	// 1. Create the standard GetObject request
+	req, _ := s.api.GetObjectRequest(&s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+
+	// 2. Presign the request with the specified expiration time
+	url, err := req.Presign(expiry)
+	if err != nil {
+		return "", err
+	}
+
+	return url, nil
+}

@@ -20,6 +20,9 @@ type LinkableProvider interface {
 }
 
 type PresignableProvider interface {
+	// Used for streaming audio files to the browser
+	GeneratePresignedGetURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error)
+	// Used for securely uploading new files from the frontend
 	GeneratePresignedPutURL(ctx context.Context, bucket, key, contentType string, expiry time.Duration) (string, error)
 }
 

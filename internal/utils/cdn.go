@@ -15,10 +15,12 @@ import (
 	"momo-radio/internal/logger"
 )
 
-// DirectURLProvider perfectly matches your storage.Client signature
 type DirectURLProvider interface {
+	// Used for generating public asset links (like cover art)
 	GetDirectPublicURL(bucket, key string) string
-	GeneratePresignedUrl(ctx context.Context, key string, contentType string, expiry time.Duration) (string, error)
+
+	// Used as a fallback for streaming tracks when the CDN is disabled
+	GeneratePresignedUrl(ctx context.Context, bucket string, key string, contentType string, expiry time.Duration) (string, error)
 }
 
 type CDNBuilder struct {
@@ -26,7 +28,6 @@ type CDNBuilder struct {
 	store DirectURLProvider
 }
 
-// NewCDNBuilder accepts the config and the interface matching your storage client
 func NewCDNBuilder(cfg *config.Config, store DirectURLProvider) *CDNBuilder {
 	return &CDNBuilder{
 		cfg:   cfg,
@@ -34,8 +35,6 @@ func NewCDNBuilder(cfg *config.Config, store DirectURLProvider) *CDNBuilder {
 	}
 }
 
-// GetHLSStreamURL replaces the old bucket-based Live URL logic.
-// It returns the direct MediaMTX URL or routes through the BunnyCDN Stream zone if enabled.
 func (b *CDNBuilder) GetHLSStreamURL(orgID uuid.UUID, mountSlug string) string {
 	if mountSlug == "" {
 		mountSlug = "radio"
@@ -46,14 +45,12 @@ func (b *CDNBuilder) GetHLSStreamURL(orgID uuid.UUID, mountSlug string) string {
 		baseURL = "http://localhost:8888"
 	}
 
-	// Route through BunnyCDN pull zone if enabled
 	if b.cfg.CDN.Enabled && b.cfg.CDN.Stream != "" {
 		baseURL = b.cfg.CDN.Stream
 	}
 
 	baseURL = strings.TrimRight(baseURL, "/")
 
-	// Ensure protocol prefix is present
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 		baseURL = "https://" + baseURL
 	}
@@ -69,23 +66,19 @@ func (b *CDNBuilder) GetHLSStreamURL(orgID uuid.UUID, mountSlug string) string {
 	return finalURL
 }
 
-// BuildAssetURL extracts the Prod bucket and region from config for the direct URL (used for cover art, audio tracks, etc.)
 func (b *CDNBuilder) BuildAssetURL(key, orgID string) string {
 	directURL := b.store.GetDirectPublicURL(b.cfg.Storage.BucketAssets, key)
 	return b.build(b.cfg.CDN.Assets, directURL, key, orgID)
 }
 
-// BuildTrackStreamURL handles the routing logic for serving audio bytes directly to the browser.
-// If CDN is disabled, it safely falls back to a 2-hour presigned URL.
 func (b *CDNBuilder) BuildTrackStreamURL(ctx context.Context, key, orgID string) (string, error) {
 	if b.cfg.CDN.Enabled {
 		return b.BuildAssetURL(key, orgID), nil
 	}
 
-	return b.store.GeneratePresignedUrl(ctx, key, "", 2*time.Hour)
+	return b.store.GeneratePresignedUrl(ctx, b.cfg.Storage.BucketAssets, key, "", 2*time.Hour)
 }
 
-// Internal private logic for static assets
 func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) string {
 	if key == "" {
 		return ""
@@ -93,7 +86,6 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 
 	var rawURL string
 
-	// 1. Production: CDN is toggled ON
 	if b.cfg.CDN.Enabled && cdnBaseURL != "" {
 		baseURL := strings.TrimRight(cdnBaseURL, "/")
 
@@ -104,7 +96,6 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 		cleanKey := strings.TrimLeft(key, "/")
 		rawURL = baseURL + "/" + cleanKey
 	} else {
-		// 2. Fallback: Direct URL provided by the storage interface
 		rawURL = directStorageURL
 	}
 
@@ -112,7 +103,6 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 		return ""
 	}
 
-	// Append the orgID query parameter safely for middleware bypass
 	if orgID != "" {
 		parsedURL, err := url.Parse(rawURL)
 		if err == nil {
@@ -126,39 +116,61 @@ func (b *CDNBuilder) build(cdnBaseURL, directStorageURL, key, orgID string) stri
 	return rawURL
 }
 
-// PurgeCache sends a native HTTP request to BunnyCDN to clear a specific file
+// PrewarmCache pulls the asset through the CDN edge node immediately
+// Call this asynchronously right after a track finishes processing/uploading.
+func (b *CDNBuilder) PrewarmCache(key, orgID string) {
+	if !b.cfg.CDN.Enabled {
+		return // No CDN to warm
+	}
+
+	targetURL := b.BuildAssetURL(key, orgID)
+	if targetURL == "" {
+		return
+	}
+
+	// Run in a goroutine so it doesn't block the caller
+	go func(urlToWarm string) {
+		logger.Log.Debug("Pre-warming CDN cache", zap.String("url", urlToWarm))
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Get(urlToWarm)
+
+		if err != nil {
+			logger.Log.Warn("Failed to pre-warm CDN", zap.Error(err), zap.String("url", urlToWarm))
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			logger.Log.Debug("Successfully pre-warmed CDN cache", zap.String("url", urlToWarm))
+		}
+	}(targetURL)
+}
+
 func (c *CDNBuilder) PurgeCache(fullFileURL string) error {
 	apiKey := c.cfg.CDN.APIKey
 	if apiKey == "" || !c.cfg.CDN.Enabled {
-		logger.Log.Debug("CDN purge skipped (CDN disabled or missing API key)", zap.String("url", fullFileURL))
-		return nil // Skip gracefully if CDN is disabled
+		return nil
 	}
 
-	// BunnyCDN requires the exact full URL escaped in the query parameter
 	reqURL := fmt.Sprintf("https://api.bunny.net/purge?url=%s", url.QueryEscape(fullFileURL))
 
 	req, err := http.NewRequest("POST", reqURL, nil)
 	if err != nil {
-		logger.Log.Error("Failed to create CDN purge HTTP request", zap.Error(err), zap.String("url", fullFileURL))
 		return err
 	}
 	req.Header.Add("AccessKey", apiKey)
 
-	// Use a short timeout so we don't hang the worker
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Log.Error("CDN purge API network request failed", zap.Error(err), zap.String("url", fullFileURL))
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		err := fmt.Errorf("BunnyCDN purge failed with status: %d", resp.StatusCode)
-		logger.Log.Warn("CDN purge request rejected by provider", zap.Error(err), zap.String("url", fullFileURL))
-		return err
+		return fmt.Errorf("BunnyCDN purge failed with status: %d", resp.StatusCode)
 	}
 
-	logger.Log.Info("Successfully purged CDN cache", zap.String("url", fullFileURL))
 	return nil
 }
