@@ -22,8 +22,7 @@ RUN apt-get update && apt-get install -y \
 ARG TARGETARCH
 WORKDIR /opt
 
-# ⚡️ 1. COMPILE GAIA FIRST
-RUN git clone https://github.com/MTG/gaia.git
+RUN git clone --depth 1 --branch v2.1_beta5 https://github.com/MTG/essentia.git
 WORKDIR /opt/gaia
 
 # Delete the lines containing Intel flags, and export ARM64 flags!
